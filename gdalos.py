@@ -85,7 +85,7 @@ default_filename = 'map.vrt'
 def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_SAFER',
                 warp_CRS=None, out_filename=None, out_base_path=None, kind: Kind = ..., lossy=False, expand_rgb=False,
                 skip_if_exist=False, out_res=None, create_info=True, dst_NDV=...,
-                hide_NDV=False, extent: Optional[GeoRectangle] = None, src_win=None, ovr_type=..., resample_method=...,
+                hide_NDV=False, extent: Optional[GeoRectangle]=None, src_win=None, ovr_type=..., resample_method=...,
                 alpha=1, config: dict = None, print_progress=..., verbose=True):
     if verbose:
         print_time()
@@ -138,11 +138,12 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
         do_warp = True
         lossy = True
 
-        if isinstance(warp_CRS, (int, float)):
-            warp_CRS = f'w84u{warp_CRS}'
-        elif warp_CRS.startswith('+'):
+        if isinstance(warp_CRS, str) and warp_CRS.startswith('+'):
             pjstr_tgt_srs = warp_CRS  # ProjString
-        else:  # "short ProjString"
+        else:
+            if isinstance(warp_CRS, (int, float)):
+                warp_CRS = f'w84u{warp_CRS}'
+            # "short ProjString"
             zone = projdef.get_zone_from_name(warp_CRS)
             pjstr_tgt_srs = projdef.get_proj4_string(warp_CRS[0], zone)
             if zone != 0:
@@ -155,7 +156,7 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
             out_suffix += '.' + projdef.get_canonic_name(warp_CRS[0], zone)
 
         if kind == Kind.dtm:
-            creation_options['outputType'] = 'Float32'
+            creation_options['outputType'] = gdal.GDT_Float32  #'Float32'
 
         warp_options["dstSRS"] = pjstr_tgt_srs
         creation_options['resampleAlg'] = resample_method
@@ -212,7 +213,7 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
     if (org_comp is not None) and 'JPEG' in org_comp:
         lossy = True
 
-    if lossy and (kind != 'dtm'):
+    if lossy and (kind != Kind.dtm):
         comp = 'JPEG'
         out_suffix = out_suffix + '.jpg'
     else:
@@ -221,13 +222,19 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
         creation_options['creationOptions'].append('COPY_SRC_OVERVIEWS=YES')
 
     if out_filename is None:
-        if extent is None:
-            if src_win is None:
-                out_suffix = out_suffix + '.new'
+        if out_extent_in_src_srs is not None:
+            transform = get_extent.get_transform(pjstr_src_srs, pjstr_4326)
+            if transform is not None:
+                out_extent_in_4326 = get_extent.translate_extent(extent, transform)
             else:
-                out_suffix = out_suffix + '.off[{},{}]_size[{},{}]'.format(*src_win)
+                out_extent_in_4326 = extent
+            out_extent_in_4326 = out_extent_in_4326.round(2)
+            out_suffix = out_suffix + '.x[{},{}]_y[{},{}]'.format(*out_extent_in_4326.lrdu)
         else:
-            out_suffix = out_suffix + '.x[{},{}]_y[{},{}]'.format(*extent.lrdu)
+            if src_win is not None:
+                out_suffix = out_suffix + '.off[{},{}]_size[{},{}]'.format(*src_win)
+        if out_suffix == '':
+            out_suffix = '.new'
         out_filename = filename + out_suffix + '.' + outext
 
     if out_base_path is not None:
@@ -306,7 +313,7 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
                                            dst_NDV=dst_NDV, hide_NDV=hide_NDV, extent=extent,
                                            src_win=src_win, ovr_type=None, resample_method=resample_method, alpha=alpha,
                                            print_progress=print_progress, verbose=verbose)
-                    if ret_code > 0:
+                    if ret_code is None:
                         break
         if create_info:
             gdalos_info(out_filename)

@@ -11,8 +11,8 @@ class GeoRectangle:
     @classmethod
     def from_lrdu(cls, l, r, d, u):
         ret = cls(l, u, r-l, d-u)
-        assert ret.lrdu == (l,r,d,u)
-
+        # assert ret.lrdu == (l, r, d, u)
+        return ret
 
     @classmethod
     def from_points(cls, points):
@@ -21,6 +21,14 @@ class GeoRectangle:
             max(p[0] for p in points),
             min(p[1] for p in points),
             max(p[1] for p in points),
+        )
+
+    def round(self, digits):
+        return GeoRectangle.from_lrdu(
+            round(self.left, digits),
+            round(self.right, digits),
+            round(self.down, digits),
+            round(self.up, digits)
         )
 
     def crop(self, other: 'GeoRectangle'):
