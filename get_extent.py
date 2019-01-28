@@ -1,8 +1,9 @@
 import sys
 import math
 from osgeo import gdal, osr, ogr
+from math import isfinite
 
-from gdalos.rectangle import GeoRectangle
+from .rectangle import GeoRectangle
 
 
 def get_points_extent(gt, cols, rows):
@@ -50,14 +51,14 @@ def get_transform(src_srs, tgt_srs):
 def translate_extent(extent: GeoRectangle, transform, sample_count=1000):
     if transform is None:
         return extent
-    maxf = sys.float_info.max
-    [out_x_min, out_x_max, out_y_min, out_y_max] = [maxf, -maxf, maxf, -maxf]
+    maxf = float('inf')
+    (out_x_min, out_x_max, out_y_min, out_y_max) = (maxf, -maxf, maxf, -maxf)
 
-    [x_min, x_max, y_min, y_max] = extent.lrdu
+    (x_min, x_max, y_min, y_max) = extent.lrdu
 
     d = ((x_max - x_min) + (y_max - y_min)) / sample_count
     if d <= 0:
-        return None
+        raise Exception('negative d')
     dx = (x_max - x_min) / math.ceil((x_max - x_min) / d)
     dy = (y_max - y_min) / math.ceil((y_max - y_min) / d)
 
@@ -66,11 +67,13 @@ def translate_extent(extent: GeoRectangle, transform, sample_count=1000):
         x = float(x_min)
         while x < x_max:
             tx, ty, tz = transform.TransformPoint(x, y)
+            x += dx
+            if not isfinite(tz):
+                continue
             out_x_min = min(out_x_min, tx)
             out_x_max = max(out_x_max, tx)
             out_y_min = min(out_y_min, ty)
             out_y_max = max(out_y_max, ty)
-            x += dx
         y += dy
 
     return GeoRectangle.from_lrdu(out_x_min, out_x_max, out_y_min, out_y_max)

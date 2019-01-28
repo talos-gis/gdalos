@@ -1,13 +1,18 @@
 class GeoRectangle:
     def __init__(self, x, y, w, h):
+        assert h < 0
+        assert w > 0
         self.x = x
         self.y = y
         self.w = w
         self.h = h
+        assert self.up > self.down
 
     @classmethod
     def from_lrdu(cls, l, r, d, u):
-        return cls(l, u, r-l, u-d)
+        ret = cls(l, u, r-l, d-u)
+        assert ret.lrdu == (l,r,d,u)
+
 
     @classmethod
     def from_points(cls, points):
@@ -40,16 +45,19 @@ class GeoRectangle:
 
     @property
     def down(self):
-        return self.y - self.h
+        return self.y + self.h
 
     @property
     def lurd(self):
-        return self.left, self.right, self.up, self.down
+        return self.left, self.up, self.right, self.down
 
     @property
     def ldru(self):
-        return self.left, self.down, self.up, self.up
+        return self.left, self.down, self.right, self.up
 
     @property
     def lrdu(self):
-        return self.left, self.right, self.up, self.down
+        return self.left, self.right, self.down, self.up
+
+    def __repr__(self):
+        return f'Rectangle({self.x}, {self.y}, {self.w}, {self.h})'

@@ -1,19 +1,17 @@
 from typing import Optional
 
-import sys
 import os
 from enum import Enum, auto
 
 import gdal
 
-import gdalos.gdal_helper as gdal_helper
-import gdalos.get_extent as get_extent
-import gdalos.projdef as projdef
-from gdalos.rectangle import GeoRectangle
+from . import gdal_helper
+from . import get_extent
+from . import projdef
+from .rectangle import GeoRectangle
 
 import time
 import datetime
-
 
 
 class Kind(Enum):
