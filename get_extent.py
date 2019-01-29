@@ -58,7 +58,7 @@ def translate_extent(extent: GeoRectangle, transform, sample_count=1000):
 
     d = ((x_max - x_min) + (y_max - y_min)) / sample_count
     if d <= 0:
-        raise Exception('negative d')
+        return GeoRectangle.empty()
     dx = (x_max - x_min) / math.ceil((x_max - x_min) / d)
     dy = (y_max - y_min) / math.ceil((y_max - y_min) / d)
 

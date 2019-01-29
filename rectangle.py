@@ -1,16 +1,40 @@
 class GeoRectangle:
     def __init__(self, x, y, w, h):
-        assert h < 0
-        assert w > 0
+        if w <= 0 or h >= 0:
+            h = 0
+            w = 0
         self.x = x
         self.y = y
         self.w = w
         self.h = h
-        assert self.up > self.down
+
+    def round(self, digits):
+        return GeoRectangle.from_lrdu(
+            round(self.left, digits),
+            round(self.right, digits),
+            round(self.down, digits),
+            round(self.up, digits)
+        )
+
+    def is_empty(self):
+        return self.w <= 0 or self.h >= 0
+
+    def crop(self, other: 'GeoRectangle'):
+        return GeoRectangle.from_lrdu(
+            max(self.left, other.left),
+            min(self.right, other.right),
+            max(self.down, other.down),
+            min(self.up, other.up)
+        )
+
+
+    @classmethod
+    def empty(cls):
+        return cls(0, 0, 0, 0)
 
     @classmethod
     def from_lrdu(cls, l, r, d, u):
-        ret = cls(l, u, r-l, d-u)
+        ret = cls(l, u, r - l, d - u)
         # assert ret.lrdu == (l, r, d, u)
         return ret
 
@@ -21,22 +45,6 @@ class GeoRectangle:
             max(p[0] for p in points),
             min(p[1] for p in points),
             max(p[1] for p in points),
-        )
-
-    def round(self, digits):
-        return GeoRectangle.from_lrdu(
-            round(self.left, digits),
-            round(self.right, digits),
-            round(self.down, digits),
-            round(self.up, digits)
-        )
-
-    def crop(self, other: 'GeoRectangle'):
-        return GeoRectangle.from_lrdu(
-            max(self.left, other.left),
-            min(self.right, other.right),
-            max(self.down, other.down),
-            min(self.up, other.up)
         )
 
     @property

@@ -164,6 +164,8 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
     if extent is not None:
         org_points_extent, pjstr_src_srs, geo_transform = get_extent.get_points_extent_from_file(filename)
         org_extent_in_src_srs = GeoRectangle.from_points(org_points_extent)
+        if org_extent_in_src_srs.is_empty():
+            return None
 
         if pjstr_tgt_srs is None:
             pjstr_tgt_srs = pjstr_src_srs
@@ -172,6 +174,8 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
             transform = get_extent.get_transform(pjstr_src_srs, pjstr_tgt_srs)
 
         org_extent_in_tgt_srs = get_extent.translate_extent(org_extent_in_src_srs, transform)
+        if org_extent_in_tgt_srs.is_empty():
+            return None
 
         pjstr_4326 = projdef.get_proj4_string('w')  # 'EPSG:4326'
         transform = get_extent.get_transform(pjstr_4326, pjstr_tgt_srs)
@@ -195,6 +199,8 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
                 if transform is not None:
                     out_extent_in_src_srs = get_extent.translate_extent(extent, transform)
                     out_extent_in_src_srs = out_extent_in_src_srs.crop(org_extent_in_src_srs)
+                    if out_extent_in_src_srs.is_empty():
+                        return None
 
                     in_res_y = geo_transform[5]  # Mpp.Y == geotransform[5]
 
@@ -316,12 +322,12 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
                     if ret_code is None:
                         break
         if create_info:
-            gdalos_info(out_filename)
+            gdalos_info(out_filename, skip_if_exist=skip_if_exist)
 
     return ret_code
 
 
-def add_ovr(filename, options, open_options, skip_if_exist, verbose=True):
+def add_ovr(filename, options, open_options, skip_if_exist=False, verbose=True):
     out_filename = filename + '.ovr'
     if verbose:
         print('.\n')
@@ -405,13 +411,13 @@ def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=...
     return ret_code
 
 
-def gdalos_info(filename):
+def gdalos_info(filename, skip_if_exist=False):
     if os.path.isdir(filename):
         filename = os.path.join(filename, default_filename)
     if not os.path.isfile(filename):
         raise Exception('file not found: {}'.format(filename))
     out_filename = filename + '.info'
-    if not do_skip_if_exists(out_filename, False):
+    if not do_skip_if_exists(out_filename, skip_if_exist=skip_if_exist):
         with gdal_helper.OpenDS(filename) as ds:
             info = gdal.Info(ds)
         with open(out_filename, 'w') as w:
