@@ -76,7 +76,7 @@ def translate_extent(extent: GeoRectangle, transform, sample_count=1000):
             out_y_max = max(out_y_max, ty)
         y += dy
 
-    return GeoRectangle.from_lrdu(out_x_min, out_x_max, out_y_min, out_y_max)
+    return GeoRectangle.from_min_max(out_x_min, out_x_max, out_y_min, out_y_max)
 
 
 # todo so does gtrans open the dataset like fifty times or something?

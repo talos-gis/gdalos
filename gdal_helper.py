@@ -4,16 +4,21 @@ import gdal
 
 
 class OpenDS:
-    def __init__(self, ds, *options):
-        self.ds = ds
+    def __init__(self, filename_or_ds, *options):
+        if isinstance(filename_or_ds, str):
+            self.filename = filename_or_ds
+            self.ds = None
+        else:
+            self.filename = None
+            self.ds = filename_or_ds
         self.options = options
         self.own = None
 
     def __enter__(self)->gdal.Dataset:
-        if isinstance(self.ds, str):
-            self.ds = gdal.Open(self.ds, *self.options)
+        if self.ds is None and isinstance(self.filename, str):
+            self.ds = gdal.Open(self.filename, *self.options)
             if self.ds is None:
-                raise IOError("could not open file")
+                raise IOError("could not open file {}".format(self.filename))
             self.own = True
         return self.ds
 

@@ -65,12 +65,29 @@ def do_skip_if_exists(out_filename, skip_if_exist, verbose=True):
     return skip
 
 
+def print_progress_from_to(r0, r1):
+    # print(str(round(r1)) + '%', end=" ")
+    i0 = 0 if r0 is None else round(r0) + 1
+    i1 = round(r1) + 1
+    for i in range(i0, i1):
+        print(str(i) if i % 5 == 0 else '.', end="")
+    if r1 >= 100:
+        print(' done!')
+
+
 def add_print_progress_callback(print_progress, options):
     if print_progress:
         if print_progress is ...:
             def print_progress(*data):
                 # print('progress: ', data)
-                print(str(round(data[0]*100))+'%', end =" ")
+                # print(str(round(percent))+'%', end=" ")
+                percent = data[0]*100
+                if 'last' not in print_progress.__dict__:
+                    print_progress.last = None
+                r0 = print_progress.last
+                r1 = percent
+                print_progress_from_to(r0, r1)
+                print_progress.last = percent
         options['callback'] = print_progress
     return options
 
@@ -165,6 +182,7 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
         org_points_extent, pjstr_src_srs, geo_transform = get_extent.get_points_extent_from_file(filename)
         org_extent_in_src_srs = GeoRectangle.from_points(org_points_extent)
         if org_extent_in_src_srs.is_empty():
+            print('no input extent: {} [{}]'.format(filename, org_extent_in_src_srs))
             return None
 
         if pjstr_tgt_srs is None:
@@ -175,15 +193,17 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
 
         org_extent_in_tgt_srs = get_extent.translate_extent(org_extent_in_src_srs, transform)
         if org_extent_in_tgt_srs.is_empty():
+            print('no input extent: {} [{}]'.format(filename, org_extent_in_tgt_srs))
             return None
 
         pjstr_4326 = projdef.get_proj4_string('w')  # 'EPSG:4326'
         transform = get_extent.get_transform(pjstr_4326, pjstr_tgt_srs)
         out_extent_in_tgt_srs = get_extent.translate_extent(extent, transform)
-        out_extent_in_tgt_srs = out_extent_in_tgt_srs.crop(org_extent_in_tgt_srs) if out_extent_in_tgt_srs else org_extent_in_tgt_srs
+        out_extent_in_tgt_srs = out_extent_in_tgt_srs.crop(org_extent_in_tgt_srs)
 
-        if out_extent_in_tgt_srs is None:
-            raise Exception('no output extent: {}'.format(filename))
+        if out_extent_in_tgt_srs.is_empty():
+            print('no output extent: {} [{}]'.format(filename, out_extent_in_tgt_srs))
+            return None
 
         if not do_warp:
             # -projwin minx maxy maxx miny (ulx uly lrx lry)
@@ -274,7 +294,8 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
         print('creation options: ' + str(creation_options))
 
     ret_code = 0
-    if do_skip_if_exists(out_filename, skip_if_exist, verbose):
+    skipped = do_skip_if_exists(out_filename, skip_if_exist, verbose)
+    if skipped:
         pass
     elif do_warp:
         cutoff = 'z'
@@ -289,10 +310,8 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
         if verbose:
             print('translate options: ' + str(translate_options))
         ret_code = gdal.Translate(out_filename, filename, **creation_options, **translate_options)
-    if verbose:
-        print('.\n')
 
-    if verbose:
+    if not skipped and verbose:
         print_time()
         print('Time for creating file: {} is {} seconds'.format(filename, round(time.time() - timer)))
 
@@ -330,7 +349,6 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
 def add_ovr(filename, options, open_options, skip_if_exist=False, verbose=True):
     out_filename = filename + '.ovr'
     if verbose:
-        print('.\n')
         print('adding ovr: {} options: {} open_options: {}'.format(out_filename, options, open_options))
 
     if not do_skip_if_exists(out_filename, skip_if_exist, verbose):
