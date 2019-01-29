@@ -67,7 +67,7 @@ def do_skip_if_exists(out_filename, skip_if_exist, verbose=True):
 
 def print_progress_from_to(r0, r1):
     # print(str(round(r1)) + '%', end=" ")
-    i0 = 0 if r0 is None else round(r0) + 1
+    i0 = 0 if (r0 is None) or (r0 > r1) else round(r0) + 1
     i1 = round(r1) + 1
     for i in range(i0, i1):
         print(str(i) if i % 5 == 0 else '.', end="")
