@@ -72,7 +72,7 @@ def print_progress_from_to(r0, r1):
     for i in range(i0, i1):
         print(str(i) if i % 5 == 0 else '.', end="")
     if r1 >= 100:
-        print(' done!')
+        print('% done!')
 
 
 def add_print_progress_callback(print_progress, options):
@@ -178,6 +178,7 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
         warp_options["dstSRS"] = pjstr_tgt_srs
         creation_options['resampleAlg'] = resample_method
 
+    out_extent_in_src_srs = None
     if extent is not None:
         org_points_extent, pjstr_src_srs, geo_transform = get_extent.get_points_extent_from_file(filename)
         org_extent_in_src_srs = GeoRectangle.from_points(org_points_extent)
@@ -226,7 +227,6 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
 
                     out_res = get_extent.transform_resolution(transform_src_tgt, in_res_y, *out_extent_in_src_srs.lrdu)
                     out_res = get_extent.round_to_sig(out_res, -1)
-
     elif src_win is not None:
         translate_options['srcWin'] = src_win
 
@@ -299,7 +299,6 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
         pass
     elif do_warp:
         cutoff = 'z'
-        #options.clear()
         for k in list(creation_options):
             if k > cutoff:
                 creation_options.pop(k)
@@ -323,14 +322,11 @@ def gdalos_trans(filename, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_S
             if ovr_type != OvrType.existing:
                 gdalos_ovr(out_filename, skip_if_exist=skip_if_exist, ovr_type=ovr_type, print_progress=print_progress, verbose=verbose)
             else:
-                ovr_levels_count = 20
                 in_ovr_filename = filename
                 out_ovr_filename = out_filename
-                for i in range(ovr_levels_count):
+                while os.path.isfile(in_ovr_filename + '.ovr'):
                     in_ovr_filename = in_ovr_filename + '.ovr'
                     out_ovr_filename = out_ovr_filename + '.ovr'
-                    if not os.path.isfile(in_ovr_filename):
-                        break
                     ret_code = gdalos_trans(filename=in_ovr_filename, of=of, tiled=tiled, big_tiff=big_tiff,
                                            warp_CRS=warp_CRS,
                                            out_filename=out_ovr_filename, kind=kind, lossy=lossy,
