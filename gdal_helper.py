@@ -35,10 +35,21 @@ def _get_bands(ds: gdal.Dataset) -> Iterator[gdal.Band]:
 
 def get_band_types(ds):
     with OpenDS(ds) as ds:
-        return [
-            gdal.GetDataTypeName(band.DataType)
-            for band in _get_bands(ds)
-        ]
+        return [gdal.GetDataTypeName(band.DataType) for band in _get_bands(ds)]
+
+
+def get_raster_band(ds, bnd_index=1, ovr_index=None):
+    with OpenDS(ds) as ds:
+        bnd = ds.GetRasterBand(bnd_index)
+        if ovr_index is not None:
+            bnd = bnd.GetOverview(ovr_index)
+        return bnd
+
+
+def get_ovr_count(ds):
+    with OpenDS(ds) as ds:
+        bnd = ds.GetRasterBand(1)
+        return bnd.GetOverviewCount()
 
 
 def get_nodatavalue(ds):
