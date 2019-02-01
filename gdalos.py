@@ -175,6 +175,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
 
     if resample_method is ...:
         resample_method = resample_method_by_kind(kind, expand_rgb)
+    common_options['resampleAlg'] = resample_method
 
     pjstr_tgt_srs = None
     if warp_CRS is not None:
@@ -201,7 +202,6 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
             common_options['outputType'] = gdal.GDT_Float32  #'Float32'
 
         warp_options["dstSRS"] = pjstr_tgt_srs
-        common_options['resampleAlg'] = resample_method
 
     out_extent_in_src_srs = None
     if extent is not None:
@@ -324,7 +324,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
 
     if verbose:
         print('filename: '+out_filename + ' ...')
-        print('creation common_options: ' + str(common_options))
+        print('common options: ' + str(common_options))
 
     ret_code = 0
     skipped = do_skip_if_exists(out_filename, skip_if_exist, verbose)
@@ -336,11 +336,11 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
             if k > cutoff:
                 common_options.pop(k)
         if verbose:
-            print('wrap common_options: '+str(warp_options))
+            print('wrap options: '+str(warp_options))
         ret_code = gdal.Warp(out_filename, filename, **common_options, **warp_options)
     else:
         if verbose:
-            print('translate common_options: ' + str(translate_options))
+            print('translate options: ' + str(translate_options))
         ret_code = gdal.Translate(out_filename, filename, **common_options, **translate_options)
 
     if not skipped and verbose:
