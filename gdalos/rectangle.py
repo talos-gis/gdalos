@@ -8,12 +8,9 @@ class GeoRectangle:
         self.w = w
         self.h = h
 
-    def round(self, digits):
-        return GeoRectangle.from_lrud(
-            round(self.left, digits),
-            round(self.right, digits),
-            round(self.up, digits),
-            round(self.down, digits)
+    def __round__(self, *args, **kwargs):
+        return self.from_lrdu(
+            *(round(i, *args, **kwargs) for i in self.lrdu)
         )
 
     def is_empty(self):

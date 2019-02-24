@@ -2,8 +2,8 @@ import sys
 my_scripts_dir = r'd:\dev\Scripts'
 sys.path.append(my_scripts_dir)
 
-from gdalos import gdalos_trans, OvrType
-from gdalos import GeoRectangle
+from gdalos.gdalos import gdalos_trans
+from gdalos.gdalos import GeoRectangle
 
 my_extent = GeoRectangle.from_min_max(5, 85, 30, 40)
 
