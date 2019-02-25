@@ -151,9 +151,11 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
     if kind is ...:
         kind = Kind.guess(bands)
 
-    if (dst_NDV is ...) and (kind == Kind.dtm):
-        dst_NDV = -32768
-        src_nodatavalue = gdal_helper.get_nodatavalue(ds)
+    if (dst_NDV is not None) and (kind == Kind.dtm):
+        if dst_NDV is ...:
+           dst_NDV = -32768
+        src_nodatavalue_org = gdal_helper.get_nodatavalue(ds)
+        src_nodatavalue = src_nodatavalue_org
         if src_nodatavalue is None:
             # assume raster minimum is nodata if nodata isn't set
             src_nodatavalue = gdal_helper.get_raster_minimum(ds)
@@ -162,10 +164,11 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
             do_warp = True
             warp_options['dstNodata'] = dst_NDV
 
-        if not do_warp:
-            translate_options['noData'] = src_nodatavalue
-        else:
-            warp_options['srcNodata'] = src_nodatavalue
+        if src_nodatavalue_org is not src_nodatavalue:
+            if not do_warp:
+                translate_options['noData'] = src_nodatavalue
+            else:
+                warp_options['srcNodata'] = src_nodatavalue
 
     out_suffix = ''
 
