@@ -101,6 +101,7 @@ default_filename = 'map.vrt'
 
 
 # todo this function is made of warnings
+# todo document this (I'm pretty sure src_ovr is int, but who knows)
 def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_SAFER',
                  warp_CRS=None, out_filename=None, out_base_path=None, kind: Kind = ..., lossy=False, expand_rgb=False,
                  skip_if_exist=False, out_res=None, create_info=True, dst_NDV=...,
