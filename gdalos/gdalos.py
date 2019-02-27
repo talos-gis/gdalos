@@ -15,7 +15,7 @@ import time
 import datetime
 
 
-class Kind(Enum):
+class RasterKind(Enum):
     photo = auto()
     pal = auto()
     dtm = auto()
@@ -28,23 +28,23 @@ class Kind(Enum):
             raise Exception('no bands in raster')
         if bands[0] == 'Byte':
             if len(bands) in (3, 4):
-                return Kind.photo
+                return RasterKind.photo
             elif len(bands) == 1:
-                return Kind.pal
+                return RasterKind.pal
             else:
                 raise Exception("invalid raster band count")
         elif len(bands) == 1:
-            return Kind.dtm
+            return RasterKind.dtm
         raise Exception('could not guess raster kind')
 
 
 def resample_method_by_kind(kind, expand_rgb=False):
-    if kind == Kind.pal:
+    if kind == RasterKind.pal:
         if expand_rgb:
             return 'average'
         else:
             return 'near'
-    elif kind == Kind.dtm:
+    elif kind == RasterKind.dtm:
         return 'average'
     else:
         return 'cubic'
@@ -103,7 +103,8 @@ default_filename = 'map.vrt'
 # todo this function is made of warnings
 # todo document this (I'm pretty sure src_ovr is int, but who knows)
 def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_SAFER',
-                 warp_CRS=None, out_filename=None, out_base_path=None, kind: Kind = ..., lossy=False, expand_rgb=False,
+                 warp_CRS=None, out_filename=None, out_base_path=None, kind: RasterKind = ..., lossy=False,
+                 expand_rgb=False,
                  skip_if_exist=False, out_res=None, create_info=True, dst_NDV=...,
                  hide_NDV=False, extent: Optional[GeoRectangle] = None, src_win=None, ovr_type=..., resample_method=...,
                  jpeg_quality=75, keep_alpha=True, config: dict = None, print_progress=..., verbose=True):
@@ -144,16 +145,13 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
         ovr_size = bnd_size
         ovr_res = bnd_res
 
-    if out_res is None:
-        out_res_xy = None
-    elif isinstance(out_res, collections.Iterable):
-        out_res_xy = (out_res[0], out_res[1])
+    out_res_xy = out_res
 
     bands = gdal_helper.get_band_types(ds)
     if kind is ...:
-        kind = Kind.guess(bands)
+        kind = RasterKind.guess(bands)
 
-    if (dst_NDV is ...) and (kind == Kind.dtm):
+    if (dst_NDV is ...) and (kind == RasterKind.dtm):
         dst_NDV = -32768
         src_nodatavalue = gdal_helper.get_nodatavalue(ds)
         if src_nodatavalue is None:
@@ -171,7 +169,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
 
     out_suffix = ''
 
-    if kind == Kind.pal and expand_rgb:
+    if kind == RasterKind.pal and expand_rgb:
         translate_options['rgbExpand'] = 'rgb'
         out_suffix += '.rgb'
 
@@ -200,7 +198,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
                     extent = zone_extent.crop(extent)
             out_suffix += '.' + projdef.get_canonic_name(warp_CRS[0], zone)
 
-        if kind == Kind.dtm:
+        if kind == RasterKind.dtm:
             common_options['outputType'] = gdal.GDT_Float32  # 'Float32'
 
         warp_options["dstSRS"] = pjstr_tgt_srs
@@ -273,7 +271,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
     if (org_comp is not None) and 'JPEG' in org_comp:
         lossy = True
 
-    if lossy and (kind != Kind.dtm):
+    if lossy and (kind != RasterKind.dtm):
         comp = 'JPEG'
         out_suffix = out_suffix + '.jpg'
     else:
@@ -413,7 +411,7 @@ def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=...
     if not os.path.isfile(filename):
         raise Exception(f'file not found: {filename}')
     if kind is None:
-        kind = Kind.guess(filename)
+        kind = RasterKind.guess(filename)
     if kind is None:
         raise Exception('could not guess kind')
 
