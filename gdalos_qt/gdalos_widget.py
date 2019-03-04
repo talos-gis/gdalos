@@ -20,7 +20,7 @@ class GdalosWidget(DictWidget):
         yield ValueCheckBox('tiled', ['NO', 'YES'])
         yield ValueCombo('BIGTIFF', options=['YES', 'NO', 'IF_NEEDED', 'IF_SAFER'], default_value='IF_SAFER')
         yield OptionalValueWidget(
-            CrsWidget('wrap CRS', make_plaintext_button=True, make_validator_label=False,
+            CrsWidget('wrap CRS', make_plaintext_button=True, make_validator_label=True,
                       frame_style=QFrame.Box | QFrame.Plain)
         )
         yield OptionalValueWidget(
@@ -45,8 +45,7 @@ if __name__ == '__main__':
     from PyQt5.QtWidgets import QApplication
 
     app = QApplication([])
-    w = GdalosWidget('gdalos', make_title_label=False, make_plaintext_button=True)
-    w.setMinimumSize(800, 600)
+    w = GdalosWidget('gdalos', make_title_label=False, make_plaintext_button=True, scrollable=True)
     w.show()
     res = app.exec_()
     print(w.value())

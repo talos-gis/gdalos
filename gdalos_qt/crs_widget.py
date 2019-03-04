@@ -15,7 +15,7 @@ def zone_validator(v: float):
 class CrsWidget(StackedValueWidget[str]):
     @inner_widget('utm')
     class CrsWidgetUtm(ConverterWidget[dict, str]):
-        @inner_widget(make_validator_label=False)
+        @inner_widget(make_validator_label=False, make_title_label=False)
         class _CrsWidgetUtmMulti(DictWidget):
             def make_inner(self):
                 yield ValueEditCombo('datum', ('w84', 'e50'), default_index=0, make_title_label=False,
@@ -49,7 +49,7 @@ class CrsWidget(StackedValueWidget[str]):
         def make_pattern(self):
             return r'\+proj=[a-zA-Z0-9_.]+(\s+\+[a-zA-Z_][a-zA-Z0-9_]*=[-a-zA-Z0-9_.]+)*'
 
-    @inner_widget('builtin', options=('w84geo',), default_value='w84geo')
+    @inner_widget('builtin', options=('w84geo',), default_value='w84geo', make_title_label=False)
     class CrsWidgetBuiltin(ValueCombo):
         pass
 
