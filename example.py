@@ -10,7 +10,7 @@ my_extent = GeoRectangle.from_min_max(5, 85, 30, 40)
 
 def test_srtm():
     srtm_path = r'd:\maps\srtm.tif'
-    [gdalos_trans(path=srtm_path, extent=my_extent, warp_CRS=warp_CRS, dst_NDV=0, hide_NDV=True) for warp_CRS in [None, 32, 34]]
+    [gdalos_trans(path=srtm_path, extent=my_extent, warp_CRS=warp_CRS, dst_nodatavalue=0, hide_NDV=True) for warp_CRS in [None, 32, 34]]
 
 
 def test_rgb():

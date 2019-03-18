@@ -101,10 +101,10 @@ default_filename = 'map.vrt'
 
 
 def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_SAFER',
-                warp_CRS=None, out_filename=None, out_base_path=None, kind: Kind = ..., lossy=False, expand_rgb=False,
-                skip_if_exist=False, out_res=None, create_info=True, dst_NDV=...,
-                hide_NDV=False, extent: Optional[GeoRectangle]=None, src_win=None, ovr_type=..., resample_method=...,
-                jpeg_quality=75, keep_alpha=True, config: dict = None, print_progress=..., verbose=True):
+                 warp_CRS=None, out_filename=None, out_base_path=None, kind: Kind = ..., lossy=False, expand_rgb=False,
+                 skip_if_exist=False, out_res=None, create_info=True, dst_nodatavalue=..., src_nodatavalue=...,
+                 hide_NDV=False, extent: Optional[GeoRectangle]=None, src_win=None, ovr_type=..., resample_method=...,
+                 jpeg_quality=75, keep_alpha=True, config: dict = None, print_progress=..., verbose=True):
     if verbose:
         print_time()
     timer = time.time()
@@ -151,18 +151,19 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
     if kind is ...:
         kind = Kind.guess(bands)
 
-    if (dst_NDV is not None) and (kind == Kind.dtm):
-        if dst_NDV is ...:
-           dst_NDV = -32768
+    if (dst_nodatavalue is not None) and (kind == Kind.dtm):
+        if dst_nodatavalue is ...:
+           dst_nodatavalue = -32768
         src_nodatavalue_org = gdal_helper.get_nodatavalue(ds)
-        src_nodatavalue = src_nodatavalue_org
+        if src_nodatavalue is ...:
+            src_nodatavalue = src_nodatavalue_org
         if src_nodatavalue is None:
             # assume raster minimum is nodata if nodata isn't set
             src_nodatavalue = gdal_helper.get_raster_minimum(ds)
 
-        if src_nodatavalue != dst_NDV:
+        if src_nodatavalue != dst_nodatavalue:
             do_warp = True
-            warp_options['dstNodata'] = dst_NDV
+            warp_options['dstNodata'] = dst_nodatavalue
 
         if src_nodatavalue_org is not src_nodatavalue:
             if not do_warp:
@@ -366,7 +367,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
                                             warp_CRS=warp_CRS,
                                             out_filename=out_ovr_filename, kind=kind, lossy=lossy,
                                             skip_if_exist=skip_if_exist, out_res=out_res, create_info=False,
-                                            dst_NDV=dst_NDV, hide_NDV=hide_NDV, extent=extent,
+                                            dst_nodatavalue=dst_nodatavalue, hide_NDV=hide_NDV, extent=extent,
                                             src_win=src_win, ovr_type=None, resample_method=resample_method,
                                             keep_alpha=keep_alpha, jpeg_quality=jpeg_quality,
                                             print_progress=print_progress, verbose=verbose)
