@@ -4,7 +4,6 @@ import os
 from enum import Enum, auto
 
 import gdal
-import collections
 
 from . import gdal_helper
 from . import get_extent
@@ -13,6 +12,15 @@ from .rectangle import GeoRectangle
 
 import time
 import datetime
+
+
+class OvrType(Enum):
+    internal = auto()  # create overviews inside the main dataset file
+    single_external = auto()  # create a single .ovr file with all the overviews
+    multi_external = auto()  # create one ovr file per overview: .ovr, .ovr.ovr, .ovr.ovr.orv ....
+    existing = auto()  # work with existing overviews
+    copy_internal = auto()  # COPY_SRC_OVERVIEWS
+    copy_single_external = auto()  # COPY_SRC_OVERVIEWS for .ovr file
 
 
 class RasterKind(Enum):
@@ -106,7 +114,8 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
                  warp_CRS=None, out_filename=None, out_base_path=None, kind: RasterKind = ..., lossy=False,
                  expand_rgb=False,
                  skip_if_exist=False, out_res=None, create_info=True, dst_NDV=...,
-                 hide_NDV=False, extent: Optional[GeoRectangle] = None, src_win=None, ovr_type=..., resample_method=...,
+                 hide_NDV=False, extent: Optional[GeoRectangle] = None, src_win=None, ovr_type: Optional[OvrType] = ...,
+                 resample_method=...,
                  jpeg_quality=75, keep_alpha=True, config: dict = None, print_progress=..., verbose=True):
     if verbose:
         print_time()
@@ -389,15 +398,6 @@ def add_ovr(filename, options, open_options, skip_if_exist=False, verbose=True):
             return ds.BuildOverviews(**options)
     else:
         return 0
-
-
-class OvrType(Enum):
-    internal = auto()  # create overviews inside the main dataset file
-    single_external = auto()  # create a single .ovr file with all the overviews
-    multi_external = auto()  # create one ovr file per overview: .ovr, .ovr.ovr, .ovr.ovr.orv ....
-    existing = auto()  # work with existing overviews
-    copy_internal = auto()  # COPY_SRC_OVERVIEWS
-    copy_single_external = auto()  # COPY_SRC_OVERVIEWS for .ovr file
 
 
 def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=..., resampling_method=None,

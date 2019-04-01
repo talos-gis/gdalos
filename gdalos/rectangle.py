@@ -89,12 +89,20 @@ class GeoRectangle:
         return self.left, self.up, self.right, self.down
 
     @property
+    def lrud(self):
+        return self.left, self.right, self.up, self.down
+
+    @property
     def ldru(self):
         return self.left, self.down, self.right, self.up
 
     @property
     def lrdu(self):
         return self.left, self.right, self.down, self.up
+
+    @property
+    def xywh(self):
+        return self.x, self.y, self.w, self.h
 
     @property
     def min_max(self):

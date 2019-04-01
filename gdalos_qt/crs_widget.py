@@ -1,10 +1,11 @@
-from PyQt5.QtWidgets import QHBoxLayout
+import re
 
-from functools import partial
+from fidget.backend.QtWidgets import QHBoxLayout
 
-from qtalos import validator, InnerPlaintextParser, PlaintextParseError
-from qtalos.widgets import ValueEditCombo, FloatEdit, ValueCombo, StackedValueWidget, LineEdit, ConverterWidget, \
-    DictWidget, inner_widget
+from fidget.core import validator, inner_plaintext_parser, PlaintextParseError
+
+from fidget.widgets import FidgetCombo, FidgetFloat, FidgetEditCombo, FidgetStacked, FidgetLine, FidgetConverter, \
+    FidgetDict, inner_fidget
 
 
 @validator('zone must be between 1 and 60')
@@ -12,24 +13,26 @@ def zone_validator(v: float):
     return 1 <= v <= 60
 
 
-class CrsWidget(StackedValueWidget[str]):
-    @inner_widget('utm')
-    class CrsWidgetUtm(ConverterWidget[dict, str]):
-        @inner_widget(make_validator_label=False, make_title_label=False)
-        class _CrsWidgetUtmMulti(DictWidget):
-            def make_inner(self):
-                yield ValueEditCombo('datum', ('w84', 'e50'), default_index=0, make_title_label=False,
-                                     make_validator_label=False)
-                yield FloatEdit('zone', make_title_label=False, validation_func=zone_validator,
-                                make_validator_label=False)
+class CrsWidget(FidgetStacked[str]):
+    @inner_fidget()
+    class CrsWidgetUtm(FidgetConverter[dict, str]):
+        @inner_fidget('utm', make_indicator=False, make_title=False)
+        class _CrsWidgetUtmMulti(FidgetDict):
+            INNER_TEMPLATES = [
+                FidgetEditCombo.template('datum', ('w84', 'e50'), make_title=False,
+                                         make_indicator=False, make_plaintext=False),
+                FidgetFloat.template('zone', make_title=False, validation_func=zone_validator,
+                                     make_indicator=False)
+            ]
 
-            default_layout_cls = QHBoxLayout
+            LAYOUT_CLS = QHBoxLayout
 
         def convert(self, d: dict):
             return f'{d["datum"]}u{d["zone"]:n}'
 
-        @InnerPlaintextParser
-        def shorthand(self, s: str):
+        @inner_plaintext_parser
+        @staticmethod
+        def shorthand(s: str):
             split = s.rsplit('u', 2)
             if len(split) == 1:
                 raise PlaintextParseError('string must contain a "u" separator')
@@ -42,23 +45,33 @@ class CrsWidget(StackedValueWidget[str]):
             else:
                 datum, zone = split
 
+            try:
+                zone = float(zone)
+            except ValueError:
+                zone = 0
+
             return {'datum': datum, 'zone': zone}
 
-    @inner_widget('proj4')
-    class CrsWidgetProj(LineEdit):
-        def make_pattern(self):
-            return r'\+proj=[a-zA-Z0-9_.]+(\s+\+[a-zA-Z_][a-zA-Z0-9_]*=[-a-zA-Z0-9_.]+)*'
+    @inner_fidget('proj4')
+    class CrsWidgetProj(FidgetLine):
+        PATTERN = re.compile(r'\+proj=[a-zA-Z0-9_.]+(\s+\+[a-zA-Z_][a-zA-Z0-9_]*=[-a-zA-Z0-9_.]+)*')
 
-    @inner_widget('builtin', options=('w84geo',), default_value='w84geo', make_title_label=False)
-    class CrsWidgetBuiltin(ValueCombo):
+    @inner_fidget('builtin', options=('w84geo',), initial_value='w84geo', make_title=False)
+    class CrsWidgetBuiltin(FidgetCombo):
         pass
+
+    MAKE_TITLE = True
+    MAKE_INDICATOR = True
+    LAYOUT_CLS = QHBoxLayout
+    SELECTOR_CLS = 'radio'
 
 
 if __name__ == '__main__':
-    from PyQt5.QtWidgets import QApplication
-    from qtalos.widgets import OptionalValueWidget
+    from fidget.backend.QtWidgets import QApplication
+    from fidget.widgets import FidgetOptional
 
     app = QApplication([])
-    w = OptionalValueWidget(CrsWidget('sample', make_plaintext_button=True))
+    w = FidgetOptional(CrsWidget('sample', make_plaintext=True))
     w.show()
-    exit(app.exec_())
+    app.exec_()
+    print(w.value())
