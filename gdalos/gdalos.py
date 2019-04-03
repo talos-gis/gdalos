@@ -4,7 +4,6 @@ import os
 from enum import Enum, auto
 
 import gdal
-import collections
 
 from . import gdal_helper
 from . import get_extent
@@ -15,7 +14,16 @@ import time
 import datetime
 
 
-class Kind(Enum):
+class OvrType(Enum):
+    internal = auto()  # create overviews inside the main dataset file
+    single_external = auto()  # create a single .ovr file with all the overviews
+    multi_external = auto()  # create one ovr file per overview: .ovr, .ovr.ovr, .ovr.ovr.orv ....
+    existing = auto()  # work with existing overviews
+    copy_internal = auto()  # COPY_SRC_OVERVIEWS
+    copy_single_external = auto()  # COPY_SRC_OVERVIEWS for .ovr file
+
+
+class RasterKind(Enum):
     photo = auto()
     pal = auto()
     dtm = auto()
@@ -28,23 +36,23 @@ class Kind(Enum):
             raise Exception('no bands in raster')
         if bands[0] == 'Byte':
             if len(bands) in (3, 4):
-                return Kind.photo
+                return RasterKind.photo
             elif len(bands) == 1:
-                return Kind.pal
+                return RasterKind.pal
             else:
                 raise Exception("invalid raster band count")
         elif len(bands) == 1:
-            return Kind.dtm
+            return RasterKind.dtm
         raise Exception('could not guess raster kind')
 
 
 def resample_method_by_kind(kind, expand_rgb=False):
-    if kind == Kind.pal:
+    if kind == RasterKind.pal:
         if expand_rgb:
             return 'average'
         else:
             return 'near'
-    elif kind == Kind.dtm:
+    elif kind == RasterKind.dtm:
         return 'average'
     else:
         return 'cubic'
@@ -82,7 +90,7 @@ def add_print_progress_callback(print_progress, options):
             def print_progress(*data):
                 # print('progress: ', data)
                 # print(str(round(percent))+'%', end=" ")
-                percent = data[0]*100
+                percent = data[0] * 100
                 if 'last' not in print_progress.__dict__:
                     print_progress.last = None
                 r0 = print_progress.last
@@ -100,10 +108,13 @@ def print_time():
 default_filename = 'map.vrt'
 
 
+# todo this function is made of warnings
+# todo document this (I'm pretty sure src_ovr is int, but who knows)
 def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_SAFER',
-                 warp_CRS=None, out_filename=None, out_base_path=None, kind: Kind = ..., lossy=False, expand_rgb=False,
-                 skip_if_exist=False, out_res=None, create_info=True, dst_nodatavalue=..., src_nodatavalue=...,
-                 hide_NDV=False, extent: Optional[GeoRectangle]=None, src_win=None, ovr_type=..., resample_method=...,
+                 warp_CRS=None, out_filename=None, out_base_path=None, kind: RasterKind = ..., lossy=False,
+                 expand_rgb=False, skip_if_exist=False, out_res=None, create_info=True,
+                 dst_nodatavalue=..., src_nodatavalue=..., hide_nodatavalue=False, extent: Optional[GeoRectangle] = None, src_win=None, ovr_type: Optional[OvrType] = ...,
+                 resample_method=...,
                  jpeg_quality=75, keep_alpha=True, config: dict = None, print_progress=..., verbose=True):
     if verbose:
         print_time()
@@ -134,7 +145,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
     if src_ovr is not None:
         ovr = gdal_helper.get_raster_band(ds, 1, src_ovr)
         ovr_size = (ovr.XSize, ovr.YSize)
-        ovr_res = [bnd_res[i]*bnd_size[i]/ovr_size[i] for i in (0, 1)]
+        ovr_res = [bnd_res[i] * bnd_size[i] / ovr_size[i] for i in (0, 1)]
         ovr_type = None
         warp_options['overviewLevel'] = src_ovr
     else:
@@ -142,16 +153,13 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
         ovr_size = bnd_size
         ovr_res = bnd_res
 
-    if out_res is None:
-        out_res_xy = None
-    elif isinstance(out_res, collections.Iterable):
-        out_res_xy = (out_res[0], out_res[1])
+    out_res_xy = out_res
 
     bands = gdal_helper.get_band_types(ds)
     if kind is ...:
-        kind = Kind.guess(bands)
+        kind = RasterKind.guess(bands)
 
-    if (dst_nodatavalue is not None) and (kind == Kind.dtm):
+    if (dst_nodatavalue is not None) and (kind == RasterKind.dtm):
         if dst_nodatavalue is ...:
            dst_nodatavalue = -32768
         src_nodatavalue_org = gdal_helper.get_nodatavalue(ds)
@@ -173,7 +181,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
 
     out_suffix = ''
 
-    if kind == Kind.pal and expand_rgb:
+    if kind == RasterKind.pal and expand_rgb:
         translate_options['rgbExpand'] = 'rgb'
         out_suffix += '.rgb'
 
@@ -202,8 +210,8 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
                     extent = zone_extent.crop(extent)
             out_suffix += '.' + projdef.get_canonic_name(warp_CRS[0], zone)
 
-        if kind == Kind.dtm:
-            common_options['outputType'] = gdal.GDT_Float32  #'Float32'
+        if kind == RasterKind.dtm:
+            common_options['outputType'] = gdal.GDT_Float32  # 'Float32'
 
         warp_options["dstSRS"] = pjstr_tgt_srs
 
@@ -254,7 +262,8 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
 
                     in_res_y = ovr_res[1]  # geo_transform[5]  # Mpp.Y == geotransform[5]
 
-                    out_res_x = get_extent.transform_resolution(transform_src_tgt, in_res_y, *out_extent_in_src_srs.lrdu)
+                    out_res_x = get_extent.transform_resolution(transform_src_tgt, in_res_y,
+                                                                *out_extent_in_src_srs.lrdu)
                     out_res_x = get_extent.round_to_sig(out_res_x, -1)
                     out_res_xy = (out_res_x, -out_res_x)
             else:
@@ -274,7 +283,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
     if (org_comp is not None) and 'JPEG' in org_comp:
         lossy = True
 
-    if lossy and (kind != Kind.dtm):
+    if lossy and (kind != RasterKind.dtm):
         comp = 'JPEG'
         out_suffix = out_suffix + '.jpg'
     else:
@@ -289,7 +298,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
                 out_extent_in_4326 = get_extent.translate_extent(extent, transform)
             else:
                 out_extent_in_4326 = extent
-            out_extent_in_4326 = out_extent_in_4326.round(2)
+            out_extent_in_4326 = round(out_extent_in_4326, 2)
             out_suffix = out_suffix + '.x[{},{}]_y[{},{}]'.format(*out_extent_in_4326.lrdu)
         else:
             if src_win is not None:
@@ -307,7 +316,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
     # if (comp == 'JPEG') and (len(bands) == 3) or ((len(bands) == 4) and (keep_alpha)):
     if (not do_warp) and (comp == 'JPEG') and (len(bands) in (3, 4)):
         common_options['creationOptions'].append('PHOTOMETRIC=YCBCR')
-        common_options['creationOptions'].append('JPEG_QUALITY='+str(jpeg_quality))
+        common_options['creationOptions'].append('JPEG_QUALITY=' + str(jpeg_quality))
 
         if len(bands) == 4:  # alpha channel is not supported with PHOTOMETRIC=YCBCR, thus we drop it
             translate_options['bandList'] = [1, 2, 3]
@@ -327,7 +336,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
             gdal.SetConfigOption(k, v)
 
     if verbose:
-        print('filename: '+out_filename + ' ...')
+        print('filename: ' + out_filename + ' ...')
         print('common options: ' + str(common_options))
 
     ret_code = 0
@@ -340,7 +349,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
             if k > cutoff:
                 common_options.pop(k)
         if verbose:
-            print('wrap options: '+str(warp_options))
+            print('wrap options: ' + str(warp_options))
         ret_code = gdal.Warp(out_filename, filename, **common_options, **warp_options)
     else:
         if verbose:
@@ -352,12 +361,14 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
         print('Time for creating file: {} is {} seconds'.format(filename, round(time.time() - timer)))
 
     if ret_code is not None:
-        if hide_NDV:
+        if hide_nodatavalue:
             gdal_helper.unset_nodatavalue(out_filename)
 
-        if (ovr_type is not None) and (ovr_type != OvrType.copy_internal) and (ovr_type != OvrType.copy_single_external):
+        if (ovr_type is not None) and (ovr_type != OvrType.copy_internal) and (
+                ovr_type != OvrType.copy_single_external):
             if ovr_type != OvrType.existing:
-                gdalos_ovr(out_filename, skip_if_exist=skip_if_exist, ovr_type=ovr_type, print_progress=print_progress, verbose=verbose)
+                gdalos_ovr(out_filename, skip_if_exist=skip_if_exist, ovr_type=ovr_type, print_progress=print_progress,
+                           verbose=verbose)
             else:
                 out_ovr_filename = out_filename
                 overview_count = gdal_helper.get_ovr_count(ds)
@@ -367,7 +378,7 @@ def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', 
                                             warp_CRS=warp_CRS,
                                             out_filename=out_ovr_filename, kind=kind, lossy=lossy,
                                             skip_if_exist=skip_if_exist, out_res=out_res, create_info=False,
-                                            dst_nodatavalue=dst_nodatavalue, hide_NDV=hide_NDV, extent=extent,
+                                            dst_nodatavalue=dst_nodatavalue, hide_nodatavalue=hide_nodatavalue, extent=extent,
                                             src_win=src_win, ovr_type=None, resample_method=resample_method,
                                             keep_alpha=keep_alpha, jpeg_quality=jpeg_quality,
                                             print_progress=print_progress, verbose=verbose)
@@ -392,17 +403,9 @@ def add_ovr(filename, options, open_options, skip_if_exist=False, verbose=True):
         return 0
 
 
-class OvrType(Enum):
-    internal = auto()  # create overviews inside the main dataset file
-    single_external = auto()  # create a single .ovr file with all the overviews
-    multi_external = auto()  # create one ovr file per overview: .ovr, .ovr.ovr, .ovr.ovr.orv ....
-    existing = auto()  # work with existing overviews
-    copy_internal = auto()  # COPY_SRC_OVERVIEWS
-    copy_single_external = auto()  # COPY_SRC_OVERVIEWS for .ovr file
-
-
-def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=..., resampling_method=None, print_progress=...,
-              ovr_levels_count=10, verbose=True):
+def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=..., resampling_method=None,
+               print_progress=...,
+               ovr_levels_count=10, verbose=True):
     if os.path.isdir(filename):
         filename = os.path.join(filename, default_filename)
 
@@ -411,7 +414,7 @@ def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=...
     if not os.path.isfile(filename):
         raise Exception(f'file not found: {filename}')
     if kind is None:
-        kind = Kind.guess(filename)
+        kind = RasterKind.guess(filename)
     if kind is None:
         raise Exception('could not guess kind')
 

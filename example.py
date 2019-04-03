@@ -1,27 +1,20 @@
-import sys
-my_scripts_dir = r'd:\dev\Scripts'
-sys.path.append(my_scripts_dir)
+import os
 
-from gdalos import gdalos_trans, OvrType
-from gdalos import GeoRectangle
+from gdalos import gdalos_trans
+from gdalos import GeoRectangle, OvrType
 
 my_extent = GeoRectangle.from_min_max(5, 85, 30, 40)
 
+bases = ('world.tiff', 'middle_east.tiff', 'zion.tiff', 'israel.tiff')
 
 def test_srtm():
     srtm_path = r'd:\maps\srtm.tif'
-    [gdalos_trans(path=srtm_path, extent=my_extent, warp_CRS=warp_CRS, dst_nodatavalue=0, hide_NDV=True) for warp_CRS in [None, 32, 34]]
+    [gdalos_trans(path=srtm_path, extent=my_extent, warp_CRS=warp_CRS, dst_nodatavalue=0, hide_nodatavalue=True) for warp_CRS in [None, 32, 34]]
+trans_osm = [
+    *(os.path.join(r'D:\Maps\OSM.tif\wms_eox', b) for b in bases),
+    *(os.path.join(r'D:\Maps\OSM.tif\mecr_tiles', b) for b in bases)
+]
+extent_me = GeoRectangle.from_min_max(20, 80, 20, 40)
 
-
-def test_rgb():
-    my_maps = [
-        r'c:\Maps\ortho_map.tif',
-        r'c:\Maps\osm_map.tif'
-    ]
-    [gdalos_trans(path, extent=None, lossy=True, skip_if_exist=False, resample_method='average', alpha=0) for path in my_maps]
-
-
-if __name__ == '__main__':
-    test_srtm()
-    test_rgb()
-    pass
+[gdalos_trans(path, lossy=True, skip_if_exist=True, ovr_type=OvrType.existing, extent=extent_me, warp_CRS=36)
+ for path in trans_osm]
