@@ -259,24 +259,20 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exist=
             # -te minx miny maxx maxy
             warp_options['outputBounds'] = out_extent_in_tgt_srs.ldru
 
+        transform = get_extent.get_transform(pjstr_4326, pjstr_src_srs)
+        if transform is not None:
+            out_extent_in_src_srs = get_extent.translate_extent(extent, transform)
+            out_extent_in_src_srs = out_extent_in_src_srs.crop(org_extent_in_src_srs)
+            if out_extent_in_src_srs.is_empty():
+                return None
+
         if out_res_xy is None:
             transform_src_tgt = get_extent.get_transform(pjstr_src_srs, pjstr_tgt_srs)
-            if (pjstr_src_srs != pjstr_tgt_srs) and transform_src_tgt is not None:
-                transform = get_extent.get_transform(pjstr_4326, pjstr_src_srs)
-                if transform is not None:
-                    out_extent_in_src_srs = get_extent.translate_extent(extent, transform)
-                    out_extent_in_src_srs = out_extent_in_src_srs.crop(org_extent_in_src_srs)
-                    if out_extent_in_src_srs.is_empty():
-                        return None
-
-                    in_res_y = ovr_res[1]  # geo_transform[5]  # Mpp.Y == geotransform[5]
-
-                    out_res_x = get_extent.transform_resolution(transform_src_tgt, in_res_y,
-                                                                *out_extent_in_src_srs.lrdu)
-                    out_res_x = get_extent.round_to_sig(out_res_x, -1)
-                    out_res_xy = (out_res_x, -out_res_x)
-            else:
-                out_extent_in_src_srs = extent
+            if transform_src_tgt is not None:
+                in_res_y = ovr_res[1]  # geo_transform[5]  # Mpp.Y == geotransform[5]
+                out_res_x = get_extent.transform_resolution(transform_src_tgt, in_res_y, *out_extent_in_src_srs.lrdu)
+                out_res_x = get_extent.round_to_sig(out_res_x, -1)
+                out_res_xy = (out_res_x, -out_res_x)
     elif src_win is not None:
         translate_options['srcWin'] = src_win
 
@@ -304,7 +300,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exist=
         if out_extent_in_src_srs is not None:
             transform = get_extent.get_transform(pjstr_src_srs, pjstr_4326)
             if transform is not None:
-                out_extent_in_4326 = get_extent.translate_extent(extent, transform)
+                out_extent_in_4326 = get_extent.translate_extent(out_extent_in_src_srs, transform)
             else:
                 out_extent_in_4326 = extent
             out_extent_in_4326 = round(out_extent_in_4326, 2)
@@ -315,6 +311,8 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exist=
         if out_suffix == '':
             out_suffix = '.new'
         out_filename = filename + out_suffix + '.' + outext
+    else:
+        out_filename = str(out_filename)
 
     if out_base_path is not None:
         out_filename = os.path.join(out_base_path, os.path.splitdrive(out_filename)[1])
