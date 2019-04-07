@@ -110,15 +110,24 @@ default_filename = 'map.vrt'
 
 # todo this function is made of warnings
 # todo document this (I'm pretty sure src_ovr is int, but who knows)
-def gdalos_trans(filename, src_ovr=None, of='GTiff', outext='tif', tiled='YES', big_tiff='IF_SAFER',
-                 warp_CRS=None, out_filename=None, out_base_path=None, kind: RasterKind = ..., lossy=False,
-                 expand_rgb=False, skip_if_exist=False, out_res=None, create_info=True,
-                 dst_nodatavalue=..., src_nodatavalue=..., hide_nodatavalue=False, extent: Optional[GeoRectangle] = None, src_win=None, ovr_type: Optional[OvrType] = ...,
-                 resample_method=...,
-                 jpeg_quality=75, keep_alpha=True, config: dict = None, print_progress=..., verbose=True):
+def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exist=False, create_info=True,
+                 of='GTiff', outext='tif', tiled='YES', big_tiff='IF_SAFER',
+                 extent: Optional[GeoRectangle] = None, src_win=None, 
+                 warp_CRS=None, out_res=None, 
+                 ovr_type: Optional[OvrType] = ..., src_ovr=None, resample_method=..., 
+                 src_nodatavalue=..., dst_nodatavalue=..., hide_nodatavalue=False, 
+                 kind: RasterKind = ..., lossy=False, expand_rgb=False, 
+                 jpeg_quality=75, keep_alpha=True, 
+                 config: dict = None, print_progress=..., verbose=True):
     if verbose:
         print_time()
     timer = time.time()
+
+    if isinstance(ovr_type, str):
+        ovr_type = OvrType[ovr_type]
+    if isinstance(kind, str):
+        kind = RasterKind[kind]
+
     if os.path.isdir(filename):
         filename = os.path.join(filename, default_filename)
 

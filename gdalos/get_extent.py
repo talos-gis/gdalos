@@ -44,8 +44,10 @@ def reproject_coordinates(coords, src_srs, tgt_srs):
 def get_transform(src_srs, tgt_srs):
     src_srs = _srs(src_srs)
     tgt_srs = _srs(tgt_srs)
-
-    return osr.CoordinateTransformation(src_srs, tgt_srs)
+    if src_srs.IsSame(tgt_srs):
+        return None
+    else:
+        return osr.CoordinateTransformation(src_srs, tgt_srs)
 
 
 def translate_extent(extent: GeoRectangle, transform, sample_count=1000):

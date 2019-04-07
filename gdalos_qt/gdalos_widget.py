@@ -79,10 +79,10 @@ class GdalosWidget(FidgetConverter):
                     FidgetOptional.template(
                         FidgetConverter.template(
                             FidgetTuple.template('extent', inner_templates=[
-                                FidgetFloat.template(letter) for letter in 'WENS'
+                                FidgetFloat.template(letter) for letter in 'WESN'
                             ], layout_cls=QHBoxLayout, make_title=False),
-                            converter_func=lambda x: GeoRectangle.from_lrud(*x),
-                            back_converter_func=GeoRectangle.lrud.fget
+                            converter_func=lambda x: GeoRectangle.from_lrdu(*x),
+                            back_converter_func=GeoRectangle.lrdu.fget
                         ),
                         make_title=True, make_indicator=False, make_plaintext=True
                     ),
