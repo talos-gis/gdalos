@@ -6,7 +6,8 @@ from gdalos_qt.gdalos_widget import GdalosWidget
 from fidget.widgets import FidgetQuestion
 from gdalos import gdalos_trans
 
-if __name__ == '__main__':
+
+def gdalos_qt_main():
     from fidget.backend.QtWidgets import QApplication
 
     app = QApplication([])
@@ -40,3 +41,7 @@ if __name__ == '__main__':
         d['keep_alpha'] = d.pop('keep alpha')
         print(gdalos_trans(**d))
     #app.exec_()
+
+
+if __name__ == '__main__':
+    gdalos_qt_main()
