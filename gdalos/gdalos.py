@@ -110,7 +110,7 @@ default_filename = 'map.vrt'
 
 # todo this function is made of warnings
 # todo document this (I'm pretty sure src_ovr is int, but who knows)
-def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists=False, create_info=True,
+def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists=True, create_info=True,
                  of='GTiff', outext='tif', tiled='YES', big_tiff='IF_SAFER',
                  extent: Optional[GeoRectangle] = None, src_win=None,
                  warp_CRS=None, out_res=None,
@@ -380,10 +380,9 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
                 gdalos_ovr(out_filename, skip_if_exist=skip_if_exists, ovr_type=ovr_type, print_progress=print_progress,
                            verbose=verbose)
             else:
-                out_ovr_filename = out_filename
                 overview_count = gdal_helper.get_ovr_count(ds)
-                for ovr_index in range(overview_count):
-                    out_ovr_filename = out_ovr_filename + '.ovr'
+                for ovr_index in range(overview_count-1, -1, -1):
+                    out_ovr_filename = out_filename + '.ovr' * (ovr_index+1)
                     ret_code = gdalos_trans(filename=filename, src_ovr=ovr_index, of=of, tiled=tiled, big_tiff=big_tiff,
                                             warp_CRS=warp_CRS,
                                             out_filename=out_ovr_filename, kind=kind, lossy=lossy,

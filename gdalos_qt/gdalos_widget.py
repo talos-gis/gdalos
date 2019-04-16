@@ -123,12 +123,24 @@ class GdalosWidget(FidgetConverter):
             ret.update(v)
         return ret
 
+    def back_convert(self, v: dict):
+        ret = {}
+        sw: FidgetDict
+        for d_name, sw in self.inner.inners.items():
+            ret[d_name] = {}
+            for title, ssw in sw.inners.items():
+                if title in v:
+                    ret[d_name][title] = v[title]
+
+        return ret
+
 
 if __name__ == '__main__':
     from fidget.backend.QtWidgets import QApplication
 
     app = QApplication([])
     w = GdalosWidget(make_title=True, make_plaintext=True, make_indicator=True)
+    print(w.fill)
     w.show()
     res = app.exec_()
     print(w.value())
