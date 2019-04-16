@@ -32,6 +32,7 @@ class GdalosWidget(FidgetConverter):
                                              make_title=True),
                     FidgetEditCombo.template('output extension', options=('tif',),
                                              make_title=True),
+                    FidgetCheckBox.template('skip if exists', initial_value=False),
                     FidgetCheckBox.template('tiled', options=('NO', 'YES')),
                     FidgetCombo.template('BIGTIFF', options=['YES', 'NO', 'IF_NEEDED', 'IF_SAFER'],
                                          initial_value='IF_SAFER',
@@ -65,7 +66,7 @@ class GdalosWidget(FidgetConverter):
                         ), layout_cls=QHBoxLayout),
                         make_indicator=False, make_title=True, make_plaintext=True
                     ),
-                    FidgetCheckBox.template('create info', initial_value=False),
+                    FidgetCheckBox.template('create info', initial_value=True),
 
                     NodatavalueWidget.template('destination nodatavalue'),
                     NodatavalueWidget.template('source nodatavalue'),

@@ -8,6 +8,12 @@ class GeoRectangle:
         self.w = w
         self.h = h
 
+    def __eq__(self, other):
+        if not isinstance(other, GeoRectangle):
+            # don't attempt to compare against unrelated types
+            return NotImplemented
+        return self.x == other.x and self.y == other.y and self.w == other.w and self.h == other.h
+
     def __round__(self, *args, **kwargs):
         return self.from_lrdu(
             *(round(i, *args, **kwargs) for i in self.lrdu)

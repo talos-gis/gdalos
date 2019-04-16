@@ -29,6 +29,7 @@ if __name__ == '__main__':
         d['kind'] = d.pop('raster kind')
         d['expand_rgb'] = d.pop('expand rgb')
         d['out_res'] = d.pop('resolution')
+        d['skip_if_exists'] = d.pop('skip if exists')
         d['create_info'] = d.pop('create info')
         d['dst_nodatavalue'] = d.pop('destination nodatavalue')
         d['src_nodatavalue'] = d.pop('source nodatavalue')
