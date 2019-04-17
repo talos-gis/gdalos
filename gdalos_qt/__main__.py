@@ -27,8 +27,8 @@ def gdalos_qt_main():
     result = q.exec()
     print(result)
     if result.is_ok() and result.value is not None:
-        for d in result.value:
-            d = dict(d)
+        for v in result.value:
+            d = dict(v[0])
             d['filename'] = str(d.pop('source file'))
             d['src_ovr'] = d.pop('source ovr')
             d['of'] = d.pop('output format')
@@ -51,5 +51,7 @@ def gdalos_qt_main():
             d['keep_alpha'] = d.pop('keep alpha')
             print(gdalos_trans(**d))
     # app.exec_()
+
+
 if __name__ == '__main__':
     gdalos_qt_main()
