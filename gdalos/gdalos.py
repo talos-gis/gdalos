@@ -375,7 +375,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
         print('Time for creating file: {} is {} seconds'.format(filename, round(time.time() - timer)))
 
     if ret_code is not None:
-        if hide_nodatavalue:
+        if not skipped and hide_nodatavalue:
             gdal_helper.unset_nodatavalue(out_filename)
 
         if (ovr_type is not None) and (ovr_type != OvrType.copy_internal) and (
