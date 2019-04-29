@@ -55,7 +55,7 @@ def get_canonic_name(datum, zone):
 def get_utm_zone_extent_points(float_zone, width=8):
     zone_center = get_zone_center(float_zone)
     x_arr = [zone_center - width / 2.0, zone_center + width / 2.0]
-    y_arr = [-90, 90]
+    y_arr = [-80, 80]
 
     extent_points = []
     for x in x_arr:

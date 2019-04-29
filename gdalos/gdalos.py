@@ -278,6 +278,8 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
             out_extent_in_src_srs = out_extent_in_src_srs.crop(org_extent_in_src_srs)
             if out_extent_in_src_srs.is_empty():
                 raise Exception
+        else:
+            out_extent_in_src_srs = extent
 
         if out_res_xy is None:
             transform_src_tgt = get_extent.get_transform(pjstr_src_srs, pjstr_tgt_srs)
@@ -321,8 +323,13 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
         elif src_win is not None:
             out_suffixes.append('off[{},{}]_size[{},{}]'.format(*src_win))
         if not out_suffixes:
-            out_suffixes.append('new')
-        out_filename = filename + '.' + '.'.join(out_suffixes) + '.' + outext
+            if '.'+outext == os.path.splitext(filename)[1]:  # input and output have the same extension
+                out_suffixes.append('new')
+        if out_suffixes:
+            out_suffixes = '.' + '.'.join(out_suffixes)
+        else:
+            out_suffixes = ''
+        out_filename = filename + out_suffixes + '.' + outext
     else:
         out_filename = str(out_filename)
 
@@ -380,7 +387,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
 
     if not skipped and verbose:
         print_time()
-        print('Time for creating file: {} is {} seconds'.format(filename, round(time.time() - start_time)))
+        print('Time for creating file: {} is {} seconds'.format(out_filename, round(time.time() - start_time)))
 
     if ret_code is not None:
         if not skipped and hide_nodatavalue:
