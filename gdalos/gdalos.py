@@ -114,7 +114,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
                  of='GTiff', outext='tif', tiled='YES', big_tiff='IF_SAFER',
                  extent: Optional[GeoRectangle] = None, src_win=None,
                  warp_CRS=None, out_res=None,
-                 ovr_type: Optional[OvrType] = ..., src_ovr=None, resample_method=...,
+                 ovr_type: Optional[OvrType] = ..., src_ovr=None, dst_overview_count=None, resample_method=...,
                  src_nodatavalue=..., dst_nodatavalue=-32768, hide_nodatavalue=False,
                  kind: RasterKind = ..., lossy=False, expand_rgb=False,
                  jpeg_quality=75, keep_alpha=True,
@@ -152,7 +152,9 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
     translate_options = {}
     warp_options = {}
 
-    do_warp = (src_ovr is not None) or (warp_CRS is not None)
+    if src_ovr is None:
+        src_ovr = -1
+    do_warp = (src_ovr >= 0) or (warp_CRS is not None)
 
     # todo needs a parameter to pass Open options
     ds = gdal.Open(filename)
@@ -164,7 +166,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
     # r- this if-else is a perfect example of this function's problems:
     #  * inexplicable and undocumented
     #  * it sets the output to None, ignoring parameters is never a good idea
-    if src_ovr is not None:
+    if src_ovr >= 0:
         ovr = bnd.GetOverview(src_ovr)
         ovr_res = (
             bnd_res[0] * bnd_size[0] / ovr.XSize,
@@ -188,7 +190,6 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
             src_nodatavalue = src_nodatavalue_org
         if src_nodatavalue is None:
             # assume raster minimum is nodata if nodata isn't set
-            # r- why? can't we have a raster in which all the values are applicable?
             src_nodatavalue = gdal_helper.get_raster_minimum(ds)
 
         if src_nodatavalue != dst_nodatavalue:
@@ -288,7 +289,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
     elif src_win is not None:
         translate_options['srcWin'] = src_win
 
-    if out_res_xy is None and src_ovr is not None:
+    if out_res_xy is None and src_ovr >= 0:
         out_res_xy = ovr_res
 
     if out_res_xy is not None:
@@ -321,7 +322,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
             out_suffixes.append('off[{},{}]_size[{},{}]'.format(*src_win))
         if not out_suffixes:
             out_suffixes.append('new')
-        out_filename = filename + '.'.join(out_suffixes) + '.' + outext
+        out_filename = filename + '.' + '.'.join(out_suffixes) + '.' + outext
     else:
         out_filename = str(out_filename)
 
@@ -362,7 +363,10 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
         print('common options: ' + str(common_options))
 
     ret_code = 0
-    skipped = do_skip_if_exists(out_filename, skip_if_exists, verbose)
+    if ovr_type == OvrType.translate_existing:
+        skipped = True
+    else:
+        skipped = do_skip_if_exists(out_filename, skip_if_exists, verbose)
     if skipped:
         pass
     elif do_warp:
@@ -388,19 +392,32 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
                            verbose=verbose)
             else:
                 overview_count = gdal_helper.get_ovr_count(ds)
-                for ovr_index in range(overview_count - 1, -1, -1):
+                overview_first = overview_count - 1
+                overview_last = -1  # base ds
+
+                if dst_overview_count is not None:
+                    if dst_overview_count >= 0:
+                        overview_first = min(overview_count, dst_overview_count) - 1
+                    else:
+                        overview_last = overview_first + dst_overview_count + 1
+
+                for ovr_index in range(overview_first, overview_last-1, -1):
                     out_ovr_filename = out_filename + '.ovr' * (ovr_index + 1)
-                    ret_code = gdalos_trans(filename=filename, src_ovr=ovr_index, of=of, tiled=tiled, big_tiff=big_tiff,
-                                            warp_CRS=warp_CRS,
-                                            out_filename=out_ovr_filename, kind=kind, lossy=lossy,
-                                            skip_if_exists=skip_if_exists, out_res=out_res, create_info=False,
+                    ret_code = gdalos_trans(out_filename=out_ovr_filename,
+                                            src_ovr=ovr_index, ovr_type=None, dst_overview_count=None,
+                                            create_info=ovr_index == overview_last,
+
+                                            filename=filename, of=of, tiled=tiled, big_tiff=big_tiff, warp_CRS=warp_CRS,
+                                            kind=kind, lossy=lossy,
+                                            skip_if_exists=skip_if_exists, out_res=out_res,
                                             dst_nodatavalue=dst_nodatavalue, hide_nodatavalue=hide_nodatavalue,
                                             extent=extent,
-                                            src_win=src_win, ovr_type=None, resample_method=resample_method,
+                                            src_win=src_win, resample_method=resample_method,
                                             keep_alpha=keep_alpha, jpeg_quality=jpeg_quality,
                                             print_progress=print_progress, verbose=verbose)
                     if ret_code is None:
                         break
+                create_info = False
         if create_info:
             gdalos_info(out_filename, skip_if_exist=skip_if_exists)
 
