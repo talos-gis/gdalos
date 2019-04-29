@@ -341,6 +341,10 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
 
     common_options['format'] = of
 
+    if config is None:
+        config = dict()
+    config['GDAL_HTTP_UNSAFESSL'] = 'YES'
+
     if config:
         for k, v in config.items():
             gdal.SetConfigOption(k, v)
