@@ -16,5 +16,5 @@ trans_osm = [
 ]
 extent_me = GeoRectangle.from_min_max(20, 80, 20, 40)
 
-[gdalos_trans(path, lossy=True, skip_if_exist=True, ovr_type=OvrType.existing, extent=extent_me, warp_CRS=36)
+[gdalos_trans(path, lossy=True, skip_if_exists=True, ovr_type=OvrType.existing, extent=extent_me, warp_CRS=36)
  for path in trans_osm]

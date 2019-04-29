@@ -110,18 +110,19 @@ default_filename = 'map.vrt'
 
 # todo this function is made of warnings
 # todo document this (I'm pretty sure src_ovr is int, but who knows)
-def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exist=False, create_info=True,
+def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists=True, create_info=True,
                  of='GTiff', outext='tif', tiled='YES', big_tiff='IF_SAFER',
-                 extent: Optional[GeoRectangle] = None, src_win=None, 
-                 warp_CRS=None, out_res=None, 
-                 ovr_type: Optional[OvrType] = ..., src_ovr=None, resample_method=..., 
-                 src_nodatavalue=..., dst_nodatavalue=..., hide_nodatavalue=False, 
-                 kind: RasterKind = ..., lossy=False, expand_rgb=False, 
-                 jpeg_quality=75, keep_alpha=True, 
+                 extent: Optional[GeoRectangle] = None, src_win=None,
+                 warp_CRS=None, out_res=None,
+                 ovr_type: Optional[OvrType] = ..., src_ovr=None, resample_method=...,
+                 src_nodatavalue=..., dst_nodatavalue=..., hide_nodatavalue=False,
+                 kind: RasterKind = ..., lossy=False, expand_rgb=False,
+                 jpeg_quality=75, keep_alpha=True,
                  config: dict = None, print_progress=..., verbose=True):
     if verbose:
         print_time()
     timer = time.time()
+    extent_was_cropped = False
 
     if isinstance(ovr_type, str):
         ovr_type = OvrType[ovr_type]
@@ -217,6 +218,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exist=
                     extent = zone_extent
                 else:
                     extent = zone_extent.crop(extent)
+                extent_was_cropped = True
             out_suffix += '.' + projdef.get_canonic_name(warp_CRS[0], zone)
 
         if kind == RasterKind.dtm:
@@ -247,6 +249,8 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exist=
         transform = get_extent.get_transform(pjstr_4326, pjstr_tgt_srs)
         out_extent_in_tgt_srs = get_extent.translate_extent(extent, transform)
         out_extent_in_tgt_srs = out_extent_in_tgt_srs.crop(org_extent_in_tgt_srs)
+        if not((out_extent_in_tgt_srs == org_extent_in_tgt_srs) or (transform is None and out_extent_in_tgt_srs == extent)):
+            extent_was_cropped = True
 
         if out_extent_in_tgt_srs.is_empty():
             print('no output extent: {} [{}]'.format(filename, out_extent_in_tgt_srs))
@@ -297,17 +301,16 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exist=
         common_options['creationOptions'].append('COPY_SRC_OVERVIEWS=YES')
 
     if out_filename is None:
-        if out_extent_in_src_srs is not None:
+        out_extent_in_4326 = extent
+        if extent_was_cropped and (out_extent_in_src_srs is not None):
             transform = get_extent.get_transform(pjstr_src_srs, pjstr_4326)
             if transform is not None:
                 out_extent_in_4326 = get_extent.translate_extent(out_extent_in_src_srs, transform)
-            else:
-                out_extent_in_4326 = extent
             out_extent_in_4326 = round(out_extent_in_4326, 2)
+        if out_extent_in_4326 is not None:
             out_suffix = out_suffix + '.x[{},{}]_y[{},{}]'.format(*out_extent_in_4326.lrdu)
-        else:
-            if src_win is not None:
-                out_suffix = out_suffix + '.off[{},{}]_size[{},{}]'.format(*src_win)
+        elif src_win is not None:
+            out_suffix = out_suffix + '.off[{},{}]_size[{},{}]'.format(*src_win)
         if out_suffix == '':
             out_suffix = '.new'
         out_filename = filename + out_suffix + '.' + outext
@@ -347,7 +350,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exist=
         print('common options: ' + str(common_options))
 
     ret_code = 0
-    skipped = do_skip_if_exists(out_filename, skip_if_exist, verbose)
+    skipped = do_skip_if_exists(out_filename, skip_if_exists, verbose)
     if skipped:
         pass
     elif do_warp:
@@ -368,23 +371,22 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exist=
         print('Time for creating file: {} is {} seconds'.format(filename, round(time.time() - timer)))
 
     if ret_code is not None:
-        if hide_nodatavalue:
+        if not skipped and hide_nodatavalue:
             gdal_helper.unset_nodatavalue(out_filename)
 
         if (ovr_type is not None) and (ovr_type != OvrType.copy_internal) and (
                 ovr_type != OvrType.copy_single_external):
             if ovr_type != OvrType.existing:
-                gdalos_ovr(out_filename, skip_if_exist=skip_if_exist, ovr_type=ovr_type, print_progress=print_progress,
+                gdalos_ovr(out_filename, skip_if_exist=skip_if_exists, ovr_type=ovr_type, print_progress=print_progress,
                            verbose=verbose)
             else:
-                out_ovr_filename = out_filename
                 overview_count = gdal_helper.get_ovr_count(ds)
-                for ovr_index in range(overview_count):
-                    out_ovr_filename = out_ovr_filename + '.ovr'
+                for ovr_index in range(overview_count-1, -1, -1):
+                    out_ovr_filename = out_filename + '.ovr' * (ovr_index+1)
                     ret_code = gdalos_trans(filename=filename, src_ovr=ovr_index, of=of, tiled=tiled, big_tiff=big_tiff,
                                             warp_CRS=warp_CRS,
                                             out_filename=out_ovr_filename, kind=kind, lossy=lossy,
-                                            skip_if_exist=skip_if_exist, out_res=out_res, create_info=False,
+                                            skip_if_exists=skip_if_exists, out_res=out_res, create_info=False,
                                             dst_nodatavalue=dst_nodatavalue, hide_nodatavalue=hide_nodatavalue, extent=extent,
                                             src_win=src_win, ovr_type=None, resample_method=resample_method,
                                             keep_alpha=keep_alpha, jpeg_quality=jpeg_quality,
@@ -392,7 +394,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exist=
                     if ret_code is None:
                         break
         if create_info:
-            gdalos_info(out_filename, skip_if_exist=skip_if_exist)
+            gdalos_info(out_filename, skip_if_exist=skip_if_exists)
 
     ds = None
     return ret_code
