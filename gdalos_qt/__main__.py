@@ -2,6 +2,7 @@ from fidget.backend import prefer
 
 prefer('PyQt5')
 
+from fidget.core import Fidget
 from gdalos_qt.gdalos_widget import GdalosWidget
 from fidget.backend.QtWidgets import QVBoxLayout
 from fidget.widgets import FidgetQuestion, FidgetMatrix, FidgetMinimal
@@ -20,14 +21,14 @@ if __name__ == '__main__':
             ),
             rows=CountBounds(1, 1, None),
             columns=1,
-            make_plaintext=True, make_title=True, make_indicator=False, layout_cls=QVBoxLayout
-        ),
+            make_plaintext=True, make_title=True, make_indicator=False, layout_cls=QVBoxLayout, scrollable=True
+        ), flags=Fidget.FLAGS
     )
     q.show()
     result = q.exec()
     print(result)
     if result.is_ok() and result.value is not None:
-        for d in result.value:
+        for d in result.value[0]:
             d = dict(d)
             d['filename'] = str(d.pop('source file'))
             d['src_ovr'] = d.pop('source ovr')
