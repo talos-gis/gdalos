@@ -3,7 +3,7 @@ import math
 from osgeo import gdal, osr, ogr
 from math import isfinite
 
-from .rectangle import GeoRectangle
+from gdalos.rectangle import GeoRectangle
 
 
 def get_points_extent(gt, cols, rows):
