@@ -52,7 +52,7 @@ def get_canonic_name(datum, zone):
     return res
 
 
-def get_utm_zone_extent_points(float_zone, width=8):
+def get_utm_zone_extent_points(float_zone, width=10):
     zone_center = get_zone_center(float_zone)
     x_arr = [zone_center - width / 2.0, zone_center + width / 2.0]
     y_arr = [-80, 80]

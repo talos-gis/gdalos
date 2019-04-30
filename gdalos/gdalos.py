@@ -275,11 +275,11 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
         transform = get_extent.get_transform(pjstr_4326, pjstr_src_srs)
         if transform is not None:
             out_extent_in_src_srs = get_extent.translate_extent(extent, transform)
-            out_extent_in_src_srs = out_extent_in_src_srs.crop(org_extent_in_src_srs)
-            if out_extent_in_src_srs.is_empty():
-                raise Exception
         else:
             out_extent_in_src_srs = extent
+        out_extent_in_src_srs = out_extent_in_src_srs.crop(org_extent_in_src_srs)
+        if out_extent_in_src_srs.is_empty():
+            raise Exception
 
         if out_res_xy is None:
             transform_src_tgt = get_extent.get_transform(pjstr_src_srs, pjstr_tgt_srs)
@@ -317,6 +317,8 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
             transform = get_extent.get_transform(pjstr_src_srs, pjstr_4326)
             if transform is not None:
                 out_extent_in_4326 = get_extent.translate_extent(out_extent_in_src_srs, transform)
+            else:
+                out_extent_in_4326 = out_extent_in_src_srs
             out_extent_in_4326 = round(out_extent_in_4326, 2)
         if out_extent_in_4326 is not None:
             out_suffixes.append('x[{},{}]_y[{},{}]'.format(*out_extent_in_4326.lrdu))
