@@ -414,7 +414,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
                     out_ovr_filename = out_filename + '.ovr' * (ovr_index + 1)
                     ret_code = gdalos_trans(out_filename=out_ovr_filename,
                                             src_ovr=ovr_index, ovr_type=None, dst_overview_count=None,
-                                            create_info=ovr_index == overview_last,
+                                            create_info=create_info and (ovr_index == overview_last),
 
                                             filename=filename, of=of, tiled=tiled, big_tiff=big_tiff, warp_CRS=warp_CRS,
                                             kind=kind, lossy=lossy,
