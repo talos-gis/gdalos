@@ -468,7 +468,8 @@ def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=...
         comp = gdal_helper.get_image_structure_metadata(filename, 'COMPRESSION')
 
     ovr_options['resampling'] = resampling_method
-    ovr_options = print_progress_callback(print_progress, ovr_options)
+    if print_progress:
+        ovr_options['callback'] = print_progress_callback(print_progress)
 
     if comp == 'YCbCr JPEG':
         gdal.SetConfigOption('COMPRESS_OVERVIEW', 'JPEG')
