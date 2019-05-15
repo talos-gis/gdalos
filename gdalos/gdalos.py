@@ -414,7 +414,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
                     out_ovr_filename = out_filename + '.ovr' * (ovr_index + 1)
                     ret_code = gdalos_trans(out_filename=out_ovr_filename,
                                             src_ovr=ovr_index, ovr_type=None, dst_overview_count=None,
-                                            create_info=ovr_index == overview_last,
+                                            create_info=create_info and (ovr_index == overview_last),
 
                                             filename=filename, of=of, tiled=tiled, big_tiff=big_tiff, warp_CRS=warp_CRS,
                                             kind=kind, lossy=lossy,
@@ -468,7 +468,8 @@ def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=...
         comp = gdal_helper.get_image_structure_metadata(filename, 'COMPRESSION')
 
     ovr_options['resampling'] = resampling_method
-    ovr_options = print_progress_callback(print_progress, ovr_options)
+    if print_progress:
+        ovr_options['callback'] = print_progress_callback(print_progress)
 
     if comp == 'YCbCr JPEG':
         gdal.SetConfigOption('COMPRESS_OVERVIEW', 'JPEG')
