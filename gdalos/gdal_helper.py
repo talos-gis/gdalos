@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Iterator
 
 import gdal
@@ -5,8 +6,8 @@ import gdal
 
 class OpenDS:
     def __init__(self, filename_or_ds, *options):
-        if isinstance(filename_or_ds, str):
-            self.filename = filename_or_ds
+        if isinstance(filename_or_ds, (str, Path)):
+            self.filename = str(filename_or_ds)
             self.ds = None
         else:
             self.filename = None
@@ -15,7 +16,7 @@ class OpenDS:
         self.own = None
 
     def __enter__(self)->gdal.Dataset:
-        if self.ds is None and isinstance(self.filename, str):
+        if self.ds is None:
             self.ds = gdal.Open(self.filename, *self.options)
             if self.ds is None:
                 raise IOError("could not open file {}".format(self.filename))

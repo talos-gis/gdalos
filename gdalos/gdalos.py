@@ -4,6 +4,7 @@ import os
 from enum import Enum, auto
 import time
 import datetime
+from pathlib import Path
 
 import gdal
 
@@ -29,7 +30,7 @@ class RasterKind(Enum):
 
     @classmethod
     def guess(cls, bands):
-        if isinstance(bands, str):
+        if isinstance(bands, (str, Path)):
             bands = gdal_helper.get_band_types(bands)
         if len(bands) == 0:
             raise Exception('no bands in raster')
@@ -133,13 +134,14 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
     if isinstance(kind, str):
         kind = RasterKind[kind]
 
+    filename = Path(filename)
     if os.path.isdir(filename):
         # r- there's a lot wrong with this. It's very circumstantial, and may cause a lot more problems than it solves
-        filename = os.path.join(filename, default_filename)
+        filename = filename / default_filename
 
     if ovr_type == OvrType.copy_single_external:
         # r- So if you set ovr_type to copy_single_external it just flat out ignores the original file?
-        filename = os.path.join(filename, '.ovr')
+        filename = filename.with_suffix('.ovr')
 
     if not os.path.isfile(filename):
         raise OSError(f'file not found: {filename}')
@@ -157,7 +159,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
     do_warp = (src_ovr >= 0) or (warp_CRS is not None)
 
     # todo needs a parameter to pass Open options
-    ds = gdal.Open(filename)
+    ds = gdal.Open(str(filename))
     geo_transform = ds.GetGeoTransform()
     bnd_res = (geo_transform[1], geo_transform[5])
 
@@ -241,7 +243,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
     # todo I dunno what this is but instinct says var names this long should be in their own function
     out_extent_in_src_srs = None
     if extent is not None:
-        org_points_extent, pjstr_src_srs, _ = get_extent.get_points_extent_from_file(filename)
+        org_points_extent, pjstr_src_srs, _ = get_extent.get_points_extent_from_ds(ds)
         org_extent_in_src_srs = GeoRectangle.from_points(org_points_extent)
         if org_extent_in_src_srs.is_empty():
             raise Exception(f'no input extent: {filename} [{org_extent_in_src_srs}]')
@@ -331,12 +333,12 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
             out_suffixes = '.' + '.'.join(out_suffixes)
         else:
             out_suffixes = ''
-        out_filename = filename + out_suffixes + '.' + outext
+        out_filename = filename.with_suffix(out_suffixes + '.' + outext)
     else:
-        out_filename = str(out_filename)
+        out_filename = Path(out_filename)
 
     if out_base_path is not None:
-        out_filename = os.path.join(out_base_path, os.path.splitdrive(out_filename)[1])
+        out_filename = Path(out_base_path).joinpath(*out_filename.parts[1:])
 
     if not os.path.exists(os.path.dirname(out_filename)):
         os.makedirs(os.path.dirname(out_filename), exist_ok=True)
@@ -368,7 +370,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
             gdal.SetConfigOption(k, v)
 
     if verbose:
-        print('filename: ' + out_filename + ' ...')
+        print('filename: ' + str(out_filename) + ' ...')
         print('common options: ' + str(common_options))
 
     ret_code = 0
@@ -381,11 +383,11 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
     elif do_warp:
         if verbose:
             print('wrap options: ' + str(warp_options))
-        ret_code = gdal.Warp(out_filename, filename, **common_options, **warp_options)
+        ret_code = gdal.Warp(str(out_filename), str(filename), **common_options, **warp_options)
     else:
         if verbose:
             print('translate options: ' + str(translate_options))
-        ret_code = gdal.Translate(out_filename, filename, **common_options, **translate_options)
+        ret_code = gdal.Translate(str(out_filename), str(filename), **common_options, **translate_options)
 
     if not skipped and verbose:
         print_time()
@@ -393,7 +395,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
 
     if ret_code is not None:
         if not skipped and hide_nodatavalue:
-            gdal_helper.unset_nodatavalue(out_filename)
+            gdal_helper.unset_nodatavalue(str(out_filename))
 
         if (ovr_type is not None) and (ovr_type != OvrType.copy_internal) and (ovr_type != OvrType.copy_single_external):
             if ovr_type != OvrType.translate_existing:
@@ -411,7 +413,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
                         overview_last = overview_first + dst_overview_count + 1
 
                 for ovr_index in range(overview_first, overview_last-1, -1):
-                    out_ovr_filename = out_filename + '.ovr' * (ovr_index + 1)
+                    out_ovr_filename = out_filename.with_suffix('.ovr' * (ovr_index + 1))
                     ret_code = gdalos_trans(out_filename=out_ovr_filename,
                                             src_ovr=ovr_index, ovr_type=None, dst_overview_count=None,
                                             create_info=create_info and (ovr_index == overview_last),
@@ -435,7 +437,8 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
 
 
 def add_ovr(filename, options, open_options, skip_if_exist=False, verbose=True):
-    out_filename = filename + '.ovr'
+    filename = Path(filename)
+    out_filename = filename.with_suffix('.ovr')
     if verbose:
         print('adding ovr: {} options: {} open_options: {}'.format(out_filename, options, open_options))
 
@@ -449,8 +452,9 @@ def add_ovr(filename, options, open_options, skip_if_exist=False, verbose=True):
 def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=..., resampling_method=None,
                print_progress=...,
                ovr_levels_count=10, verbose=True):
+    filename = Path(filename)
     if os.path.isdir(filename):
-        filename = os.path.join(filename, default_filename)
+        filename = filename / default_filename
 
     ovr_options = {}
 
@@ -504,18 +508,19 @@ def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=...
             ret_code = add_ovr(filename, ovr_options, open_options, skip_if_exist, verbose)
             if ret_code != 0:
                 break
-            filename = filename + '.ovr'
+            filename = filename.with_suffix('.ovr')
     else:
         raise Exception('invalid ovr type')
     return ret_code
 
 
 def gdalos_info(filename, skip_if_exist=False):
+    filename = Path(filename)
     if os.path.isdir(filename):
         filename = os.path.join(filename, default_filename)
     if not os.path.isfile(filename):
         raise Exception('file not found: {}'.format(filename))
-    out_filename = filename + '.info'
+    out_filename = filename.with_suffix('.info')
     if not do_skip_if_exists(out_filename, skip_if_exist=skip_if_exist):
         with gdal_helper.OpenDS(filename) as ds:
             info = gdal.Info(ds)

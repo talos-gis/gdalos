@@ -81,10 +81,7 @@ def translate_extent(extent: GeoRectangle, transform, sample_count=1000):
     return GeoRectangle.from_min_max(out_x_min, out_x_max, out_y_min, out_y_max)
 
 
-# todo so does gtrans open the dataset like fifty times or something?
-def get_points_extent_from_file(raster_filename):
-    ds = gdal.Open(raster_filename)
-
+def get_points_extent_from_ds(ds):
     geo_transform = ds.GetGeoTransform()
     cols = ds.RasterXSize
     rows = ds.RasterYSize
