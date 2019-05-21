@@ -102,52 +102,67 @@ def print_progress_callback(print_progress):
     return print_progress
 
 
-def print_time():
+def print_time_now():
     print('Current time: {}'.format(datetime.datetime.now()))
 
 
-default_filename = 'map.vrt'
+default_multi_byte_nodata_value=-32768
+
+def is_list_like(lst):
+    # return not isinstance(lst, str)
+    return isinstance(lst, (list, tuple))
 
 
-# todo this function is made of warnings
-# todo document this (I'm pretty sure src_ovr is int, but who knows)
 def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists=True, create_info=True,
-                 of='GTiff', outext='tif', tiled='YES', big_tiff='IF_SAFER',
+                 of='GTiff', outext='tif', tiled='YES', big_tiff='IF_SAFER', creation_options=[],
                  extent: Optional[GeoRectangle] = None, src_win=None,
                  warp_CRS=None, out_res=None,
-                 ovr_type: Optional[OvrType] = ..., src_ovr=None, dst_overview_count=None, resample_method=...,
-                 src_nodatavalue=..., dst_nodatavalue=-32768, hide_nodatavalue=False,
+                 ovr_type: Optional[OvrType] = ..., src_ovr=-1, dst_overview_count=None, resample_method=...,
+                 src_nodatavalue=..., dst_nodatavalue=..., hide_nodatavalue=False,
                  kind: RasterKind = ..., lossy=False, expand_rgb=False,
                  jpeg_quality=75, keep_alpha=True,
-                 config: dict = None, print_progress=..., verbose=True):
-    if verbose:
-        print_time()
-        start_time = time.time()
-        # r- this is just an additional functionality that clutters both the code and the output
-        #  (and is enabled by default) recommend: either remove or opt-in
-    else:
-        start_time = None
-    extent_was_cropped = False
+                 config: dict = None, print_progress=..., verbose=True, print_time=False, **kwargs):
+
+    all_args = dict(locals())
+    key_list_arguments = ['filename', 'extent', 'warp_CRS', 'of', 'expand_rgb']
+    for key in key_list_arguments:
+        val = all_args[key]
+        if is_list_like(val):
+            all_args_new = all_args.copy()
+            # all_args_new.pop(key)
+            for v in val:
+                all_args_new[key] = v
+                ret_code = gdalos_trans(**all_args_new)
+                if ret_code is None:
+                    break   # failed?
+            return ret_code
+
+    filename = Path(filename)
+    if os.path.isdir(filename):
+        raise Exception(f'input is a dir, not a file: {filename}')
 
     if isinstance(ovr_type, str):
         ovr_type = OvrType[ovr_type]
     if isinstance(kind, str):
         kind = RasterKind[kind]
 
-    filename = Path(filename)
-    if os.path.isdir(filename):
-        # r- there's a lot wrong with this. It's very circumstantial, and may cause a lot more problems than it solves
-        filename = filename / default_filename
-
     if ovr_type == OvrType.copy_single_external:
-        # r- So if you set ovr_type to copy_single_external it just flat out ignores the original file?
+        # todo: rethink: if you set ovr_type to copy_single_external it just flat out ignores the original file?
         filename = filename.with_suffix('.ovr')
 
     if not os.path.isfile(filename):
         raise OSError(f'file not found: {filename}')
 
-    # r- it might be a good idea to add a parameter for initial creation options
-    common_options = {'creationOptions': []}
+    if print_time:
+        print_time_now()
+        start_time = time.time()
+    else:
+        start_time = None
+    extent_was_cropped = False
+
+    if creation_options is None:
+        creation_options = []
+    common_options = {'creationOptions': creation_options}
     if print_progress:
         common_options['callback'] = print_progress_callback(print_progress)
 
@@ -165,10 +180,9 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
 
     bnd = gdal_helper.get_raster_band(ds)
     bnd_size = (bnd.XSize, bnd.YSize)
-    # r- this if-else is a perfect example of this function's problems:
-    #  * inexplicable and undocumented
-    #  * it sets the output to None, ignoring parameters is never a good idea
+
     if src_ovr >= 0:
+        # we should process only the given src_ovr, thus discarding ovr_type
         ovr = bnd.GetOverview(src_ovr)
         ovr_res = (
             bnd_res[0] * bnd_size[0] / ovr.XSize,
@@ -184,9 +198,12 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
     band_types = gdal_helper.get_band_types(ds)
     if kind is ...:
         kind = RasterKind.guess(band_types)
-    # r- so what's the point of dst_nodatavalue if we're not dealing with DTM?
-    #  note that kind can be guessed, meaning that dst_nodatavalue might be ignored on a heuristic
-    if (dst_nodatavalue is not None) and (kind == RasterKind.dtm):
+    if (dst_nodatavalue is ...):
+        if (kind == RasterKind.dtm):
+            dst_nodatavalue = default_multi_byte_nodata_value
+        else:
+            dst_nodatavalue = None
+    if (dst_nodatavalue is not None):
         src_nodatavalue_org = gdal_helper.get_nodatavalue(ds)
         if src_nodatavalue is ...:
             src_nodatavalue = src_nodatavalue_org
@@ -210,7 +227,6 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
 
     if resample_method is ...:
         resample_method = resample_method_by_kind(kind, expand_rgb)
-    # r- can't it just be None?
     common_options['resampleAlg'] = resample_method
 
     pjstr_tgt_srs = None
@@ -220,10 +236,12 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
         if isinstance(warp_CRS, str) and warp_CRS.startswith('+'):
             pjstr_tgt_srs = warp_CRS  # ProjString
         else:
-            if isinstance(warp_CRS, (int, float)):
+            zone = projdef.get_number(warp_CRS)
+            if zone is None:
+                zone = projdef.get_zone_from_name(warp_CRS)
+            else:
                 warp_CRS = f'w84u{warp_CRS}'
             # "short ProjString"
-            zone = projdef.get_zone_from_name(warp_CRS)
             pjstr_tgt_srs = projdef.get_proj4_string(warp_CRS[0], zone)
             if zone != 0:
                 # cropping according to zone bounds
@@ -389,8 +407,8 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
             print('translate options: ' + str(translate_options))
         ret_code = gdal.Translate(str(out_filename), str(filename), **common_options, **translate_options)
 
-    if not skipped and verbose:
-        print_time()
+    if not skipped and print_time:
+        print_time_now()
         print('Time for creating file: {} is {} seconds'.format(out_filename, round(time.time() - start_time)))
 
     if ret_code is not None:
@@ -412,20 +430,15 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
                     else:
                         overview_last = overview_first + dst_overview_count + 1
 
+                all_args_new = all_args.copy()
+                all_args_new['ovr_type'] = None
+                all_args_new['dst_overview_count'] = None
+                all_args_new['out_base_path'] = None
                 for ovr_index in range(overview_first, overview_last-1, -1):
-                    out_ovr_filename = out_filename.with_suffix('.ovr' * (ovr_index + 1))
-                    ret_code = gdalos_trans(out_filename=out_ovr_filename,
-                                            src_ovr=ovr_index, ovr_type=None, dst_overview_count=None,
-                                            create_info=create_info and (ovr_index == overview_last),
-
-                                            filename=filename, of=of, tiled=tiled, big_tiff=big_tiff, warp_CRS=warp_CRS,
-                                            kind=kind, lossy=lossy,
-                                            skip_if_exists=skip_if_exists, out_res=out_res,
-                                            dst_nodatavalue=dst_nodatavalue, hide_nodatavalue=hide_nodatavalue,
-                                            extent=extent,
-                                            src_win=src_win, resample_method=resample_method,
-                                            keep_alpha=keep_alpha, jpeg_quality=jpeg_quality,
-                                            print_progress=print_progress, verbose=verbose)
+                    all_args_new['out_filename'] = out_filename.with_suffix('.ovr' * (ovr_index + 1))
+                    all_args_new['src_ovr'] = ovr_index
+                    all_args_new['create_info'] = create_info and (ovr_index == overview_last)
+                    ret_code = gdalos_trans(**all_args_new)
                     if ret_code is None:
                         break
                 create_info = False
@@ -454,7 +467,7 @@ def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=...
                ovr_levels_count=10, verbose=True):
     filename = Path(filename)
     if os.path.isdir(filename):
-        filename = filename / default_filename
+        raise Exception(f'input is a dir, not a file: {filename}')
 
     ovr_options = {}
 
@@ -517,7 +530,7 @@ def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=...
 def gdalos_info(filename, skip_if_exist=False):
     filename = Path(filename)
     if os.path.isdir(filename):
-        filename = os.path.join(filename, default_filename)
+        raise Exception(f'input is a dir, not a file: {filename}')
     if not os.path.isfile(filename):
         raise Exception('file not found: {}'.format(filename))
     out_filename = filename.with_suffix('.info')

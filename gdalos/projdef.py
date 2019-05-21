@@ -20,15 +20,37 @@ def get_float(s):
     return res
 
 
+
+def get_number(x):
+    if isinstance(x, (int, float)):
+        return x
+    try:
+        val = int(x)
+        return val
+    except ValueError:
+        try:
+            val = float(x)
+            return val
+        except ValueError:
+            return None
+    # f = float(x)
+    # if f.is_integer():
+    #     return int(f)
+    # else:
+    #     return f
+
+
 def get_zone_from_name(s):
     split_string = s.lower().rsplit('u', 1)
-    if len(split_string) != 2:
+    c = len(split_string)
+    if c == 2:
+        s = split_string[1]
+    elif c != 0:
         return 0
-    f = float(split_string[1])
-    if f.is_integer():
-        return int(f)
-    else:
-        return f
+    zone = get_number(s)
+    if zone is None:
+        return 0
+    return zone
 
 
 def get_zone_center(float_zone):
