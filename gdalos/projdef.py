@@ -1,3 +1,6 @@
+from numbers import Real
+
+
 def get_floats(s):
     # get all floats from a string
     l = []
@@ -22,16 +25,16 @@ def get_float(s):
 
 
 def get_number(x):
-    if isinstance(x, (int, float)):
+    if isinstance(x, Real):
         return x
     try:
         val = int(x)
         return val
-    except ValueError:
+    except (ValueError, TypeError):
         try:
             val = float(x)
             return val
-        except ValueError:
+        except (ValueError, TypeError):
             return None
     # f = float(x)
     # if f.is_integer():

@@ -1,4 +1,5 @@
-from typing import Optional
+from numbers import Real
+from typing import Optional, Sequence, List, Union, Tuple
 
 import os
 from enum import Enum, auto
@@ -60,10 +61,10 @@ def resample_method_by_kind(kind, expand_rgb=False):
         return 'cubic'
 
 
-def do_skip_if_exists(out_filename, skip_if_exist, verbose=True):
+def do_skip_if_exists(out_filename, skip_if_exists, verbose=True):
     skip = False
     if os.path.isfile(out_filename):
-        if skip_if_exist:
+        if skip_if_exists:
             skip = True
             if verbose:
                 print('file {} exits, skip!\n'.format(out_filename))
@@ -106,23 +107,32 @@ def print_time_now():
     print('Current time: {}'.format(datetime.datetime.now()))
 
 
-default_multi_byte_nodata_value=-32768
-
 def is_list_like(lst):
-    # return not isinstance(lst, str)
-    return isinstance(lst, (list, tuple))
+    return isinstance(lst, Sequence) and not isinstance(lst, str)
 
 
-def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists=True, create_info=True,
-                 of='GTiff', outext='tif', tiled='YES', big_tiff='IF_SAFER', creation_options=[],
-                 extent: Optional[GeoRectangle] = None, src_win=None,
-                 warp_CRS=None, out_res=None,
-                 ovr_type: Optional[OvrType] = ..., src_ovr=-1, dst_overview_count=None, resample_method=...,
-                 src_nodatavalue=..., dst_nodatavalue=..., hide_nodatavalue=False,
+def concat_paths(*argv):
+    return Path(''.join([str(p) for p in argv]))
+
+
+Class_or_classlist = Union[str, Sequence[str]]
+Warp_crs_base = Union[str, int, Real]
+Warp_crs = Union[Warp_crs_base, Sequence[Warp_crs_base]]
+Real_tuple = Tuple[Real, Real]
+default_multi_byte_nodata_value = -32768
+
+
+def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_base_path: str = None,
+                 skip_if_exists=True, create_info=True,
+                 of: Class_or_classlist = 'GTiff', outext: str = 'tif', tiled=True, big_tiff='IF_SAFER',
+                 creation_options=[],
+                 extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None, src_win=None,
+                 warp_CRS: Warp_crs = None, out_res: Real_tuple = None,
+                 ovr_type: Optional[OvrType] = ..., src_ovr: int = None, dst_overview_count=None, resample_method=...,
+                 src_nodatavalue: Real = ..., dst_nodatavalue: Real = ..., hide_nodatavalue: bool = False,
                  kind: RasterKind = ..., lossy=False, expand_rgb=False,
                  jpeg_quality=75, keep_alpha=True,
-                 config: dict = None, print_progress=..., verbose=True, print_time=False, **kwargs):
-
+                 config: dict = None, print_progress=..., verbose=True, print_time=False):
     all_args = dict(locals())
     key_list_arguments = ['filename', 'extent', 'warp_CRS', 'of', 'expand_rgb']
     for key in key_list_arguments:
@@ -134,7 +144,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
                 all_args_new[key] = v
                 ret_code = gdalos_trans(**all_args_new)
                 if ret_code is None:
-                    break   # failed?
+                    break  # failed?
             return ret_code
 
     filename = Path(filename)
@@ -148,13 +158,12 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
 
     if ovr_type == OvrType.copy_single_external:
         # todo: rethink: if you set ovr_type to copy_single_external it just flat out ignores the original file?
-        filename = filename.with_suffix('.ovr')
+        filename = concat_paths(filename, '.ovr')
 
     if not os.path.isfile(filename):
         raise OSError(f'file not found: {filename}')
 
     if print_time:
-        print_time_now()
         start_time = time.time()
     else:
         start_time = None
@@ -345,7 +354,7 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
         elif src_win is not None:
             out_suffixes.append('off[{},{}]_size[{},{}]'.format(*src_win))
         if not out_suffixes:
-            if '.'+outext == os.path.splitext(filename)[1]:  # input and output have the same extension
+            if '.' + outext == os.path.splitext(filename)[1]:  # input and output have the same extension
                 out_suffixes.append('new')
         if out_suffixes:
             out_suffixes = '.' + '.'.join(out_suffixes)
@@ -371,6 +380,9 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
             if keep_alpha:
                 translate_options['maskBand'] = 4  # keep the alpha band as mask
 
+    no_yes = ('NO', 'YES')
+    if not isinstance(tiled, str):
+        tiled = no_yes[tiled]
     common_options['creationOptions'].extend((
         f'TILED={tiled}',
         f'BIGTIFF={big_tiff}',
@@ -387,37 +399,41 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
         for k, v in config.items():
             gdal.SetConfigOption(k, v)
 
-    if verbose:
-        print('filename: ' + str(out_filename) + ' ...')
-        print('common options: ' + str(common_options))
-
     ret_code = 0
     if ovr_type == OvrType.translate_existing:
         skipped = True
     else:
         skipped = do_skip_if_exists(out_filename, skip_if_exists, verbose)
-    if skipped:
-        pass
-    elif do_warp:
-        if verbose:
-            print('wrap options: ' + str(warp_options))
-        ret_code = gdal.Warp(str(out_filename), str(filename), **common_options, **warp_options)
-    else:
-        if verbose:
-            print('translate options: ' + str(translate_options))
-        ret_code = gdal.Translate(str(out_filename), str(filename), **common_options, **translate_options)
 
-    if not skipped and print_time:
-        print_time_now()
-        print('Time for creating file: {} is {} seconds'.format(out_filename, round(time.time() - start_time)))
+    if not skipped:
+        if print_time:
+            print_time_now()
+            
+        if verbose:
+            print('filename: ' + str(out_filename) + ' ...')
+            print('common options: ' + str(common_options))
+
+        if do_warp:
+            if verbose:
+                print('wrap options: ' + str(warp_options))
+            ret_code = gdal.Warp(str(out_filename), str(filename), **common_options, **warp_options)
+        else:
+            if verbose:
+                print('translate options: ' + str(translate_options))
+            ret_code = gdal.Translate(str(out_filename), str(filename), **common_options, **translate_options)
+
+        if print_time:
+            print_time_now()
+            print('Time for creating file: {} is {} seconds'.format(out_filename, round(time.time() - start_time)))
 
     if ret_code is not None:
         if not skipped and hide_nodatavalue:
             gdal_helper.unset_nodatavalue(str(out_filename))
 
-        if (ovr_type is not None) and (ovr_type != OvrType.copy_internal) and (ovr_type != OvrType.copy_single_external):
+        if (ovr_type is not None) and (ovr_type != OvrType.copy_internal) and (
+                ovr_type != OvrType.copy_single_external):
             if ovr_type != OvrType.translate_existing:
-                gdalos_ovr(out_filename, skip_if_exist=skip_if_exists, ovr_type=ovr_type, print_progress=print_progress,
+                gdalos_ovr(out_filename, skip_if_exists=skip_if_exists, ovr_type=ovr_type, print_progress=print_progress,
                            verbose=verbose)
             else:
                 overview_count = gdal_helper.get_ovr_count(ds)
@@ -434,8 +450,8 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
                 all_args_new['ovr_type'] = None
                 all_args_new['dst_overview_count'] = None
                 all_args_new['out_base_path'] = None
-                for ovr_index in range(overview_first, overview_last-1, -1):
-                    all_args_new['out_filename'] = out_filename.with_suffix('.ovr' * (ovr_index + 1))
+                for ovr_index in range(overview_first, overview_last - 1, -1):
+                    all_args_new['out_filename'] = concat_paths(out_filename, '.ovr' * (ovr_index + 1))
                     all_args_new['src_ovr'] = ovr_index
                     all_args_new['create_info'] = create_info and (ovr_index == overview_last)
                     ret_code = gdalos_trans(**all_args_new)
@@ -443,26 +459,25 @@ def gdalos_trans(filename, out_filename=None, out_base_path=None, skip_if_exists
                         break
                 create_info = False
         if create_info:
-            gdalos_info(out_filename, skip_if_exist=skip_if_exists)
+            gdalos_info(out_filename, skip_if_exists=skip_if_exists)
 
     del ds
     return ret_code
 
 
-def add_ovr(filename, options, open_options, skip_if_exist=False, verbose=True):
+def add_ovr(filename, options, open_options, skip_if_exists=False, verbose=True):
     filename = Path(filename)
-    out_filename = filename.with_suffix('.ovr')
-    if verbose:
-        print('adding ovr: {} options: {} open_options: {}'.format(out_filename, options, open_options))
-
-    if not do_skip_if_exists(out_filename, skip_if_exist, verbose):
+    out_filename = concat_paths(filename, '.ovr')
+    if not do_skip_if_exists(out_filename, skip_if_exists, verbose):
+        if verbose:
+            print('adding ovr: {} options: {} open_options: {}'.format(out_filename, options, open_options))
         with gdal_helper.OpenDS(filename, open_options) as ds:
             return ds.BuildOverviews(**options)
     else:
         return 0
 
 
-def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=..., resampling_method=None,
+def gdalos_ovr(filename, comp=None, kind=None, skip_if_exists=False, ovr_type=..., resampling_method=None,
                print_progress=...,
                ovr_levels_count=10, verbose=True):
     filename = Path(filename)
@@ -513,28 +528,28 @@ def gdalos_ovr(filename, comp=None, kind=None, skip_if_exist=False, ovr_type=...
         for i in range(ovr_levels_count):
             ovr_levels.append(2 ** (i + 1))  # ovr_levels = '2 4 8 16 32 64 128 256 512 1024'
         ovr_options['overviewlist'] = ovr_levels
-        ret_code = add_ovr(out_filename, ovr_options, open_options, skip_if_exist, verbose)
+        ret_code = add_ovr(out_filename, ovr_options, open_options, skip_if_exists, verbose)
     elif ovr_type == OvrType.create_multi_external:
         ovr_options['overviewlist'] = [2]
         ret_code = 0
         for i in range(ovr_levels_count):
-            ret_code = add_ovr(filename, ovr_options, open_options, skip_if_exist, verbose)
+            ret_code = add_ovr(filename, ovr_options, open_options, skip_if_exists, verbose)
             if ret_code != 0:
                 break
-            filename = filename.with_suffix('.ovr')
+            filename = concat_paths(filename, '.ovr')
     else:
         raise Exception('invalid ovr type')
     return ret_code
 
 
-def gdalos_info(filename, skip_if_exist=False):
+def gdalos_info(filename, skip_if_exists=False):
     filename = Path(filename)
     if os.path.isdir(filename):
         raise Exception(f'input is a dir, not a file: {filename}')
     if not os.path.isfile(filename):
         raise Exception('file not found: {}'.format(filename))
-    out_filename = filename.with_suffix('.info')
-    if not do_skip_if_exists(out_filename, skip_if_exist=skip_if_exist):
+    out_filename = concat_paths(filename, '.info')
+    if not do_skip_if_exists(out_filename, skip_if_exists=skip_if_exists):
         with gdal_helper.OpenDS(filename) as ds:
             info = gdal.Info(ds)
         with open(out_filename, 'w') as w:
