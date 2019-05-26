@@ -129,7 +129,7 @@ default_multi_byte_nodata_value = -32768
 def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_base_path: str = None,
                  skip_if_exists=True, create_info=True,
                  of: Class_or_classlist = 'GTiff', outext: str = 'tif', tiled=True, big_tiff='IF_SAFER',
-                 creation_options=[],
+                 creation_options=None,
                  extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None, src_win=None,
                  warp_CRS: Warp_crs = None, out_res: Real_tuple = None,
                  ovr_type: Optional[OvrType] = ..., src_ovr: int = None, dst_overview_count=None, resample_method=...,
@@ -184,9 +184,7 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         start_time = None
     extent_was_cropped = False
 
-    if creation_options is None:
-        creation_options = []
-    common_options = {'creationOptions': creation_options}
+    common_options = {'creationOptions': list(creation_options or [])}
     if print_progress:
         common_options['callback'] = print_progress_callback(print_progress)
 
