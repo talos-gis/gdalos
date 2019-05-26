@@ -138,6 +138,8 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
                  jpeg_quality=75, keep_alpha=True,
                  config: dict = None, print_progress=..., verbose=True, print_time=False):
     all_args = dict(locals())
+    if verbose:
+        print(all_args)
 
     key_list_arguments = ['filename', 'extent', 'warp_CRS', 'of', 'expand_rgb']
     for key in key_list_arguments:
@@ -161,7 +163,7 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
 
     if not filename:
         return None
-    filename = Path(filename)
+    filename = Path(filename.strip())
 
     if os.path.isdir(filename):
         raise Exception(f'input is a dir, not a file: {filename}')
