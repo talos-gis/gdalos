@@ -37,7 +37,6 @@ class OvrType(Enum):
     create_multi_external = auto()  # create one ovr file per overview: .ovr, .ovr.ovr, .ovr.ovr.orv ....
     translate_existing = auto()  # work with existing overviews
     copy_internal = auto()  # COPY_SRC_OVERVIEWS
-    copy_single_external = auto()  # COPY_SRC_OVERVIEWS for .ovr file
 
 
 class RasterKind(Enum):
@@ -172,10 +171,6 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         ovr_type = OvrType[ovr_type]
     if isinstance(kind, str):
         kind = RasterKind[kind]
-
-    if ovr_type == OvrType.copy_single_external:
-        # todo: rethink: if you set ovr_type to copy_single_external it just flat out ignores the original file?
-        filename = concat_paths(filename, '.ovr')
 
     if not os.path.isfile(filename):
         raise OSError(f'file not found: {filename}')
@@ -345,18 +340,14 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         out_suffixes.append(str(out_res_xy))
 
     org_comp = gdal_helper.get_image_structure_metadata(ds, 'COMPRESSION')
-    if (org_comp is not None) and 'JPEG' in org_comp:
-        if lossy is None:
-            lossy = True
-
-    if lossy is not None:
-        lossy = False
+    if lossy is None:
+        lossy = (org_comp is not None) and ('JPEG' in org_comp)
     if lossy and (kind != RasterKind.dtm):
         comp = 'JPEG'
         out_suffixes.append('jpg')
     else:
         comp = 'DEFLATE'
-    if ovr_type == OvrType.copy_internal or ovr_type == OvrType.copy_single_external:
+    if ovr_type == OvrType.copy_internal:
         common_options['creationOptions'].append('COPY_SRC_OVERVIEWS=YES')
 
     if out_filename is None:
@@ -390,7 +381,7 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         os.makedirs(os.path.dirname(out_filename), exist_ok=True)
 
     # if (comp == 'JPEG') and (len(bands) == 3) or ((len(bands) == 4) and (keep_alpha)):
-    if (not do_warp) and (comp == 'JPEG') and (len(band_types) in (3, 4)):
+    if (comp == 'JPEG') and (len(band_types) in (3, 4)):
         common_options['creationOptions'].append('PHOTOMETRIC=YCBCR')
         common_options['creationOptions'].append('JPEG_QUALITY=' + str(jpeg_quality))
 
@@ -449,8 +440,7 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         if not skipped and hide_nodatavalue:
             gdal_helper.unset_nodatavalue(str(out_filename))
 
-        if (ovr_type is not None) and (ovr_type != OvrType.copy_internal) and (
-                ovr_type != OvrType.copy_single_external):
+        if (ovr_type is not None) and (ovr_type != OvrType.copy_internal):
             if ovr_type != OvrType.translate_existing:
                 gdalos_ovr(out_filename, skip_if_exists=skip_if_exists, ovr_type=ovr_type, print_progress=print_progress,
                            verbose=verbose)
