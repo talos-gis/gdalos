@@ -15,6 +15,22 @@ from gdalos import projdef
 from gdalos.rectangle import GeoRectangle
 
 
+def is_path_like(s):
+    return isinstance(s, (str, Path))
+
+
+def is_list_like(lst):
+    return isinstance(lst, Sequence) and not isinstance(lst, str)
+
+
+def concat_paths(*argv):
+    return Path(''.join([str(p) for p in argv]))
+
+
+def print_time_now():
+    print('Current time: {}'.format(datetime.datetime.now()))
+
+
 class OvrType(Enum):
     create_internal = auto()  # create overviews inside the main dataset file
     create_single_external = auto()  # create a single .ovr file with all the overviews
@@ -31,7 +47,7 @@ class RasterKind(Enum):
 
     @classmethod
     def guess(cls, bands):
-        if isinstance(bands, (str, Path)):
+        if is_path_like(bands):
             bands = gdal_helper.get_band_types(bands)
         if len(bands) == 0:
             raise Exception('no bands in raster')
@@ -103,18 +119,6 @@ def print_progress_callback(print_progress):
     return print_progress
 
 
-def print_time_now():
-    print('Current time: {}'.format(datetime.datetime.now()))
-
-
-def is_list_like(lst):
-    return isinstance(lst, Sequence) and not isinstance(lst, str)
-
-
-def concat_paths(*argv):
-    return Path(''.join([str(p) for p in argv]))
-
-
 Class_or_classlist = Union[str, Sequence[str]]
 Warp_crs_base = Union[str, int, Real]
 Warp_crs = Union[Warp_crs_base, Sequence[Warp_crs_base]]
@@ -130,16 +134,24 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
                  warp_CRS: Warp_crs = None, out_res: Real_tuple = None,
                  ovr_type: Optional[OvrType] = ..., src_ovr: int = None, dst_overview_count=None, resample_method=...,
                  src_nodatavalue: Real = ..., dst_nodatavalue: Real = ..., hide_nodatavalue: bool = False,
-                 kind: RasterKind = ..., lossy=False, expand_rgb=False,
+                 kind: RasterKind = ..., lossy: bool=None, expand_rgb=False,
                  jpeg_quality=75, keep_alpha=True,
                  config: dict = None, print_progress=..., verbose=True, print_time=False):
     all_args = dict(locals())
+
     key_list_arguments = ['filename', 'extent', 'warp_CRS', 'of', 'expand_rgb']
     for key in key_list_arguments:
         val = all_args[key]
+        if is_path_like(val):
+            if Path(val).suffix.lower() == '.txt':
+                # input argument is a txt file, replace it with a list of its lines
+                with open(val) as f:
+                    val = f.read().splitlines()
+                    all_args[key] = val
         if is_list_like(val):
+            # input argument is a list, recurse over its values
             all_args_new = all_args.copy()
-            # all_args_new.pop(key)
+            ret_code = None
             for v in val:
                 all_args_new[key] = v
                 ret_code = gdalos_trans(**all_args_new)
@@ -147,7 +159,10 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
                     break  # failed?
             return ret_code
 
+    if not filename:
+        return None
     filename = Path(filename)
+
     if os.path.isdir(filename):
         raise Exception(f'input is a dir, not a file: {filename}')
 
@@ -240,7 +255,8 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
 
     pjstr_tgt_srs = None
     if warp_CRS is not None:
-        lossy = True
+        if lossy is None:
+            lossy = True
 
         if isinstance(warp_CRS, str) and warp_CRS.startswith('+'):
             pjstr_tgt_srs = warp_CRS  # ProjString
@@ -330,8 +346,11 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
 
     org_comp = gdal_helper.get_image_structure_metadata(ds, 'COMPRESSION')
     if (org_comp is not None) and 'JPEG' in org_comp:
-        lossy = True
+        if lossy is None:
+            lossy = True
 
+    if lossy is not None:
+        lossy = False
     if lossy and (kind != RasterKind.dtm):
         comp = 'JPEG'
         out_suffixes.append('jpg')
@@ -408,7 +427,7 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
     if not skipped:
         if print_time:
             print_time_now()
-            
+
         if verbose:
             print('filename: ' + str(out_filename) + ' ...')
             print('common options: ' + str(common_options))
