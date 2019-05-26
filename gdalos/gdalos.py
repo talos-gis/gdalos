@@ -145,7 +145,7 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
     for key in key_list_arguments:
         val = all_args[key]
         if is_path_like(val):
-            if Path(val).suffix.lower() == '.txt':
+            if Path(val.strip()).suffix.lower() == '.txt':
                 # input argument is a txt file, replace it with a list of its lines
                 with open(val) as f:
                     val = f.read().splitlines()
