@@ -127,15 +127,16 @@ default_multi_byte_nodata_value = -32768
 
 def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_base_path: str = None,
                  skip_if_exists=True, create_info=True,
-                 of: Class_or_classlist = 'GTiff', outext: str = 'tif', tiled=True, big_tiff='IF_SAFER',
-                 creation_options=None,
+                 of: Class_or_classlist = 'GTiff', outext: str = 'tif', tiled=True, big_tiff: str = 'IF_SAFER',
+                 creation_options=None, config_options: dict = ...,
                  extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None, src_win=None,
                  warp_CRS: Warp_crs = None, out_res: Real_tuple = None,
-                 ovr_type: Optional[OvrType] = ..., src_ovr: int = None, dst_overview_count=None, resample_method=...,
+                 ovr_type: Optional[OvrType] = ..., src_ovr: int = None,
+                 dst_overview_count=None, resample_method=...,
                  src_nodatavalue: Real = ..., dst_nodatavalue: Real = ..., hide_nodatavalue: bool = False,
-                 kind: RasterKind = ..., lossy: bool=None, expand_rgb=False,
+                 kind: RasterKind = ..., lossy: bool = None, expand_rgb=False,
                  jpeg_quality=75, keep_alpha=True,
-                 config: dict = None, print_progress=..., verbose=True, print_time=False):
+                 print_progress=..., verbose=True, print_time=False):
     all_args = dict(locals())
     if verbose:
         print(all_args)
@@ -401,14 +402,6 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
 
     common_options['format'] = of
 
-    if config is None:
-        config = dict()
-    config['GDAL_HTTP_UNSAFESSL'] = 'YES'
-
-    if config:
-        for k, v in config.items():
-            gdal.SetConfigOption(k, v)
-
     ret_code = 0
     if ovr_type == OvrType.translate_existing:
         skipped = True
@@ -423,14 +416,27 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
             print('filename: ' + str(out_filename) + ' ...')
             print('common options: ' + str(common_options))
 
-        if do_warp:
-            if verbose:
-                print('wrap options: ' + str(warp_options))
-            ret_code = gdal.Warp(str(out_filename), str(filename), **common_options, **warp_options)
-        else:
-            if verbose:
-                print('translate options: ' + str(translate_options))
-            ret_code = gdal.Translate(str(out_filename), str(filename), **common_options, **translate_options)
+        if config_options is None:
+            config_options = dict()
+        elif config_options is ...:
+            config_options = {'GDAL_HTTP_UNSAFESSL': 'YES'}  # for gdal-wms xml files
+        try:
+            if config_options:
+                if verbose:
+                    print('config options: ' + str(config_options))
+                for k, v in config_options.items():
+                    gdal.SetConfigOption(k, v)
+            if do_warp:
+                if verbose:
+                    print('wrap options: ' + str(warp_options))
+                ret_code = gdal.Warp(str(out_filename), str(filename), **common_options, **warp_options)
+            else:
+                if verbose:
+                    print('translate options: ' + str(translate_options))
+                ret_code = gdal.Translate(str(out_filename), str(filename), **common_options, **translate_options)
+        finally:
+            for key, val in config_options.items():
+                gdal.SetConfigOption(key, None)
 
         if print_time:
             print_time_now()
@@ -440,33 +446,34 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         if not skipped and hide_nodatavalue:
             gdal_helper.unset_nodatavalue(str(out_filename))
 
-        if (ovr_type is not None) and (ovr_type != OvrType.copy_internal):
-            if ovr_type != OvrType.translate_existing:
-                gdalos_ovr(out_filename, skip_if_exists=skip_if_exists, ovr_type=ovr_type, print_progress=print_progress,
-                           verbose=verbose)
-            else:
-                overview_count = gdal_helper.get_ovr_count(ds)
-                overview_first = overview_count - 1
-                overview_last = -1  # base ds
+        if ovr_type == OvrType.translate_existing:
+            overview_count = gdal_helper.get_ovr_count(ds)
+            overview_first = overview_count - 1
+            overview_last = -1  # base ds
 
-                if dst_overview_count is not None:
-                    if dst_overview_count >= 0:
-                        overview_first = min(overview_count, dst_overview_count) - 1
-                    else:
-                        overview_last = overview_first + dst_overview_count + 1
+            if dst_overview_count is not None:
+                if dst_overview_count >= 0:
+                    overview_first = min(overview_count, dst_overview_count) - 1
+                else:
+                    overview_last = overview_first + dst_overview_count + 1
 
-                all_args_new = all_args.copy()
-                all_args_new['ovr_type'] = None
-                all_args_new['dst_overview_count'] = None
-                all_args_new['out_base_path'] = None
-                for ovr_index in range(overview_first, overview_last - 1, -1):
-                    all_args_new['out_filename'] = concat_paths(out_filename, '.ovr' * (ovr_index + 1))
-                    all_args_new['src_ovr'] = ovr_index
-                    all_args_new['create_info'] = create_info and (ovr_index == overview_last)
-                    ret_code = gdalos_trans(**all_args_new)
-                    if ret_code is None:
-                        break
-                create_info = False
+            all_args_new = all_args.copy()
+            all_args_new['ovr_type'] = None
+            all_args_new['dst_overview_count'] = None
+            all_args_new['out_base_path'] = None
+            for ovr_index in range(overview_first, overview_last - 1, -1):
+                all_args_new['out_filename'] = concat_paths(out_filename, '.ovr' * (ovr_index + 1))
+                all_args_new['src_ovr'] = ovr_index
+                all_args_new['create_info'] = create_info and (ovr_index == overview_last)
+                ret_code = gdalos_trans(**all_args_new)
+                if ret_code is None:
+                    break
+            create_info = False
+        elif (ovr_type is not None) and (ovr_type != OvrType.copy_internal):
+            gdalos_ovr(out_filename, skip_if_exists=skip_if_exists, ovr_type=ovr_type,
+                       print_progress=print_progress,
+                       verbose=verbose)
+
         if create_info:
             gdalos_info(out_filename, skip_if_exists=skip_if_exists)
 
@@ -487,37 +494,14 @@ def add_ovr(filename, options, open_options, skip_if_exists=False, verbose=True)
 
 
 def gdalos_ovr(filename, comp=None, kind=None, skip_if_exists=False, ovr_type=..., resampling_method=None,
-               print_progress=...,
-               ovr_levels_count=10, verbose=True):
+               ovr_levels_count=10, config_options: dict = None, ovr_options: dict = None, print_progress=...,
+               verbose=True):
     filename = Path(filename)
     if os.path.isdir(filename):
         raise Exception(f'input is a dir, not a file: {filename}')
 
-    ovr_options = {}
-
     if not os.path.isfile(filename):
         raise Exception(f'file not found: {filename}')
-    if kind is None:
-        kind = RasterKind.guess(filename)
-    if kind is None:
-        raise Exception('could not guess kind')
-
-    if resampling_method is None:
-        resampling_method = resample_method_by_kind(kind)
-
-    if comp is None:
-        comp = gdal_helper.get_image_structure_metadata(filename, 'COMPRESSION')
-
-    ovr_options['resampling'] = resampling_method
-    if print_progress:
-        ovr_options['callback'] = print_progress_callback(print_progress)
-
-    if comp == 'YCbCr JPEG':
-        gdal.SetConfigOption('COMPRESS_OVERVIEW', 'JPEG')
-        gdal.SetConfigOption('PHOTOMETRIC_OVERVIEW', 'YCBCR')
-        gdal.SetConfigOption('INTERLEAVE_OVERVIEW', 'PIXEL')
-    else:
-        gdal.SetConfigOption('COMPRESS_OVERVIEW', comp)
 
     if ovr_type is ...:
         file_size = os.path.getsize(filename)
@@ -527,27 +511,59 @@ def gdalos_ovr(filename, comp=None, kind=None, skip_if_exists=False, ovr_type=..
         else:
             ovr_type = OvrType.create_single_external
 
-    out_filename = filename
+    if ovr_options is None:
+        ovr_options = dict()
+    if resampling_method is None:
+        if kind is None:
+            kind = RasterKind.guess(filename)
+        if kind is not None:
+            resampling_method = resample_method_by_kind(kind)
+    if resampling_method is not None:
+        ovr_options['resampling'] = resampling_method
+    if print_progress:
+        ovr_options['callback'] = print_progress_callback(print_progress)
 
-    open_options = gdal.GA_ReadOnly
-    if ovr_type in (OvrType.create_internal, OvrType.create_single_external):
-        if ovr_type == OvrType.create_internal:
-            open_options = gdal.GA_Update
-        ovr_levels = []
-        for i in range(ovr_levels_count):
-            ovr_levels.append(2 ** (i + 1))  # ovr_levels = '2 4 8 16 32 64 128 256 512 1024'
-        ovr_options['overviewlist'] = ovr_levels
-        ret_code = add_ovr(out_filename, ovr_options, open_options, skip_if_exists, verbose)
-    elif ovr_type == OvrType.create_multi_external:
-        ovr_options['overviewlist'] = [2]
-        ret_code = 0
-        for i in range(ovr_levels_count):
-            ret_code = add_ovr(filename, ovr_options, open_options, skip_if_exists, verbose)
-            if ret_code != 0:
-                break
-            filename = concat_paths(filename, '.ovr')
+    if config_options is None:
+        config_options = dict()
+    if comp is None:
+        comp = gdal_helper.get_image_structure_metadata(filename, 'COMPRESSION')
+    if comp == 'YCbCr JPEG':
+        config_options['COMPRESS_OVERVIEW'] = 'JPEG'
+        config_options['PHOTOMETRIC_OVERVIEW'] = 'YCBCR'
+        config_options['INTERLEAVE_OVERVIEW'] = 'PIXEL'
     else:
-        raise Exception('invalid ovr type')
+        config_options['COMPRESS_OVERVIEW'] = comp
+
+    try:
+        if config_options:
+            if verbose:
+                print('config options: ' + str(config_options))
+            for k, v in config_options.items():
+                gdal.SetConfigOption(k, v)
+
+        out_filename = filename
+        open_options = gdal.GA_ReadOnly
+        if ovr_type in (OvrType.create_internal, OvrType.create_single_external):
+            if ovr_type == OvrType.create_internal:
+                open_options = gdal.GA_Update
+            ovr_levels = []
+            for i in range(ovr_levels_count):
+                ovr_levels.append(2 ** (i + 1))  # ovr_levels = '2 4 8 16 32 64 128 256 512 1024'
+            ovr_options['overviewlist'] = ovr_levels
+            ret_code = add_ovr(out_filename, ovr_options, open_options, skip_if_exists, verbose)
+        elif ovr_type == OvrType.create_multi_external:
+            ovr_options['overviewlist'] = [2]
+            ret_code = 0
+            for i in range(ovr_levels_count):
+                ret_code = add_ovr(filename, ovr_options, open_options, skip_if_exists, verbose)
+                if ret_code != 0:
+                    break
+                filename = concat_paths(filename, '.ovr')
+        else:
+            raise Exception('invalid ovr type')
+    finally:
+        for key, val in config_options.items():
+            gdal.SetConfigOption(key, None)
     return ret_code
 
 
