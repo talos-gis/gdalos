@@ -7,7 +7,7 @@ def test_srtm():
     srtm_path = r'd:\maps\srtm.tif'
     warp_CRS = [None, 32, 34]:
     gdalos_trans(filename=srtm_path, extent=my_extent, warp_CRS=warp_CRS, dst_nodatavalue=0,
-                 hide_nodatavalue=True, ovr_type=OvrType.create_multi_external)
+                 hide_nodatavalue=True, ovr_type=OvrType.create_external_auto)
 
 
 if __name__ == "__main__":

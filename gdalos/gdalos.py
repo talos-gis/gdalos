@@ -32,11 +32,13 @@ def print_time_now():
 
 
 class OvrType(Enum):
+    auto_select = auto() # existing_reuse or create_external_auto (by existance of src overviews)
+    create_external_auto = auto()  # create_external_single or create_external_multi (by size)
+    create_external_single = auto()  # create a single .ovr file with all the overviews
+    create_external_multi = auto()  # create one ovr file per overview: .ovr, .ovr.ovr, .ovr.ovr.orv ....
     create_internal = auto()  # create overviews inside the main dataset file
-    create_single_external = auto()  # create a single .ovr file with all the overviews
-    create_multi_external = auto()  # create one ovr file per overview: .ovr, .ovr.ovr, .ovr.ovr.orv ....
-    translate_existing = auto()  # work with existing overviews
-    copy_internal = auto()  # COPY_SRC_OVERVIEWS
+    existing_reuse = auto()  # work with existing overviews
+    existing_copy = auto()  # COPY_SRC_OVERVIEWS
 
 
 class RasterKind(Enum):
@@ -64,8 +66,10 @@ class RasterKind(Enum):
         raise Exception('could not guess raster kind')
 
 
-def resample_method_by_kind(kind, expand_rgb=False):
-    if kind == RasterKind.pal:
+def resampling_alg_by_kind(kind, expand_rgb=False):
+    if kind is None:
+        return None
+    elif kind == RasterKind.pal:
         if expand_rgb:
             return 'average'
         else:
@@ -131,10 +135,10 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
                  creation_options=None, config_options: dict = ...,
                  extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None, src_win=None,
                  warp_CRS: Warp_crs = None, out_res: Real_tuple = None,
-                 ovr_type: Optional[OvrType] = ..., src_ovr: int = None,
-                 dst_overview_count=None, resample_method=...,
+                 ovr_type: Optional[OvrType] = OvrType.auto_select,
+                 src_ovr: int = None, keep_src_ovr_suffixes=False, dst_overview_count=None,
                  src_nodatavalue: Real = ..., dst_nodatavalue: Real = ..., hide_nodatavalue: bool = False,
-                 kind: RasterKind = ..., lossy: bool = None, expand_rgb=False,
+                 kind: RasterKind = None, resampling_alg=None, lossy: bool = None, expand_rgb=False,
                  jpeg_quality=75, keep_alpha=True,
                  print_progress=..., verbose=True, print_time=False):
     all_args = dict(locals())
@@ -189,17 +193,25 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
     translate_options = {}
     warp_options = {}
 
-    if src_ovr is None:
-        src_ovr = -1
-    do_warp = (src_ovr >= 0) or (warp_CRS is not None)
-
     # todo needs a parameter to pass Open options
     ds = gdal.Open(str(filename))
     geo_transform = ds.GetGeoTransform()
     bnd_res = (geo_transform[1], geo_transform[5])
-
     bnd = gdal_helper.get_raster_band(ds)
     bnd_size = (bnd.XSize, bnd.YSize)
+
+    if src_ovr is None:
+        src_ovr = -1  # base ds
+    overview_count = gdal_helper.get_ovr_count(ds)
+    src_ovr_last = overview_count - 1
+    if dst_overview_count is not None:
+        if dst_overview_count >= 0:
+            src_ovr_last = min(overview_count - 1, src_ovr + dst_overview_count)
+        else:
+            # in this case we need to discard the selected src_ovr, becuase we want only the last ovrs
+            src_ovr = max(-1, overview_count + dst_overview_count)
+
+    do_warp = (src_ovr >= 0) or (warp_CRS is not None)
 
     if src_ovr >= 0:
         # we should process only the given src_ovr, thus discarding ovr_type
@@ -208,15 +220,13 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
             bnd_res[0] * bnd_size[0] / ovr.XSize,
             bnd_res[1] * bnd_size[1] / ovr.YSize
         )
-        ovr_type = None
         warp_options['overviewLevel'] = src_ovr
     else:
         ovr_res = bnd_res
-
     out_res_xy = out_res
 
     band_types = gdal_helper.get_band_types(ds)
-    if kind is ...:
+    if kind is None:
         kind = RasterKind.guess(band_types)
     if (dst_nodatavalue is ...):
         if (kind == RasterKind.dtm):
@@ -245,9 +255,10 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         translate_options['rgbExpand'] = 'rgb'
         out_suffixes.append('rgb')
 
-    if resample_method is ...:
-        resample_method = resample_method_by_kind(kind, expand_rgb)
-    common_options['resampleAlg'] = resample_method
+    if resampling_alg is None:
+        resampling_alg = resampling_alg_by_kind(kind, expand_rgb)
+    if resampling_alg is not None:
+        common_options['resampleAlg'] = resampling_alg
 
     pjstr_tgt_srs = None
     if warp_CRS is not None:
@@ -348,8 +359,6 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         out_suffixes.append('jpg')
     else:
         comp = 'DEFLATE'
-    if ovr_type == OvrType.copy_internal:
-        common_options['creationOptions'].append('COPY_SRC_OVERVIEWS=YES')
 
     if out_filename is None:
         out_extent_in_4326 = extent
@@ -372,6 +381,8 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         else:
             out_suffixes = ''
         out_filename = filename.with_suffix(out_suffixes + '.' + outext)
+        if keep_src_ovr_suffixes:
+            out_filename = concat_paths(out_filename, '.ovr' * (src_ovr + 1))
     else:
         out_filename = Path(out_filename)
 
@@ -399,15 +410,24 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         f'BIGTIFF={big_tiff}',
         f'COMPRESS={comp}'
     ))
-
     common_options['format'] = of
 
-    ret_code = 0
-    if ovr_type == OvrType.translate_existing:
+    if ovr_type is not None:
+        if ovr_type == OvrType.existing_copy:
+            common_options['creationOptions'].append('COPY_SRC_OVERVIEWS=YES')
+        elif ovr_type in [..., OvrType.auto_select]:
+            if overview_count > 0:
+                # if ds has overviews then use them, otherwise create overviews
+                ovr_type = OvrType.existing_reuse
+            else:
+                ovr_type = OvrType.create_external_auto
+
+    if ovr_type == OvrType.existing_reuse:
         skipped = True
     else:
         skipped = do_skip_if_exists(out_filename, skip_if_exists, verbose)
 
+    ret_code = 0
     if not skipped:
         if print_time:
             print_time_now()
@@ -446,33 +466,29 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         if not skipped and hide_nodatavalue:
             gdal_helper.unset_nodatavalue(str(out_filename))
 
-        if ovr_type == OvrType.translate_existing:
-            overview_count = gdal_helper.get_ovr_count(ds)
-            overview_first = overview_count - 1
-            overview_last = -1  # base ds
-
-            if dst_overview_count is not None:
-                if dst_overview_count >= 0:
-                    overview_first = min(overview_count, dst_overview_count) - 1
-                else:
-                    overview_last = overview_first + dst_overview_count + 1
+        if ovr_type == OvrType.existing_reuse:
+            # overviews are numbered as follows (i.e. for dst_overview_count=3, meaning create base+3 ovrs=4 files):
+            # -1: base ds, 0: first ovr, 1: second ovr, 2: third ovr
 
             all_args_new = all_args.copy()
             all_args_new['ovr_type'] = None
             all_args_new['dst_overview_count'] = None
             all_args_new['out_base_path'] = None
-            for ovr_index in range(overview_first, overview_last - 1, -1):
-                all_args_new['out_filename'] = concat_paths(out_filename, '.ovr' * (ovr_index + 1))
+            # iterate backwards on the overviews
+            for ovr_index in range(src_ovr_last, src_ovr - 1, -1):
+                all_args_new['out_filename'] = concat_paths(out_filename, '.ovr' * (ovr_index - src_ovr ))
                 all_args_new['src_ovr'] = ovr_index
-                all_args_new['create_info'] = create_info and (ovr_index == overview_last)
+                all_args_new['create_info'] = create_info and (ovr_index == src_ovr)
                 ret_code = gdalos_trans(**all_args_new)
                 if ret_code is None:
                     break
             create_info = False
-        elif (ovr_type is not None) and (ovr_type != OvrType.copy_internal):
-            gdalos_ovr(out_filename, skip_if_exists=skip_if_exists, ovr_type=ovr_type,
-                       print_progress=print_progress,
-                       verbose=verbose)
+        elif (ovr_type is not None) and (ovr_type != OvrType.existing_copy):
+            # create overviews from ds (internal or external)
+            gdalos_ovr(out_filename, skip_if_exists=skip_if_exists,
+                       ovr_type=ovr_type, dst_overview_count=dst_overview_count,
+                       kind=kind, resampling_alg=resampling_alg,
+                       print_progress=print_progress, verbose=verbose)
 
         if create_info:
             gdalos_info(out_filename, skip_if_exists=skip_if_exists)
@@ -492,10 +508,12 @@ def add_ovr(filename, options, open_options, skip_if_exists=False, verbose=True)
     else:
         return 0
 
-
-def gdalos_ovr(filename, comp=None, kind=None, skip_if_exists=False, ovr_type=..., resampling_method=None,
-               ovr_levels_count=10, config_options: dict = None, ovr_options: dict = None, print_progress=...,
-               verbose=True):
+default_dst_overview_count = 10
+def gdalos_ovr(filename, comp=None, skip_if_exists=False,
+               ovr_type=...,  dst_overview_count=default_dst_overview_count,
+               kind=None, resampling_alg=None,
+               config_options: dict = None, ovr_options: dict = None,
+               print_progress=..., verbose=True):
     filename = Path(filename)
     if os.path.isdir(filename):
         raise Exception(f'input is a dir, not a file: {filename}')
@@ -503,23 +521,27 @@ def gdalos_ovr(filename, comp=None, kind=None, skip_if_exists=False, ovr_type=..
     if not os.path.isfile(filename):
         raise Exception(f'file not found: {filename}')
 
-    if ovr_type is ...:
+    if dst_overview_count is None or dst_overview_count <= 0:
+        dst_overview_count = default_dst_overview_count
+
+    if ovr_type in [..., OvrType.auto_select, OvrType.create_external_auto]:
         file_size = os.path.getsize(filename)
         max_ovr_gb = 1
         if file_size > max_ovr_gb * 1024 ** 3:
-            ovr_type = OvrType.create_multi_external
+            ovr_type = OvrType.create_external_multi
         else:
-            ovr_type = OvrType.create_single_external
+            ovr_type = OvrType.create_external_single
+    elif ovr_type not in [OvrType.create_internal, OvrType.create_external_single, OvrType.create_external_multi]:
+        return None
 
     if ovr_options is None:
         ovr_options = dict()
-    if resampling_method is None:
+    if resampling_alg is None:
         if kind is None:
             kind = RasterKind.guess(filename)
-        if kind is not None:
-            resampling_method = resample_method_by_kind(kind)
-    if resampling_method is not None:
-        ovr_options['resampling'] = resampling_method
+        resampling_alg = resampling_alg_by_kind(kind)
+    if resampling_alg is not None:
+        ovr_options['resampling'] = resampling_alg
     if print_progress:
         ovr_options['callback'] = print_progress_callback(print_progress)
 
@@ -543,18 +565,18 @@ def gdalos_ovr(filename, comp=None, kind=None, skip_if_exists=False, ovr_type=..
 
         out_filename = filename
         open_options = gdal.GA_ReadOnly
-        if ovr_type in (OvrType.create_internal, OvrType.create_single_external):
+        if ovr_type in (OvrType.create_internal, OvrType.create_external_single):
             if ovr_type == OvrType.create_internal:
                 open_options = gdal.GA_Update
             ovr_levels = []
-            for i in range(ovr_levels_count):
+            for i in range(dst_overview_count):
                 ovr_levels.append(2 ** (i + 1))  # ovr_levels = '2 4 8 16 32 64 128 256 512 1024'
             ovr_options['overviewlist'] = ovr_levels
             ret_code = add_ovr(out_filename, ovr_options, open_options, skip_if_exists, verbose)
-        elif ovr_type == OvrType.create_multi_external:
+        elif ovr_type == OvrType.create_external_multi:
             ovr_options['overviewlist'] = [2]
             ret_code = 0
-            for i in range(ovr_levels_count):
+            for i in range(dst_overview_count):
                 ret_code = add_ovr(filename, ovr_options, open_options, skip_if_exists, verbose)
                 if ret_code != 0:
                     break
