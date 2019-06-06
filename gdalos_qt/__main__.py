@@ -9,6 +9,7 @@ from fidget.widgets import FidgetQuestion, FidgetMatrix, FidgetMinimal
 from fidget.widgets.__util__ import CountBounds
 from gdalos import gdalos_trans
 
+
 def gdalos_qt_main():
     from fidget.backend.QtWidgets import QApplication
 
@@ -47,7 +48,7 @@ def gdalos_qt_main():
             d['hide_nodatavalue'] = d.pop('hide nodatavalue')
             d['src_win'] = d.pop('source window')
             d['ovr_type'] = d.pop('ovr type')
-            d['resample_method'] = d.pop('resampling method')
+            d['resampling_alg'] = d.pop('resampling method')
             d['jpeg_quality'] = d.pop('jpeg quality')
             d['keep_alpha'] = d.pop('keep alpha')
             print(gdalos_trans(**d))

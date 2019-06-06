@@ -226,7 +226,7 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
     out_res_xy = out_res
 
     band_types = gdal_helper.get_band_types(ds)
-    if kind is None:
+    if kind in [None, ...]:
         kind = RasterKind.guess(band_types)
     if (dst_nodatavalue is ...):
         if (kind == RasterKind.dtm):
@@ -255,7 +255,7 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         translate_options['rgbExpand'] = 'rgb'
         out_suffixes.append('rgb')
 
-    if resampling_alg is None:
+    if resampling_alg in [None, ...]:
         resampling_alg = resampling_alg_by_kind(kind, expand_rgb)
     if resampling_alg is not None:
         common_options['resampleAlg'] = resampling_alg
@@ -536,8 +536,8 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
 
     if ovr_options is None:
         ovr_options = dict()
-    if resampling_alg is None:
-        if kind is None:
+    if resampling_alg in [None, ...]:
+        if kind in [None, ...]:
             kind = RasterKind.guess(filename)
         resampling_alg = resampling_alg_by_kind(kind)
     if resampling_alg is not None:
