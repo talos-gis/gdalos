@@ -1,4 +1,4 @@
-from typing import Optional, Sequence, List, Union, Tuple
+from typing import Optional, Sequence, List, Union, Tuple, TypeVar
 
 import os
 import time
@@ -14,19 +14,8 @@ from gdalos import gdal_helper
 from gdalos import get_extent
 from gdalos import projdef
 from gdalos.__util__ import with_param_dict
+from gdalos.gdal_helper import concat_paths
 from gdalos.rectangle import GeoRectangle
-
-
-def is_path_like(s):
-    return isinstance(s, (str, Path))
-
-
-def is_list_like(lst):
-    return isinstance(lst, Sequence) and not isinstance(lst, str)
-
-
-def concat_paths(*argv):
-    return Path(''.join([str(p) for p in argv]))
 
 
 def print_time_now():
@@ -50,7 +39,7 @@ class RasterKind(Enum):
 
     @classmethod
     def guess(cls, bands):
-        if is_path_like(bands):
+        if gdal_helper.is_path_like(bands):
             bands = gdal_helper.get_band_types(bands)
         if len(bands) == 0:
             raise Exception('no bands in raster')
@@ -124,20 +113,18 @@ def print_progress_callback(print_progress):
     return print_progress
 
 
-Class_or_classlist = Union[str, Sequence[str]]
+T = TypeVar('T')
+MaybeSequence = Union[T, Sequence[T]]
 Warp_crs_base = Union[str, int, Real]
-Warp_crs = Union[Warp_crs_base, Sequence[Warp_crs_base]]
-Real_tuple = Tuple[Real, Real]
 default_multi_byte_nodata_value = -32768
 
-
 @with_param_dict('all_args')
-def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_base_path: str = None,
-                 skip_if_exists=True, create_info=True,
-                 of: Class_or_classlist = 'GTiff', outext: str = 'tif', tiled=True, big_tiff: str = 'IF_SAFER',
+def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_base_path: str = None,
+                 skip_if_exists=True, create_info=True, multi_file_as_vrt=False,
+                 of: MaybeSequence[str] = 'GTiff', outext: str = 'tif', tiled=True, big_tiff: str = 'IF_SAFER',
                  creation_options=None, config_options: dict = ...,
                  extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None, src_win=None,
-                 warp_CRS: Warp_crs = None, out_res: Real_tuple = None,
+                 warp_CRS: MaybeSequence[Warp_crs_base] = None, out_res: Tuple[Real, Real] = None,
                  ovr_type: Optional[OvrType] = OvrType.auto_select,
                  src_ovr: int = None, keep_src_ovr_suffixes=False, dst_overview_count=None,
                  src_nodatavalue: Real = ..., dst_nodatavalue: Real = ..., hide_nodatavalue: bool = False,
@@ -148,15 +135,18 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         info(all_args)
 
     key_list_arguments = ['filename', 'extent', 'warp_CRS', 'of', 'expand_rgb']
+
     for key in key_list_arguments:
         val = all_args[key]
-        if is_path_like(val):
-            if Path(val.strip()).suffix.lower() == '.txt':
-                # input argument is a txt file, replace it with a list of its lines
-                with open(val) as f:
-                    val = f.read().splitlines()
-                    all_args[key] = val
-        if is_list_like(val):
+        val = gdal_helper.flatten_and_expand_file_list(val, do_expand_glob=key=='filename')
+        if key=='filename':
+            if gdal_helper.is_list_like(val) and multi_file_as_vrt:
+                vrt_filename = gdalos_vrt(val, resampling_alg=resampling_alg)
+                if vrt_filename is None:
+                    raise Exception  # failed?
+            filename = val
+
+        if gdal_helper.is_list_like(val):
             # input argument is a list, recurse over its values
             all_args_new = all_args.copy()
             ret_code = None
@@ -166,6 +156,8 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
                 if ret_code is None:
                     break  # failed?
             return ret_code
+        else:
+            all_args[key] = val
 
     if not filename:
         return None
@@ -382,9 +374,10 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
             out_suffixes = '.' + '.'.join(out_suffixes)
         else:
             out_suffixes = ''
-        out_filename = filename.with_suffix(out_suffixes + '.' + outext)
+        # out_filename = filename.with_suffix(out_suffixes + '.' + outext)
+        out_filename = gdal_helper.concat_paths(filename, out_suffixes + '.' + outext)
         if keep_src_ovr_suffixes:
-            out_filename = concat_paths(out_filename, '.ovr' * (src_ovr + 1))
+            out_filename = gdal_helper.concat_paths(out_filename, '.ovr' * (src_ovr + 1))
     else:
         out_filename = Path(out_filename)
 
@@ -510,7 +503,7 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
 
 def add_ovr(filename, options, open_options, skip_if_exists=False, verbose=True):
     filename = Path(filename)
-    out_filename = concat_paths(filename, '.ovr')
+    out_filename = gdal_helper.concat_paths(filename, '.ovr')
     if not do_skip_if_exists(out_filename, skip_if_exists, verbose):
         if verbose:
             info('adding ovr: {} options: {} open_options: {}'.format(out_filename, options, open_options))
@@ -594,7 +587,7 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
                 ret_code = add_ovr(filename, ovr_options, open_options, skip_if_exists, verbose)
                 if ret_code != 0:
                     break
-                filename = concat_paths(filename, '.ovr')
+                filename = gdal_helper.concat_paths(filename, '.ovr')
         else:
             raise Exception('invalid ovr type')
     finally:
@@ -609,7 +602,7 @@ def gdalos_info(filename, skip_if_exists=False):
         raise Exception(f'input is a dir, not a file: {filename}')
     if not os.path.isfile(filename):
         raise Exception('file not found: {}'.format(filename))
-    out_filename = concat_paths(filename, '.info')
+    out_filename = gdal_helper.concat_paths(filename, '.info')
     if not do_skip_if_exists(out_filename, skip_if_exists=skip_if_exists):
         with gdal_helper.OpenDS(filename) as ds:
             info = gdal.Info(ds)
@@ -619,3 +612,30 @@ def gdalos_info(filename, skip_if_exists=False):
     else:
         ret_code = 0
     return ret_code
+
+
+def gdalos_vrt(filenames: MaybeList, vrt_filename=None, resampling_alg=None):
+    if gdal_helper.is_list_like(filenames):
+        flatten_filenames = gdal_helper.flatten_and_expand_file_list(filenames)
+    else:
+        flatten_filenames = [filenames]
+    flatten_filenames = [str(f) for f in flatten_filenames]
+    if vrt_filename is None:
+        vrt_filename = flatten_filenames[0] + '.vrt'
+
+    if os.path.isdir(vrt_filename):
+        return None
+    if os.path.isfile(vrt_filename):
+        os.remove(vrt_filename)
+    if os.path.isfile(vrt_filename):
+        return None
+    try:
+        os.makedirs(os.path.dirname(vrt_filename), exist_ok=True)
+        vrt_options = gdal.BuildVRTOptions(resampleAlg=resampling_alg)
+        ret = gdal.BuildVRT(vrt_filename, flatten_filenames, options=vrt_options)
+        if ret is None:  # how does BuildVRT indicates an error?
+            return None
+    except:
+        return None
+    if os.path.isfile(vrt_filename):
+        return vrt_filename

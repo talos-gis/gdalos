@@ -35,6 +35,15 @@ class CallParamDict:
 
         raise KeyError(item)
 
+    def __setitem__(self, key, value):
+        prev = key in self.all_arguments
+        self.all_arguments[key] = value
+        if prev:
+            # value was default before, nothing more needs changing
+            return
+
+
+
 def with_param_dict(kwarg_name='_params'):
     def decorator(func):
         all_parameters: Mapping[str, Parameter] = signature(func).parameters
