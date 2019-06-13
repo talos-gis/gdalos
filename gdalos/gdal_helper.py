@@ -1,5 +1,8 @@
+import glob
+import os
 from pathlib import Path
 from typing import Iterator
+from typing import Sequence
 
 import gdal
 
@@ -82,3 +85,53 @@ def get_image_structure_metadata(ds, key: str, default=None):
             if metadata.startswith(key):
                 return metadata[len(key):]
         return default
+
+
+def expand_txt(filename):
+    # input argument is a txt file, replace it with a list of its lines
+    filename = Path(filename.strip())
+    with open(filename) as f:
+        return f.read().splitlines()
+
+
+def flatten_and_expand_file_list(l, do_expand_txt=True, do_expand_glob=True):
+    if is_path_like(l):
+        item = l.strip()
+        if do_expand_glob:
+            item1 = glob.glob(str(item).strip())
+            if len(item1) == 1:
+                item = item1[0]
+            elif len(item1) > 1:
+                return flatten_and_expand_file_list(item1)
+
+        if do_expand_txt and \
+                os.path.isfile(item) and not os.path.isdir(item) and \
+                Path(item).suffix.lower() == '.txt':
+            return flatten_and_expand_file_list(expand_txt(item))
+        else:
+            return item.strip()
+
+    if not is_list_like(l):
+        return l
+    flat_list = []
+    for item in l:
+        item1 = flatten_and_expand_file_list(item)
+        if is_list_like(item1):
+            flat_list.extend(item1)
+        else:
+            flat_list.append(item1)
+    return flat_list
+
+
+def is_path_like(s):
+    return isinstance(s, (str, Path))
+
+
+def is_list_like(lst):
+    return isinstance(lst, Sequence) and not isinstance(lst, str)
+
+
+def concat_paths(*argv):
+    return Path(''.join([str(p) for p in argv]))
+
+
