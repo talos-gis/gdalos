@@ -13,6 +13,7 @@ import gdal
 from gdalos import gdal_helper
 from gdalos import get_extent
 from gdalos import projdef
+from gdalos.__util__ import with_param_dict
 from gdalos.rectangle import GeoRectangle
 
 
@@ -33,7 +34,7 @@ def print_time_now():
 
 
 class OvrType(Enum):
-    auto_select = auto() # existing_reuse or create_external_auto (by existance of src overviews)
+    auto_select = auto()  # existing_reuse or create_external_auto (by existance of src overviews)
     create_external_auto = auto()  # create_external_single or create_external_multi (by size)
     create_external_single = auto()  # create a single .ovr file with all the overviews
     create_external_multi = auto()  # create one ovr file per overview: .ovr, .ovr.ovr, .ovr.ovr.orv ....
@@ -130,6 +131,7 @@ Real_tuple = Tuple[Real, Real]
 default_multi_byte_nodata_value = -32768
 
 
+@with_param_dict('all_args')
 def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_base_path: str = None,
                  skip_if_exists=True, create_info=True,
                  of: Class_or_classlist = 'GTiff', outext: str = 'tif', tiled=True, big_tiff: str = 'IF_SAFER',
@@ -141,8 +143,7 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
                  src_nodatavalue: Real = ..., dst_nodatavalue: Real = ..., hide_nodatavalue: bool = False,
                  kind: RasterKind = None, resampling_alg=None, lossy: bool = None, expand_rgb=False,
                  jpeg_quality=75, keep_alpha=True,
-                 print_progress=..., verbose=True, print_time=False):
-    all_args = dict(locals())
+                 print_progress=..., verbose=True, print_time=False, write_spec=True, *, all_args: dict = None):
     if verbose:
         info(all_args)
 
@@ -451,6 +452,14 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
             if do_warp:
                 if verbose:
                     info('wrap options: ' + str(warp_options))
+                if write_spec:
+                    spec_filename = out_filename.with_suffix('.spec')
+                    spec_filename.write_text(
+                        f"""# spec file for {out_filename}:
+                        # function call:
+                        gdalos_trans({}
+                        """
+                    )
                 ret_code = gdal.Warp(str(out_filename), str(filename), **common_options, **warp_options)
             else:
                 if verbose:
@@ -478,7 +487,7 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
             all_args_new['out_base_path'] = None
             # iterate backwards on the overviews
             for ovr_index in range(src_ovr_last, src_ovr - 1, -1):
-                all_args_new['out_filename'] = concat_paths(out_filename, '.ovr' * (ovr_index - src_ovr ))
+                all_args_new['out_filename'] = concat_paths(out_filename, '.ovr' * (ovr_index - src_ovr))
                 all_args_new['src_ovr'] = ovr_index
                 all_args_new['create_info'] = create_info and (ovr_index == src_ovr)
                 ret_code = gdalos_trans(**all_args_new)
@@ -510,9 +519,12 @@ def add_ovr(filename, options, open_options, skip_if_exists=False, verbose=True)
     else:
         return 0
 
+
 default_dst_overview_count = 10
+
+
 def gdalos_ovr(filename, comp=None, skip_if_exists=False,
-               ovr_type=...,  dst_overview_count=default_dst_overview_count,
+               ovr_type=..., dst_overview_count=default_dst_overview_count,
                kind=None, resampling_alg=None,
                config_options: dict = None, ovr_options: dict = None,
                print_progress=..., verbose=True):
