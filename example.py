@@ -1,8 +1,11 @@
+import logging
+
 from gdalos import gdalos_trans
 from gdalos import GeoRectangle, OvrType
 
 
 def test_srtm():
+    logging.basicConfig(level=logging.DEBUG)
     my_extent = GeoRectangle.from_min_max(5, 85, 30, 40)
     srtm_path = r'd:\maps\srtm.tif'
     warp_CRS = [None, 32, 34]

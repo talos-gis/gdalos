@@ -1,10 +1,11 @@
-from numbers import Real
 from typing import Optional, Sequence, List, Union, Tuple
 
 import os
-from enum import Enum, auto
 import time
 import datetime
+from numbers import Real
+from logging import debug, info, warning
+from enum import Enum, auto
 from pathlib import Path
 
 import gdal
@@ -16,7 +17,7 @@ from gdalos.rectangle import GeoRectangle
 
 
 def print_time_now():
-    print('Current time: {}'.format(datetime.datetime.now()))
+    info('Current time: {}'.format(datetime.datetime.now()))
 
 
 class OvrType(Enum):
@@ -74,13 +75,13 @@ def do_skip_if_exists(out_filename, skip_if_exists, verbose=True):
         if skip_if_exists:
             skip = True
             if verbose:
-                print('file {} exits, skip!\n'.format(out_filename))
+                warning('file {} exits, skip!\n'.format(out_filename))
         else:
             if verbose:
-                print('file {} exits, removing...!\n'.format(out_filename))
+                warning('file {} exits, removing...!\n'.format(out_filename))
             os.remove(out_filename)
             if verbose:
-                print('file {} removed!\n'.format(out_filename))
+                warning('file {} removed!\n'.format(out_filename))
     return skip
 
 
@@ -131,7 +132,7 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
                  print_progress=..., verbose=True, print_time=False):
     all_args = dict(locals())
     if verbose:
-        print(all_args)
+        info(all_args)
 
     key_list_arguments = ['filename', 'extent', 'warp_CRS', 'of', 'expand_rgb']
 
@@ -425,8 +426,8 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
             print_time_now()
 
         if verbose:
-            print('filename: ' + str(out_filename) + ' ...')
-            print('common options: ' + str(common_options))
+            info('filename: ' + str(out_filename) + ' ...')
+            info('common options: ' + str(common_options))
 
         if config_options is None:
             config_options = dict()
@@ -435,16 +436,17 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
         try:
             if config_options:
                 if verbose:
-                    print('config options: ' + str(config_options))
+                    info('config options: ' + str(config_options))
                 for k, v in config_options.items():
                     gdal.SetConfigOption(k, v)
+
             if do_warp:
                 if verbose:
-                    print('wrap options: ' + str(warp_options))
+                    info('wrap options: ' + str(warp_options))
                 ret_code = gdal.Warp(str(out_filename), str(filename), **common_options, **warp_options)
             else:
                 if verbose:
-                    print('translate options: ' + str(translate_options))
+                    info('translate options: ' + str(translate_options))
                 ret_code = gdal.Translate(str(out_filename), str(filename), **common_options, **translate_options)
         finally:
             for key, val in config_options.items():
@@ -452,7 +454,7 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
 
         if print_time:
             print_time_now()
-            print('Time for creating file: {} is {} seconds'.format(out_filename, round(time.time() - start_time)))
+            warning('Time for creating file: {} is {} seconds'.format(out_filename, round(time.time() - start_time)))
 
     if ret_code is not None:
         if not skipped and hide_nodatavalue:
@@ -494,7 +496,7 @@ def add_ovr(filename, options, open_options, skip_if_exists=False, verbose=True)
     out_filename = gdal_helper.concat_paths(filename, '.ovr')
     if not do_skip_if_exists(out_filename, skip_if_exists, verbose):
         if verbose:
-            print('adding ovr: {} options: {} open_options: {}'.format(out_filename, options, open_options))
+            info('adding ovr: {} options: {} open_options: {}'.format(out_filename, options, open_options))
         with gdal_helper.OpenDS(filename, open_options) as ds:
             return ds.BuildOverviews(**options)
     else:
@@ -551,7 +553,7 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
     try:
         if config_options:
             if verbose:
-                print('config options: ' + str(config_options))
+                info('config options: ' + str(config_options))
             for k, v in config_options.items():
                 gdal.SetConfigOption(k, v)
 
