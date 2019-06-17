@@ -1,34 +1,31 @@
+from contextlib import contextmanager
 import glob
 import os
+from os import PathLike
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Union
 from typing import Sequence
 
 import gdal
 
 
-class OpenDS:
-    def __init__(self, filename_or_ds, *options):
-        if isinstance(filename_or_ds, (str, Path)):
-            self.filename = str(filename_or_ds)
-            self.ds = None
-        else:
-            self.filename = None
-            self.ds = filename_or_ds
-        self.options = options
-        self.own = None
-
-    def __enter__(self)->gdal.Dataset:
-        if self.ds is None:
-            self.ds = gdal.Open(self.filename, *self.options)
-            if self.ds is None:
-                raise IOError("could not open file {}".format(self.filename))
-            self.own = True
-        return self.ds
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.own:
-            self.ds = None
+@contextmanager
+def OpenDS(source: Union[gdal.Dataset, PathLike, str], *options, **kwoptions):
+    if isinstance(source, (str, PathLike)):
+        p = Path(source)
+        if not p.exists():
+            raise FileNotFoundError(source)
+        if p.is_dir():
+            raise IsADirectoryError(source)
+        ds = gdal.Open(source, *options, **kwoptions)
+        if ds is None:
+            raise IOError(f"could not open file {source}")
+        yield ds
+        del ds
+    else:
+        if options or kwoptions:
+            raise Exception('options cannot be used on an open dataset')
+        yield source
 
 
 def _get_bands(ds: gdal.Dataset) -> Iterator[gdal.Band]:
@@ -133,5 +130,3 @@ def is_list_like(lst):
 
 def concat_paths(*argv):
     return Path(''.join([str(p) for p in argv]))
-
-
