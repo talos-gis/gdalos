@@ -2,128 +2,117 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from itertools import chain
-from os import PathLike, makedirs
+from os import PathLike
+from os.path import getsize
 from typing import Optional, Any, Dict, Union, Set, Iterable, List
 
 import logging
-from enum import Enum, auto
+from enum import Enum
 from pathlib import Path
 
 import gdal
 
-from gdalos.__util__ import has_implementors, implementor, make_implementor, with_param_dict
-from gdalos.gdal_helper import OpenDS, get_band_types
+from gdalos.__util__ import has_implementors, with_param_dict, AutoPath
+from gdalos.gdal_helper import OpenDS, get_band_types, get_image_structure_metadata, apply_gdal_config, ds_name, \
+    get_ovr_count
 
 DsLike = Union[gdal.Dataset, PathLike, str]
-
-
-class AutoPath(PathLike):
-    def __init__(self, base: PathLike):
-        self.base = Path(base)
-        self.suffixes = []
-
-    def add_suffix(self, *suffixes: str):
-        self.suffixes.extend(
-            (s if s.startswith('.') else '.' + s)
-            for s in suffixes
-        )
-
-    def __fspath__(self):
-        return str(self.base.with_suffix(''.join(self.suffixes)))
 
 
 @has_implementors
 class OnSpawnFail(ABC):
     @abstractmethod
-    def __call__(self, owner: Optional[Job], spawn: Job, error: Exception):
+    def __call__(self, owner, spawn, error: Exception):
         pass
 
-    @implementor
-    @staticmethod
-    def raise_(owner: Optional[Job], spawn: Job, error: Exception):
-        raise error
 
-    @implementor
-    @staticmethod
-    def warn(owner: Optional[Job], spawn: Job, error: Exception):
-        message = f'spawn {spawn} failed with exception:\n{type(error).__name__}: {str(error)}'
-        logging.error(message)
+@OnSpawnFail.implementor
+def raise_(owner, spawn, error: Exception):
+    raise error
 
-    @implementor
-    @staticmethod
-    def ask(owner: Optional[Job], spawn: Job, error: Exception):
-        print(f'spawn {spawn} failed with exception:\n{type(error).__name__}: {str(error)}')
-        answer = input('continue? (y/N)? ')
-        if answer.lower() != 'y':
-            OnSpawnFail.raise_(owner, spawn, error)
-        else:
-            OnSpawnFail.warn(owner, spawn, error)
+
+@OnSpawnFail.implementor
+def warn(owner, spawn, error: Exception):
+    message = f'spawn {spawn} failed with exception:\n{type(error).__name__}: {str(error)}'
+    logging.error(message)
+
+
+@OnSpawnFail.implementor
+def ask(owner, spawn, error: Exception):
+    print(f'spawn {spawn} failed with exception:\n{type(error).__name__}: {str(error)}')
+    answer = input('continue? (y/N)? ')
+    if answer.lower() != 'y':
+        OnSpawnFail.raise_(owner, spawn, error)
+    else:
+        OnSpawnFail.warn(owner, spawn, error)
 
 
 @has_implementors
 class OnExists(ABC):
     @abstractmethod
-    def __call__(self, job: Job, file: PathLike) -> bool:
+    def __call__(self, job, file: PathLike) -> bool:
         pass
 
-    @implementor
-    @staticmethod
-    def raise_(job, file):
-        raise FileExistsError(file)
 
-    @implementor
-    @staticmethod
-    def skip(job, file):
-        logging.warning(f'job: {job} skips file {file}')
-        return False
+@OnExists.implementor
+def raise_(job, file):
+    raise FileExistsError(file)
 
-    @implementor
-    @staticmethod
-    def overwrite(job, file):
-        logging.warning(f'job: {job} overwrites file {file}')
-        return True
 
-    @implementor
-    @staticmethod
-    def ask(job, file):
-        print(f'job: {job}, {file} already exists')
-        answer = input('what to do? (s)kip/(o)verwrite/(R)aise')
-        if not answer:
-            answer = 'r'
-        else:
-            answer = answer[0].lower()
+@OnExists.implementor
+def skip(job, file):
+    logging.warning(f'job: {job} skips file {file}')
+    return False
 
-        if answer == 's':
-            OnExists.skip(job, file)
-        elif answer == 'o':
-            OnExists.overwrite(job, file)
-        else:
-            OnExists.raise_(job, file)
+
+@OnExists.implementor
+def overwrite(job, file):
+    logging.warning(f'job: {job} overwrites file {file}')
+    return True
+
+
+@OnExists.implementor
+def ask(job, file):
+    print(f'job: {job}, {file} already exists')
+    answer = input('what to do? (s)kip/(o)verwrite/(R)aise')
+    if not answer:
+        answer = 'r'
+    else:
+        answer = answer[0].lower()
+
+    if answer == 's':
+        OnExists.skip(job, file)
+    elif answer == 'o':
+        OnExists.overwrite(job, file)
+    else:
+        OnExists.raise_(job, file)
 
 
 @has_implementors
 class SpawnOrder(ABC):
     @abstractmethod
-    def __call__(self, spawns: Iterable[Job], owner: Optional[Job]) -> Iterable[Job]:
+    def __call__(self, spawns, owner):
         pass
 
-    @make_implementor('lightest_first', lambda job: job.weight or 0)
-    @make_implementor('heaviest_first', lambda job: -job.weight or 0)
-    @staticmethod
-    def order(key, owner_place=0, reverse=False):
-        def ret(spawns: Iterable[Job], owner: Optional[Job]):
-            if owner and owner_place == -1:
-                yield owner
-            if owner and owner_place == 0:
-                spawns = chain(
-                    spawns,
-                    [owner]
-                )
-            yield from sorted(spawns, key=key, reverse=reverse)
-            if owner and owner_place == 1:
-                yield owner
 
-        return ret
+@SpawnOrder.instance('lightest_first', lambda job: job.weight or 0)
+@SpawnOrder.instance('heaviest_first', lambda job: -job.weight or 0)
+@SpawnOrder.factory()
+def order(key, owner_place=0, reverse=False):
+    def ret(spawns, owner):
+        if owner and owner_place == -1:
+            yield owner
+        if owner and owner_place == 0:
+            spawns = chain(
+                spawns,
+                [owner]
+            )
+        yield from sorted(spawns, key=key, reverse=reverse)
+        if owner and owner_place == 1:
+            yield owner
+
+    return ret
+
 
 @has_implementors
 class RasterKind(ABC):
@@ -131,16 +120,8 @@ class RasterKind(ABC):
     def resampling_alg(self, expand_rgb=False):
         pass
 
-    @implementor
-    @staticmethod
-    def photo(self, expand_rgb = False):
-
-    photo = auto()
-    pal = auto()
-    dtm = auto()
-
     @classmethod
-    def guess(cls, band_types: Union[DsLike, List[gdal.Band]]):
+    def guess(cls, band_types):
         if not isinstance(band_types, list):
             band_types = get_band_types(band_types)
         if len(band_types) == 0:
@@ -157,6 +138,107 @@ class RasterKind(ABC):
             return cls.dtm
 
         raise Exception('could not guess raster kind')
+
+
+@RasterKind.implementor()
+def photo(expand_rgb=False):
+    return 'cubic'
+
+
+@RasterKind.implementor()
+def pal(expand_rgb=False):
+    return 'average' if expand_rgb else 'near'
+
+
+@RasterKind.implementor()
+def dtm(expand_rgb=False):
+    return 'average'
+
+
+OVERVIEW_COUNT_DEFAULT = 10
+
+
+@has_implementors
+class OvrType(ABC):
+    @abstractmethod
+    def __call__(self, job):
+        pass
+
+
+@OvrType.instance('single')
+@OvrType.factory()
+def single(depth=OVERVIEW_COUNT_DEFAULT, resampling_alg: str = None, expand_rgb: bool = False, compression: str = None):
+    def _(job):
+        job.spawns_post.add(
+            OvrMakeSingle(job.output_path, owner=job, overview_count=depth, resampling_alg=resampling_alg,
+                          expand_rgb=expand_rgb, compression=compression))
+
+    return _
+
+
+@OvrType.instance('multi')
+@OvrType.factory()
+def multi(depth=OVERVIEW_COUNT_DEFAULT, resampling_alg: str = None, expand_rgb: bool = False, compression: str = None):
+    def _(job):
+        job.spawns_post.add(
+            OvrMakeMulti(job.output_path, owner=job, overview_count=depth, resampling_alg=resampling_alg,
+                         expand_rgb=expand_rgb, compression=compression))
+
+    return _
+
+
+@OvrType.instance('embed')
+@OvrType.factory()
+def embed(depth=OVERVIEW_COUNT_DEFAULT, resampling_alg: str = None, expand_rgb: bool = False, compression: str = None):
+    def _(job):
+        job.spawns_post.add(
+            OvrEmbedJob(job.output_path, owner=job, overview_count=depth, resampling_alg=resampling_alg,
+                        expand_rgb=expand_rgb, compression=compression))
+
+    return _
+
+
+MAX_OVR_SIZE = 1 * (1024 ** 3)  # 1 GB
+
+
+@OvrType.instance('external')
+@OvrType.factory()
+def external(depth=OVERVIEW_COUNT_DEFAULT, resampling_alg: str = None, expand_rgb: bool = False,
+             compression: str = None):
+    def _(job):
+        job.spawns_post.add(
+            OvrMakeAuto(job.output_path, owner=job, overview_count=depth, resampling_alg=resampling_alg,
+                        expand_rgb=expand_rgb, compression=compression))
+
+    return _
+
+
+@OvrType.instance('auto')
+@OvrType.factory()
+def auto(depth=OVERVIEW_COUNT_DEFAULT, *args, **kwargs):
+    def _(job):
+        ovr_count = get_ovr_count(job.src)
+        if ovr_count >= depth:
+            t = OvrType.MorphExisting
+        else:
+            t = OvrType.External
+        ovr_type = t(depth=depth, *args, **kwargs)
+        return ovr_type(job)
+
+    return _
+
+
+@OvrType.implementor()
+def copy(job):
+    job.prog_args['creationOptions'].append('COPY_SRC_OVERVIEWS=YES')
+
+@OvrType.instance('morph_existing')
+@OvrType.factory()
+def morph_existing(depth=OVERVIEW_COUNT_DEFAULT)
+    def _(job):
+        
+
+
 
 class Job:
     # these values will only be filled in after resolution
@@ -188,7 +270,6 @@ class Job:
         self._resolve(**self.kwargs)
 
         self._resolved = True
-
 
     def _run_spawn(self, spawn, run_args, on_fail):
         try:
@@ -336,16 +417,29 @@ class VrtJob(OutputJob):
         output.parent.mkdir(parents=True, exist_ok=True)
         gdal.BuildVRT(output, self.sources, **self.proc_args)
 
+
 """
 There are basically 2 brands of OVR jobs:
 * creating a pyramid embedded in the raster file
 * creating/appending a single .ovr file
 """
 
-OVERVIEW_COUNT_DEFAULT = 10
+
+def _fill_compression(compression, config, ds):
+    if compression is None:
+        compression = get_image_structure_metadata(ds, 'COMPRESSION')
+
+    if compression == 'YCbCr JPEG':
+        config['COMPRESS_OVERVIEW'] = 'JPEG'
+        config['PHOTOMETRIC_OVERVIEW'] = 'YCBCR'
+        config['INTERLEAVE_OVERVIEW'] = 'PIXEL'
+    else:
+        config['COMPRESS_OVERVIEW'] = compression
+
 
 class OvrEmbedJob(Job):
     proc_args: Dict[str, Any]
+    config_options: Dict[str, Any]
 
     def __init__(self, ds: DsLike,
                  *, owner: Optional[Job], **kwargs):
@@ -354,8 +448,110 @@ class OvrEmbedJob(Job):
 
     def resolve(self):
         self.proc_args = {}
+        self.config_options = {}
         super().resolve()
 
-    def _resolve(self, overview_count=OVERVIEW_COUNT_DEFAULT, resampling_alg = None):
+    def _resolve(self, overview_count: int = OVERVIEW_COUNT_DEFAULT, resampling_alg: str = None,
+                 kind: RasterKind = None, expand_rgb: bool = False, compression: str = None):
+        self.proc_args['overviewlist'] = [2 ** (i + 1) for i in range(overview_count)]
+        if not resampling_alg:
+            if not kind:
+                kind = RasterKind.guess(self.ds)
+            resampling_alg = kind.resampling_alg(expand_rgb)
+        self.proc_args['resampling'] = resampling_alg
+
+        _fill_compression(compression, self.config_options, self.ds)
+
+    def run_self(self, on_exist: OnExists):
+        with apply_gdal_config(self.config_options), \
+             OpenDS(self.ds, gdal.GA_Update, wild_options=True) as ds:
+            ds.BuildOverviews(**self.proc_args)
 
 
+class OvrMakeSingle(Job):
+    proc_args: Dict[str, Any]
+    config_options: Dict[str, Any]
+
+    def __init__(self, ds: DsLike,
+                 *, owner: Optional[Job], **kwargs):
+        super().__init__(owner=owner, **kwargs)
+        self.ds = ds
+
+    def resolve(self):
+        self.proc_args = {}
+        self.config_options = {}
+        super().resolve()
+
+    def _resolve(self, overview_count: int = OVERVIEW_COUNT_DEFAULT, resampling_alg: str = None,
+                 kind: RasterKind = None, expand_rgb: bool = False, compression: str = None):
+        self.proc_args['overviewlist'] = [2 ** (i + 1) for i in range(overview_count)]
+        if not resampling_alg:
+            if not kind:
+                kind = RasterKind.guess(self.ds)
+            resampling_alg = kind.resampling_alg(expand_rgb)
+        self.proc_args['resampling'] = resampling_alg
+
+        _fill_compression(compression, self.config_options, self.ds)
+
+    def run_self(self, on_exist: OnExists):
+        with apply_gdal_config(self.config_options), \
+             OpenDS(self.ds, gdal.GA_ReadOnly, reopen=True) as ds:
+            ds.BuildOverviews(**self.proc_args)
+
+
+class OvrMakeMulti(Job):
+    proc_args: Dict[str, Any]
+    config_options: Dict[str, Any]
+
+    def __init__(self, ds: DsLike,
+                 *, owner: Optional[Job], **kwargs):
+        super().__init__(owner=owner, **kwargs)
+        self.ds = ds
+
+    def resolve(self):
+        self.proc_args = {}
+        self.config_options = {}
+        super().resolve()
+
+    @with_param_dict()
+    def _resolve(self, overview_count: int = OVERVIEW_COUNT_DEFAULT, resampling_alg: str = None,
+                 kind: RasterKind = None, expand_rgb: bool = False, compression: str = None, *, _arguments):
+        self.proc_args['overviewlist'] = [2]
+        if not resampling_alg:
+            if not kind:
+                kind = RasterKind.guess(self.ds)
+            resampling_alg = kind.resampling_alg(expand_rgb)
+        self.proc_args['resampling'] = resampling_alg
+
+        _fill_compression(compression, self.config_options, self.ds)
+
+        if overview_count > 1:
+            args = {**_arguments, 'overview_count': overview_count - 1}
+            dst_path = ds_name(self.ds) + '.ovr'
+            self.spawns_post.add(OvrMakeMulti(dst_path, owner=self, **args))
+
+    def run_self(self, on_exist: OnExists):
+        with apply_gdal_config(self.config_options), \
+             OpenDS(self.ds, gdal.GA_ReadOnly, reopen=True) as ds:
+            ds.BuildOverviews(**self.proc_args)
+
+
+class OvrMakeAuto(Job):
+    def __init__(self, ds: DsLike,
+                 *, owner: Optional[Job], **kwargs):
+        super().__init__(owner=owner, **kwargs)
+        self.ds = ds
+
+    def _resolve(self, **kwargs):
+        file_size = getsize(ds_name(self.ds))  # bytes
+        if file_size > MAX_OVR_SIZE:
+            spawn_cls = OvrMakeMulti
+        else:
+            spawn_cls = OvrMakeSingle
+
+        self.spawns_post.add(
+            spawn_cls(self.ds, owner=self, **kwargs)
+        )
+
+    def run_self(self, on_exist: OnExists):
+        pass

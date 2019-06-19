@@ -3,14 +3,15 @@ import glob
 import os
 from os import PathLike
 from pathlib import Path
-from typing import Iterator, Union
+from typing import Iterator, Union, Dict, Any
 from typing import Sequence
+from warnings import warn
 
 import gdal
 
 
 @contextmanager
-def OpenDS(source: Union[gdal.Dataset, PathLike, str], *options, **kwoptions):
+def OpenDS(source: Union[gdal.Dataset, PathLike, str], *options, wild_options=False, reopen=False, **kwoptions):
     if isinstance(source, (str, PathLike)):
         p = Path(source)
         if not p.exists():
@@ -20,12 +21,21 @@ def OpenDS(source: Union[gdal.Dataset, PathLike, str], *options, **kwoptions):
         ds = gdal.Open(source, *options, **kwoptions)
         if ds is None:
             raise IOError(f"could not open file {source}")
+        ds.__name__ = source
         yield ds
         del ds
+    elif reopen:
+        yield from OpenDS(source.__name__, *options, **kwoptions)
     else:
-        if options or kwoptions:
+        if not wild_options and (options or kwoptions):
             raise Exception('options cannot be used on an open dataset')
+        if not hasattr(source, '__name__'):
+            warn('dataset was opened outside of GDALOS, path could not be determined')
         yield source
+
+
+def ds_name(source):
+    return getattr(source, '__name__', None) or str(source)
 
 
 def _get_bands(ds: gdal.Dataset) -> Iterator[gdal.Band]:
@@ -82,6 +92,17 @@ def get_image_structure_metadata(ds, key: str, default=None):
             if metadata.startswith(key):
                 return metadata[len(key):]
         return default
+
+
+@contextmanager
+def apply_gdal_config(config: Dict[str, Any]):
+    prev = {}
+    for (k, v) in config.items():
+        prev[k] = gdal.GetConfigOption(k, None)
+        gdal.SetConfigOption(k, v)
+    yield None
+    for (k, v) in prev.items():
+        gdal.SetConfigOption(k, v)
 
 
 def expand_txt(filename):

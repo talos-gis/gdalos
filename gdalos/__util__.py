@@ -1,5 +1,7 @@
 from abc import ABC, ABCMeta
 from itertools import chain
+from os import PathLike
+from pathlib import Path
 from typing import Mapping, Type, Callable
 
 from inspect import signature, Parameter
@@ -29,6 +31,9 @@ def with_param_dict(kwarg_name='_arguments'):
             params = dict(zip(pos_names, args))
             params.update(kwargs)
 
+            for k in ('self', 'cls'):
+                params.pop(k, None)
+
             kwargs[kwarg_name] = params
 
             return func(*args, **kwargs)
@@ -38,134 +43,67 @@ def with_param_dict(kwarg_name='_arguments'):
     return decorator
 
 
-def implementor(func: Callable):
-    func.__implementor__ = True
-    return func
-
-
-def make_implementor(name: str, *args, **kwargs):
-    def decorator(func):
-        if not hasattr(func, '__implementors__'):
-            func.__implementors__ = {}
-        func.__implementors__[name] = (args, kwargs)
-        return func
-
-    return decorator
-
-
-def has_implementors(cls: Type[ABC]):
-    def const_method(const):
-        def ret(self):
-            return const
-
-        return ret
-
+def has_implementors(cls):
     am = cls.__abstractmethods__
     if len(am) != 1:
         raise ValueError('class must have exactly 1 abstract method')
-    method_name = next(iter(am))
+    cls.__abstractmethod__ = next(iter(am))
+    cls.__instance_lookup__ = {}
 
-    implementor_instances = {}
-
-    k: str
-    for k, v in cls.__dict__.items():
-        if k.startswith('_'):
-            continue
-
-        if getattr(v, '__implementor__', False):
-            subclass = type(
-                k.capitalize(), (cls,),
-                {
-                    method_name: v,
-                    '__str__': const_method(k),
-                    '__repr__': const_method(f'{cls.__name__}[{k!r}]')
-                }
-            )
-            instance = subclass()
-            implementor_instances[k] = instance
-        if getattr(v, '__implementors__', False):
-            def make_init(v):
-                if not callable(v):
-                    v = v.__func__
-
-                def __init__(self, name, *args, **kwargs):
-                    super(type(self), self).__init__()
-                    self.__name__ = name
-                    self.__func__ = v(*args, **kwargs)
-
-                return __init__
-
-            subclass = type(
-                k.capitalize(), (cls,),
-                {
-                    '__init__': make_init(v),
-                    method_name: lambda self, *a, **k: self.__func__(*a, **k),
-                    '__str__': lambda self: self.__name__,
-                    '__repr__': lambda self: f'{cls.__name__}[{self.__name__!r}]'
-                }
-            )
-            for name, (args, kwargs) in v.__implementors__.items():
-                instance = subclass(name, *args, **kwargs)
-                implementor_instances[name] = instance
-
-    cls.__class_getitem__ = lambda i: implementor_instances.get(i, i)
-
-    for k, v in implementor_instances.items():
-        if hasattr(cls, k):
-            continue
-        setattr(cls, k, v)
-
-    return cls
-
-
-class ShortABCMeta(ABCMeta):
-    def __new__(mcs, *args, **kwargs):
-        ret = super().__new__(mcs, *args, **kwargs)
-        am = ret.__abstractmethods__
-        if len(am) != 1:
-            raise ValueError('class must have exactly 1 abstract method')
-        ret.__abstractmethod__ = next(iter(am))
-        ret.__instance_lookup__ = {}
-
-        return ret
-
-    def _register_instance(cls, name, instance):
-        if cls.__instance_lookup__.setdefault(name, instance) is not instance:
+    def _register_instance(name, instance):
+        if hasattr(cls, name) \
+                or cls.__instance_lookup__.setdefault(name, instance) is not instance:
             raise Exception(f'duplicate name: {name}')
+        setattr(cls, name, instance)
+
+    def _register_subclass(sbcls):
+        if hasattr(cls, sbcls.__name__):
+            raise Exception(f'duplicate name: {sbcls.__name__}')
+        setattr(cls, sbcls.__name__, sbcls)
 
     def register_implementor(cls, name=...):
         def ret(func):
             nonlocal name
             if name is ...:
                 name = func.__name__
+
+            def __str__(self):
+                return name
+
+            def __repr__(self):
+                return f'{cls.__name__}[{name!r}]'
+
             subclass = type(
-                name.capitalize(), (cls,),
+                capitalize(name), (cls,),
                 {
                     cls.__abstractmethod__: staticmethod(func),
-                    '__str__': name,
-                    '__repr__': f'{cls.__name__}[{name!r}]'
+                    '__str__': __str__,
+                    '__repr__': __repr__
                 }
             )
-            cls._register_instance(name, subclass())
+            _register_subclass(subclass)
+            _register_instance(name, subclass())
             return func
 
         return ret
 
     def register_instance(cls, name, *args, **kwargs):
         def ret(subclass):
-            cls._register_instance(name, subclass(*args, **kwargs))
+            inst = subclass(*args, **kwargs)
+            inst.__name__ = name
+            _register_instance(name, inst)
             return subclass
 
         return ret
 
-    def register_implementor_class(cls, name=...):
+    def register_implementor_factory(cls, name=...):
         def ret(func):
             nonlocal name
             if name is ...:
                 name = func.__name__
 
             subclass = type(
-                name.capitalize(), (cls,),
+                capitalize(name), (cls,),
                 {
                     '__init__': None,
                     cls.__abstractmethod__: lambda self, *a, **k: self.__func__(*a, **k),
@@ -187,11 +125,40 @@ class ShortABCMeta(ABCMeta):
             def __repr__(self):
                 if self.__name__:
                     return f'{cls.__name__}[{self.__name__!r}]'
-                return f'{type(self).__name__}({", ".join(chain((repr(a) for a in self.args),(f"{k}={v!r}" for (k, v) in self.kwargs.items())))})'
+                args = chain((repr(a) for a in self.args), (f"{k}={v!r}" for (k, v) in self.kwargs.items()))
+                return f'{type(self).__name__}({", ".join(args)})'
 
             subclass.__init__ = __init__
             subclass.__str__ = __str__
             subclass.__repr__ = __repr__
 
+            _register_subclass(subclass)
+
             return subclass
+
         return ret
+
+    cls.implementor = classmethod(register_implementor)
+    cls.instance = classmethod(register_instance)
+    cls.factory = classmethod(register_implementor_factory)
+    return cls
+
+
+class AutoPath(PathLike):
+    def __init__(self, base: PathLike):
+        self.base = Path(base)
+        self.suffixes = []
+
+    def add_suffix(self, *suffixes: str):
+        self.suffixes.extend(
+            (s if s.startswith('.') else '.' + s)
+            for s in suffixes
+        )
+
+    def __fspath__(self):
+        return str(self.base.with_suffix(''.join(self.suffixes)))
+
+
+def capitalize(x: str):
+    split = x.split('_')
+    return ''.join(s.capitalize() for s in split)
