@@ -616,15 +616,9 @@ def gdalos_vrt(filenames: Class_or_classlist, vrt_filename=None, resampling_alg=
         os.remove(vrt_filename)
     if os.path.isfile(vrt_filename):
         return None
-    try:
         os.makedirs(os.path.dirname(vrt_filename), exist_ok=True)
         vrt_options = gdal.BuildVRTOptions(resampleAlg=resampling_alg)
-        vrt_filename = r'd:\a.vrt'
-        flatten_filenames = r'd:\maps_temp_vrt\Maps\SRTM1_hgt_20-20-80-40\SRTM1_hgt.tif.x20-80_y20-40.tif.x[35,36]_y[32,33].tif'
-        ret = gdal.BuildVRT(vrt_filename, flatten_filenames, options=vrt_options)
-        if ret is None:  # how does BuildVRT indicates an error?
-            return None
-    except:
-        return None
+    gdal.BuildVRT(vrt_filename, flatten_filenames, options=vrt_options)
+
     if os.path.isfile(vrt_filename):
         return vrt_filename
