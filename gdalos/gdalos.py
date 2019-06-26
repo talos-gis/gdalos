@@ -127,10 +127,10 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
                  extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None, src_win=None,
                  warp_CRS: MaybeSequence[Warp_crs_base] = None, out_res: Tuple[Real, Real] = None,
                  ovr_type: Optional[OvrType] = OvrType.auto_select,
-                 src_ovr: int = None, keep_src_ovr_suffixes=False, dst_overview_count=None,
+                 src_ovr: int = None, keep_src_ovr_suffixes: bool = True, dst_ovr_count: Optional[int] = None,
                  src_nodatavalue: Real = ..., dst_nodatavalue: Real = ..., hide_nodatavalue: bool = False,
-                 kind: RasterKind = None, resampling_alg=None, lossy: bool = None, expand_rgb=False,
-                 jpeg_quality=75, keep_alpha=True,
+                 kind: RasterKind = None, resampling_alg=None, lossy: bool = None, expand_rgb: bool = False,
+                 jpeg_quality: Real = 75, keep_alpha: bool = True,
                  print_progress=..., verbose=True, print_time=False, write_spec=True, *, all_args: dict = None):
     if verbose:
         info(all_args)
@@ -199,12 +199,12 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         src_ovr = -1  # base ds
     overview_count = gdal_helper.get_ovr_count(ds)
     src_ovr_last = overview_count - 1
-    if dst_overview_count is not None:
-        if dst_overview_count >= 0:
-            src_ovr_last = min(overview_count - 1, src_ovr + dst_overview_count)
+    if dst_ovr_count is not None:
+        if dst_ovr_count >= 0:
+            src_ovr_last = min(overview_count - 1, src_ovr + dst_ovr_count)
         else:
             # in this case we need to discard the selected src_ovr, becuase we want only the last ovrs
-            src_ovr = max(-1, overview_count + dst_overview_count)
+            src_ovr = max(-1, overview_count + dst_ovr_count)
 
     do_warp = (src_ovr >= 0) or (warp_CRS is not None)
 
@@ -474,12 +474,12 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             gdal_helper.unset_nodatavalue(str(out_filename))
 
         if ovr_type == OvrType.existing_reuse:
-            # overviews are numbered as follows (i.e. for dst_overview_count=3, meaning create base+3 ovrs=4 files):
+            # overviews are numbered as follows (i.e. for dst_ovr_count=3, meaning create base+3 ovrs=4 files):
             # -1: base ds, 0: first ovr, 1: second ovr, 2: third ovr
 
             all_args_new = all_args.copy()
             all_args_new['ovr_type'] = None
-            all_args_new['dst_overview_count'] = None
+            all_args_new['dst_ovr_count'] = None
             all_args_new['out_base_path'] = None
             # iterate backwards on the overviews
             for ovr_index in range(src_ovr_last, src_ovr - 1, -1):
@@ -493,7 +493,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         elif (ovr_type is not None) and (ovr_type != OvrType.existing_copy):
             # create overviews from ds (internal or external)
             gdalos_ovr(out_filename, skip_if_exists=skip_if_exists,
-                       ovr_type=ovr_type, dst_overview_count=dst_overview_count,
+                       ovr_type=ovr_type, dst_ovr_count=dst_ovr_count,
                        kind=kind, resampling_alg=resampling_alg,
                        print_progress=print_progress, verbose=verbose)
 
@@ -517,12 +517,11 @@ def add_ovr(filename, options, open_options, skip_if_exists=False, verbose=True)
     else:
         return 0
 
-
-default_dst_overview_count = 10
+default_dst_ovr_count = 10
 
 
 def gdalos_ovr(filename, comp=None, skip_if_exists=False,
-               ovr_type=..., dst_overview_count=default_dst_overview_count,
+               ovr_type=...,  dst_ovr_count=default_dst_ovr_count,
                kind=None, resampling_alg=None,
                config_options: dict = None, ovr_options: dict = None,
                print_progress=..., verbose=True):
@@ -533,8 +532,8 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
     if not os.path.isfile(filename):
         raise Exception(f'file not found: {filename}')
 
-    if dst_overview_count is None or dst_overview_count <= 0:
-        dst_overview_count = default_dst_overview_count
+    if dst_ovr_count is None or dst_ovr_count <= 0:
+        dst_ovr_count = default_dst_ovr_count
 
     if ovr_type in [..., OvrType.auto_select, OvrType.create_external_auto]:
         file_size = os.path.getsize(filename)
@@ -581,14 +580,14 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
             if ovr_type == OvrType.create_internal:
                 open_options = gdal.GA_Update
             ovr_levels = []
-            for i in range(dst_overview_count):
+            for i in range(dst_ovr_count):
                 ovr_levels.append(2 ** (i + 1))  # ovr_levels = '2 4 8 16 32 64 128 256 512 1024'
             ovr_options['overviewlist'] = ovr_levels
             ret_code = add_ovr(out_filename, ovr_options, open_options, skip_if_exists, verbose)
         elif ovr_type == OvrType.create_external_multi:
             ovr_options['overviewlist'] = [2]
             ret_code = 0
-            for i in range(dst_overview_count):
+            for i in range(dst_ovr_count):
                 ret_code = add_ovr(filename, ovr_options, open_options, skip_if_exists, verbose)
                 if ret_code != 0:
                     break
@@ -634,7 +633,6 @@ def gdalos_vrt(filenames: MaybeSequence, vrt_filename=None, resampling_alg=None)
         os.remove(vrt_filename)
     if os.path.isfile(vrt_filename):
         return None
-    try:
         os.makedirs(os.path.dirname(vrt_filename), exist_ok=True)
         vrt_options = gdal.BuildVRTOptions(resampleAlg=resampling_alg)
         ret = gdal.BuildVRT(vrt_filename, flatten_filenames, options=vrt_options)
