@@ -133,6 +133,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
                  kind: RasterKind = None, resampling_alg=None, lossy: bool = None, expand_rgb=False,
                  jpeg_quality=75, keep_alpha=True,
                  print_progress=..., verbose=True, print_time=False, write_spec=True, *, all_args: dict = None):
+    # todo as far as i can tell, src_win is legit useless and can be replaced with "extent" in all cases
     if verbose:
         info(all_args)
 
@@ -162,6 +163,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             all_args[key] = val
 
     if not filename:
+        return name:
         return None
     filename = Path(filename.strip())
 
@@ -372,6 +374,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         if not auto_dest_suffixes:
             if '.' + outext == os.path.splitext(filename)[1]:  # input and output have the same extension
                 auto_dest_suffixes.append('new')
+
         if auto_dest_suffixes:
             auto_dest_suffixes = '.' + '.'.join(auto_dest_suffixes)
         else:

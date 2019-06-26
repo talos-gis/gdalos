@@ -11,7 +11,7 @@ import gdal
 
 
 @contextmanager
-def OpenDS(source: Union[gdal.Dataset, PathLike, str], *options, wild_options=False, reopen=False, **kwoptions):
+def OpenDS(source: Union[gdal.Dataset, PathLike, str], *options, wild_options=False, reopen=False, **kwoptions)->gdal.Dataset:
     if isinstance(source, (str, PathLike)):
         p = Path(source)
         if not p.exists():

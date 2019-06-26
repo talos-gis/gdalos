@@ -1,6 +1,7 @@
 from abc import ABC, ABCMeta
 from itertools import chain
-from os import PathLike
+from numbers import Real
+from os import PathLike, path
 from pathlib import Path
 from typing import Mapping, Type, Callable
 
@@ -138,9 +139,15 @@ def has_implementors(cls):
 
         return ret
 
+    def coerce(cls, arg):
+        if isinstance(arg, cls):
+            return cls
+        return cls.__instance_lookup__[arg]
+
     cls.implementor = classmethod(register_implementor)
     cls.instance = classmethod(register_instance)
     cls.factory = classmethod(register_implementor_factory)
+    cls.coerce = classmethod(coerce)
     return cls
 
 
@@ -156,7 +163,92 @@ class AutoPath(PathLike):
         )
 
     def __fspath__(self):
-        return str(self.base.with_suffix(''.join(self.suffixes)))
+        ret = str(self.base.with_suffix(''.join(self.suffixes)))
+        if ret == self.base:
+            name, ext = path.splitext(ret)
+            ret = name + '.new' + ext
+        return ret
+
+
+class DestinationCRS:
+    default_datum = 'wgs84'
+    datum_codes = {
+        'w': (' +datum=WGS84', 'w84'),
+        'e': (' +ellps=intl +towgs84=-87,-98,-121', 'e50')
+    }
+
+    def __init__(self, arg):
+        self.zone = self.datum = self.proj4 = None
+        if isinstance(arg, str) and arg.startswith('+'):
+            self.proj4 = arg
+        elif isinstance(arg, Real):
+            self.zone = arg
+            self.datum = self.default_datum
+        elif isinstance(arg, str):
+            split = arg.rsplit('u', 1)
+            if len(split) == 1:
+                try:
+                    self.zone = float(split[0])
+                except ValueError:
+                    self.datum = split[0]
+                else:
+                    self.datum = self.default_datum
+            else:
+                dat, zone = split
+                try:
+                    self.zone = float(split[-1])
+                except ValueError:
+                    self.datum = arg
+                else:
+                    self.datum = dat
+
+        if isinstance(self.zone, float) and self.zone.is_integer():
+            self.zone = int(self.zone)
+
+        if self.proj4 is None:
+            if not self.zone:
+                p4 = '+proj=latlong'
+            elif isinstance(self.zone, int):
+                p4 = f'+proj=utm +zone={self.zone} +units=m'
+            else:
+                z_center = self._z_center()
+                p4 = f'+proj=tmerc +k=0.9996 +lon_0={z_center} +x_0=500000  +units=m'
+            if not self.datum:
+                self.datum = self.default_datum
+            d_str, _ = self.datum_codes[self.datum[0].lower()]
+            p4 += d_str
+            self.proj4 = p4 + ' +no_defs'
+
+    def _z_center(self):
+        ret = (self.zone - 30.5) * 6
+        while ret <= -180:
+            ret += 360
+        while ret > 180:
+            ret -= 360
+        return ret
+
+    def __str__(self):
+        if self.datum:
+            _, ret = self.datum_codes[self.datum[0].lower()]
+            if self.zone:
+                ret += f'u{self.zone}'
+            else:
+                ret += 'geo'
+            return ret
+        return self.proj4
+
+    def is_utm(self):
+        return self.zone is not None and self.zone > 0
+
+    def has_datum(self):
+        return self.datum
+
+    def zone_extent(self, width=10):
+        z_center = self._z_center()
+        x_1, x_2 = z_center - width / 2, z_center + width / 2
+        y_1, y_2 = -80, 80
+
+        return [(x_1, y_1), (x_1, y_2), (x_2, y_2), (x_2, y_1)]
 
 
 def capitalize(x: str):

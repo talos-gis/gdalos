@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from itertools import chain
 from os import PathLike
 from os.path import getsize
-from typing import Optional, Any, Dict, Union, Set, Iterable, List
+from typing import Optional, Any, Dict, Union, Set, Mapping, Sequence, Iterable, Tuple, Callable
 
 import logging
 from enum import Enum
@@ -12,9 +12,10 @@ from pathlib import Path
 
 import gdal
 
-from gdalos.__util__ import has_implementors, with_param_dict, AutoPath
+from gdalos import GeoRectangle
+from gdalos.__util__ import has_implementors, with_param_dict, AutoPath, DestinationCRS
 from gdalos.gdal_helper import OpenDS, get_band_types, get_image_structure_metadata, apply_gdal_config, ds_name, \
-    get_ovr_count
+    get_ovr_count, get_raster_band
 
 DsLike = Union[gdal.Dataset, PathLike, str]
 
@@ -232,12 +233,13 @@ def auto(depth=OVERVIEW_COUNT_DEFAULT, *args, **kwargs):
 def copy(job):
     job.prog_args['creationOptions'].append('COPY_SRC_OVERVIEWS=YES')
 
+
 @OvrType.instance('morph_existing')
 @OvrType.factory()
-def morph_existing(depth=OVERVIEW_COUNT_DEFAULT)
+def morph_existing(depth=OVERVIEW_COUNT_DEFAULT):
     def _(job):
-        
-
+        raise NotImplementedError  # todo
+        # as far as i can tell, this operation is not fully supported in original gdalos
 
 
 class Job:
@@ -332,7 +334,7 @@ class OutputJob(Job):
 
 
 class IOJob(OutputJob, ABC):
-    def __init__(self, src: DsLike, dst: Union[PathLike, type(...)],
+    def __init__(self, src: DsLike, dst: Union[PathLike, type(...)] = ...,
                  *, owner: Optional[Job], **kwargs):
         super().__init__(dst, owner=owner, **kwargs)
         self.src = src
@@ -344,21 +346,101 @@ class IOJob(OutputJob, ABC):
         return self.dst is ...
 
 
-class TransJob(IOJob):
+n_y = ('NO', 'YES')
+CRS_Coercable = Union[str, int, float]
+
+
+class MorphJob(IOJob):
+    @staticmethod
+    def _default_callback(pips=20):
+        pip_worth = 1 / pips
+        next_target = pip_worth
+
+        def ret(progress, *_):
+            nonlocal next_target
+            pips_to_add = 0
+            while progress >= next_target:
+                pips_to_add += 1
+                next_target += pip_worth
+            if pips_to_add:
+                print('.' * pips_to_add, end='', flush=True)
+            if progress >= 1:
+                print('done!')
+
+        return ret
+
     class Kind(Enum):
         translate = gdal.Translate
         wrap = gdal.Warp
 
     # these values will only be filled in after resolution
-    kind: TransJob.Kind
+    kind: MorphJob.Kind
     proc_args: Dict[str, Any]
+    config_options: Dict[str, Any]
 
-    def _resolve(self):
-        with OpenDS(self.src):
-            pass
+    def _resolve(self, create_info=True, output_format='GTiff', output_auto_extension='tif',
+                 tiled: Union[str, bool] = True, big_tiff='IF_SAFER',
+                 creation_options: Union[Mapping[str, str], Iterable[str]] = None, config_options=None,
+                 extent: GeoRectangle = None, destination_CRS: CRS_Coercable = None, source_ovr=-1,
+                 out_resolution: Tuple[float, float] = None, ovr_type: OvrType = OvrType.auto(),
+                 kind: RasterKind = None, progress_callback: Callable = ..., open_options = ()):
+        ds: gdal.Dataset
+        with OpenDS(self.src, *open_options) as ds:
+            geo_transform = ds.GetGeoTransform()
+            band_res = (geo_transform[1], geo_transform[5])
+            sample_band = get_raster_band(ds)
+            band_size = (sample_band.XSize, sample_band.YSize)
+
+            ovr_type = OvrType.coerce(ovr_type)
+            if kind:
+                kind = RasterKind.coerce()
+            else:
+                kind = RasterKind.guess(ds)
+            if progress_callback is ...:
+                progress_callback = self._default_callback()
+
+            if progress_callback:
+                self.proc_args['callback'] = progress_callback
+
+            self.proc_args['format'] = output_format
+
+            self.kind = self.Kind.wrap if (source_ovr >= 0) or (destination_CRS is not None) else self.Kind.translate
+
+            if config_options:
+                self.config_options.update(config_options)
+
+            if creation_options:
+                if isinstance(creation_options, Mapping):
+                    self.proc_args['creationOptions'].extend(
+                        f'{k}={v}' for (k, v) in creation_options.items()
+                    )
+                else:
+                    self.proc_args['creationOptions'].extend(creation_options)
+            if destination_CRS:
+                destination_CRS = DestinationCRS(destination_CRS)
+                if destination_CRS.has_datum():
+                    if destination_CRS.is_utm():
+                        zone_extent = GeoRectangle.from_points(destination_CRS.zone_extent())
+                        if not extent:
+                            extent = zone_extent
+                        else:
+                            extent = zone_extent.crop(extent)
+                    self.maybe_add_auto_suffix(str(destination_CRS))
+                self.proc_args['dstSRS'] = destination_CRS.proj4
+
+            if not isinstance(tiled, str):
+                tiled = n_y[tiled]
+            self.proc_args['creationOptions'].append(f'TILED={tiled}')
+
+            self.proc_args['creationOptions'].append(f'BIGTIFF={big_tiff}')
+
+            self.maybe_add_auto_suffix(output_auto_extension)
+            if create_info:
+                self.spawns_post.add(InfoJob(self.output_path, owner=self))
 
     def resolve(self):
-        self.proc_args = {}
+        self.proc_args = {'creationOptions': []}
+        self.config_options = {}
         super().resolve()
 
     def run_self(self, on_exist: OnExists):
@@ -416,13 +498,6 @@ class VrtJob(OutputJob):
 
         output.parent.mkdir(parents=True, exist_ok=True)
         gdal.BuildVRT(output, self.sources, **self.proc_args)
-
-
-"""
-There are basically 2 brands of OVR jobs:
-* creating a pyramid embedded in the raster file
-* creating/appending a single .ovr file
-"""
 
 
 def _fill_compression(compression, config, ds):
