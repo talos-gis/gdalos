@@ -158,7 +158,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
                     break  # failed?
             return ret_code
         else:
-            all_args[key] = val
+            all_args[key] = val  # adding the default parameters
 
     if not filename:
         return None
@@ -633,12 +633,10 @@ def gdalos_vrt(filenames: MaybeSequence, vrt_filename=None, resampling_alg=None)
         os.remove(vrt_filename)
     if os.path.isfile(vrt_filename):
         return None
-        os.makedirs(os.path.dirname(vrt_filename), exist_ok=True)
-        vrt_options = gdal.BuildVRTOptions(resampleAlg=resampling_alg)
-        ret = gdal.BuildVRT(vrt_filename, flatten_filenames, options=vrt_options)
-        if ret is None:  # how does BuildVRT indicates an error?
-            return None
-    except:
+    os.makedirs(os.path.dirname(vrt_filename), exist_ok=True)
+    vrt_options = gdal.BuildVRTOptions(resampleAlg=resampling_alg)
+    ret = gdal.BuildVRT(vrt_filename, flatten_filenames, options=vrt_options)
+    if ret is None:  # how does BuildVRT indicates an error?
         return None
     if os.path.isfile(vrt_filename):
         return vrt_filename
