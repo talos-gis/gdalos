@@ -92,7 +92,7 @@ def print_progress_from_to(r0, r1):
     i0 = 0 if (r0 is None) or (r0 > r1) else round(r0) + 1
     i1 = round(r1) + 1
     for i in range(i0, i1):
-        print(str(i) if i % 5 == 0 else '.', end="")
+        print(str(i) if i % 5 == 0 else '.', end="", flush=True)
     if r1 >= 100:
         print('% done!')
 
