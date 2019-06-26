@@ -1,3 +1,5 @@
+import logging
+
 from fidget.backend import prefer
 
 prefer('PyQt5')
@@ -56,4 +58,6 @@ def gdalos_qt_main():
 
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
+
     gdalos_qt_main()
