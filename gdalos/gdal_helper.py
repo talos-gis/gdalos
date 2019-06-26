@@ -36,6 +36,12 @@ def _get_bands(ds: gdal.Dataset) -> Iterator[gdal.Band]:
         ds.GetRasterBand(i + 1) for i in range(ds.RasterCount)
     )
 
+def _band_getmin(band):
+    ret = band.GetMinimum()
+    if ret is None:
+        band.ComputeStatistics(0)
+    return band.GetMinimum()
+
 
 def get_band_types(ds):
     with OpenDS(ds) as ds:
@@ -70,7 +76,7 @@ def unset_nodatavalue(ds):
 
 def get_raster_minimum(ds):
     with OpenDS(ds) as ds:
-        return min(b.GetMinimum() for b in _get_bands(ds))
+        return min(_band_getmin(b) for b in _get_bands(ds))
 
 
 def get_image_structure_metadata(ds, key: str, default=None):

@@ -4,7 +4,7 @@ import os
 import time
 import datetime
 from numbers import Real
-from logging import debug, info, warning
+from logging import debug, info, warning, basicConfig, FileHandler, getLogger
 from enum import Enum, auto
 from pathlib import Path
 
@@ -118,6 +118,7 @@ MaybeSequence = Union[T, Sequence[T]]
 Warp_crs_base = Union[str, int, Real]
 default_multi_byte_nodata_value = -32768
 
+
 @with_param_dict('all_args')
 def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_base_path: str = None,
                  skip_if_exists=True, create_info=True, multi_file_as_vrt=False,
@@ -138,8 +139,8 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
 
     for key in key_list_arguments:
         val = all_args[key]
-        val = gdal_helper.flatten_and_expand_file_list(val, do_expand_glob=key=='filename')
-        if key=='filename':
+        val = gdal_helper.flatten_and_expand_file_list(val, do_expand_glob=key == 'filename')
+        if key == 'filename':
             if gdal_helper.is_list_like(val) and multi_file_as_vrt:
                 vrt_filename = gdalos_vrt(val, resampling_alg=resampling_alg)
                 if vrt_filename is None:
@@ -384,6 +385,13 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     if out_base_path is not None:
         out_filename = Path(out_base_path).joinpath(*out_filename.parts[1:])
 
+    handler = None
+    if write_spec:
+        spec_filename = out_filename.with_suffix('.spec')
+        handler = FileHandler(spec_filename, 'w')
+        getLogger().addHandler(handler)
+        basicConfig(level='INFO')
+
     if not os.path.exists(os.path.dirname(out_filename)):
         os.makedirs(os.path.dirname(out_filename), exist_ok=True)
 
@@ -435,7 +443,9 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             config_options = dict()
         elif config_options is ...:
             config_options = {'GDAL_HTTP_UNSAFESSL': 'YES'}  # for gdal-wms xml files
+
         try:
+
             if config_options:
                 if verbose:
                     info('config options: ' + str(config_options))
@@ -445,14 +455,6 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             if do_warp:
                 if verbose:
                     info('wrap options: ' + str(warp_options))
-                if write_spec:
-                    spec_filename = out_filename.with_suffix('.spec')
-                    spec_filename.write_text(
-                        f"""# spec file for {out_filename}:
-                        # function call:
-                        gdalos_trans({}
-                        """
-                    )
                 ret_code = gdal.Warp(str(out_filename), str(filename), **common_options, **warp_options)
             else:
                 if verbose:
@@ -465,6 +467,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         if print_time:
             print_time_now()
             warning('Time for creating file: {} is {} seconds'.format(out_filename, round(time.time() - start_time)))
+
 
     if ret_code is not None:
         if not skipped and hide_nodatavalue:
@@ -497,6 +500,8 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         if create_info:
             gdalos_info(out_filename, skip_if_exists=skip_if_exists)
 
+    if write_spec:
+        getLogger().removeHandler(handler)
     del ds
     return ret_code
 
@@ -614,7 +619,7 @@ def gdalos_info(filename, skip_if_exists=False):
     return ret_code
 
 
-def gdalos_vrt(filenames: MaybeList, vrt_filename=None, resampling_alg=None):
+def gdalos_vrt(filenames: MaybeSequence, vrt_filename=None, resampling_alg=None):
     if gdal_helper.is_list_like(filenames):
         flatten_filenames = gdal_helper.flatten_and_expand_file_list(filenames)
     else:
