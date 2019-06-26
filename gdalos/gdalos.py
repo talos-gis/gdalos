@@ -125,10 +125,10 @@ def gdalos_trans(filename: Class_or_classlist, out_filename: str = None, out_bas
                  extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None, src_win=None,
                  warp_CRS: Warp_crs = None, out_res: Real_tuple = None,
                  ovr_type: Optional[OvrType] = OvrType.auto_select,
-                 src_ovr: int = None, keep_src_ovr_suffixes=True, dst_ovr_count=None,
+                 src_ovr: int = None, keep_src_ovr_suffixes: bool = True, dst_ovr_count: Optional[int] = None,
                  src_nodatavalue: Real = ..., dst_nodatavalue: Real = ..., hide_nodatavalue: bool = False,
-                 kind: RasterKind = None, resampling_alg=None, lossy: bool = None, expand_rgb=False,
-                 jpeg_quality=75, keep_alpha=True,
+                 kind: RasterKind = None, resampling_alg=None, lossy: bool = None, expand_rgb: bool = False,
+                 jpeg_quality: Real = 75, keep_alpha: bool = True,
                  print_progress=..., verbose=True, print_time=False):
     all_args = dict(locals())
     if verbose:
