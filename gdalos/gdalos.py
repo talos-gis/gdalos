@@ -123,7 +123,7 @@ default_multi_byte_nodata_value = -32768
 def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_base_path: str = None,
                  skip_if_exists=True, create_info=True, multi_file_as_vrt=False,
                  of: MaybeSequence[str] = 'GTiff', outext: str = 'tif', tiled=True, big_tiff: str = 'IF_SAFER',
-                 creation_options=None, config_options: dict = ...,
+                 open_options=None, creation_options=None, config_options: dict = ...,
                  extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None, src_win=None,
                  warp_CRS: MaybeSequence[Warp_crs_base] = None, out_res: Tuple[Real, Real] = None,
                  ovr_type: Optional[OvrType] = OvrType.auto_select,
@@ -185,41 +185,28 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     if print_progress:
         common_options['callback'] = print_progress_callback(print_progress)
 
-    translate_options = {}
-    warp_options = {}
-    open_options = {}
-
-    # todo needs a parameter to pass Open options
-    ds = gdal.Open(str(filename))
-    geo_transform = ds.GetGeoTransform()
-    bnd_res = (geo_transform[1], geo_transform[5])
-    bnd = gdal_helper.get_raster_band(ds)
-    bnd_size = (bnd.XSize, bnd.YSize)
+    ds = gdal_helper.open_ds(filename, src_ovr=src_ovr, open_options=open_options)
 
     if src_ovr is None:
-        src_ovr = -1  # base ds
+        src_ovr = -1  # base raster
     overview_count = gdal_helper.get_ovr_count(ds)
     src_ovr_last = overview_count - 1
     if dst_ovr_count is not None:
         if dst_ovr_count >= 0:
             src_ovr_last = min(overview_count - 1, src_ovr + dst_ovr_count)
         else:
-            # in this case we need to discard the selected src_ovr, becuase we want only the last ovrs
-            src_ovr = max(-1, overview_count + dst_ovr_count)
+            # in this case we'll reopen the ds with a new src_ovr, becuase we want only the last ovrs
+            new_src_ovr = max(-1, overview_count + dst_ovr_count)
+            if new_src_ovr != src_ovr:
+                src_ovr = new_src_ovr
+                del ds
+                ds = gdal_helper.OpenDS(filename, src_ovr=src_ovr, open_options=open_options)
 
+    geo_transform = ds.GetGeoTransform()
+    input_res = (geo_transform[1], geo_transform[5])
+    translate_options = {}
+    warp_options = {}
     do_warp = (warp_CRS is not None)
-
-    if src_ovr >= 0:
-        # we should process only the given src_ovr, thus discarding ovr_type
-        ovr = bnd.GetOverview(src_ovr)
-        ovr_res = (
-            bnd_res[0] * bnd_size[0] / ovr.XSize,
-            bnd_res[1] * bnd_size[1] / ovr.YSize
-        )
-        warp_options['overviewLevel'] = src_ovr
-    else:
-        ovr_res = bnd_res
-    out_res_xy = out_res
 
     band_types = gdal_helper.get_band_types(ds)
     if kind in [None, ...]:
@@ -329,23 +316,23 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         if out_extent_in_src_srs.is_empty():
             raise Exception
 
-        if out_res_xy is None:
+        if out_res is None:
             transform_src_tgt = get_extent.get_transform(pjstr_src_srs, pjstr_tgt_srs)
             if transform_src_tgt is not None:
-                in_res_y = ovr_res[1]  # geo_transform[5]  # Mpp.Y == geotransform[5]
+                in_res_y = input_res[1]  # geo_transform[5]  # Mpp.Y == geotransform[5]
                 out_res_x = get_extent.transform_resolution(transform_src_tgt, in_res_y, *out_extent_in_src_srs.lrdu)
                 out_res_x = get_extent.round_to_sig(out_res_x, -1)
-                out_res_xy = (out_res_x, -out_res_x)
+                out_res = (out_res_x, -out_res_x)
     elif src_win is not None:
         translate_options['srcWin'] = src_win
 
-    if out_res_xy is None and src_ovr >= 0:
-        out_res_xy = ovr_res
+    if out_res is None and src_ovr >= 0:
+        out_res = input_res
 
-    if out_res_xy is not None:
-        common_options['xRes'], common_options['yRes'] = out_res_xy
+    if out_res is not None:
+        common_options['xRes'], common_options['yRes'] = out_res
         warp_options['targetAlignedPixels'] = True
-        out_suffixes.append(str(out_res_xy))
+        out_suffixes.append(str(out_res))
 
     org_comp = gdal_helper.get_image_structure_metadata(ds, 'COMPRESSION')
     if lossy is None:
@@ -387,6 +374,8 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         out_filename = Path(out_base_path).joinpath(*out_filename.parts[1:])
 
     handler = None
+    if write_spec is ...:
+        write_spec = create_info
     if write_spec:
         spec_filename = out_filename.with_suffix('.spec')
         handler = FileHandler(spec_filename, 'w')
@@ -421,7 +410,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             common_options['creationOptions'].append('COPY_SRC_OVERVIEWS=YES')
         elif ovr_type in [..., OvrType.auto_select]:
             if overview_count > 0:
-                # if ds has overviews then use them, otherwise create overviews
+                # if the raster has overviews then use them, otherwise create overviews
                 ovr_type = OvrType.existing_reuse
             else:
                 ovr_type = OvrType.create_external_auto
@@ -456,18 +445,11 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             if do_warp:
                 if verbose:
                     info('wrap options: ' + str(warp_options))
-                ret_code = gdal.Warp(str(out_filename), str(filename), **common_options, **warp_options)
+                ret_code = gdal.Warp(str(out_filename), ds, **common_options, **warp_options)
             else:
-                if src_ovr >= 0:
-                    open_options['OVERVIEW_LEVEL'] = src_ovr
                 if verbose:
-                    info('open options: ' + str(open_options))
                     info('translate options: ' + str(translate_options))
-                if open_options:
-                    del ds
-                    open_options = ['{}={}'.format(k,v) for k,v in open_options.items()]
-                    ds = gdal.OpenEx(str(filename), open_options=open_options)
-                ret_code = gdal.Translate(str(out_filename), str(filename), **common_options, **translate_options)
+                ret_code = gdal.Translate(str(out_filename), ds, **common_options, **translate_options)
         finally:
             for key, val in config_options.items():
                 gdal.SetConfigOption(key, None)

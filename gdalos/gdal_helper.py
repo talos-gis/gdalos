@@ -1,26 +1,40 @@
 import glob
 import os
+from logging import info
 from pathlib import Path
 from typing import Iterator
 from typing import Sequence
 
 import gdal
 
+def open_ds(filename, access_mode=gdal.GA_ReadOnly, src_ovr=None, open_options=None):
+    if open_options is None:
+        open_options = {}
+    if src_ovr is not None and src_ovr >= 0:
+        open_options['OVERVIEW_LEVEL'] = src_ovr
+    info('open {} with options: {}'.format(filename, str(open_options)))
+    if open_options:
+        open_options = ['{}={}'.format(k, v) for k, v in open_options.items()]
+
+    if open_options:
+        return gdal.OpenEx(str(filename), open_options=open_options)
+    else:
+        return gdal.Open(str(filename), access_mode)
 
 class OpenDS:
-    def __init__(self, filename_or_ds, *options):
+    def __init__(self, filename_or_ds, **kwargs):
         if isinstance(filename_or_ds, (str, Path)):
             self.filename = str(filename_or_ds)
             self.ds = None
         else:
             self.filename = None
             self.ds = filename_or_ds
-        self.options = options
+        self.kwargs = kwargs
         self.own = None
 
     def __enter__(self)->gdal.Dataset:
         if self.ds is None:
-            self.ds = gdal.Open(self.filename, *self.options)
+            self.ds = open_ds(self.filename, **self.kwargs)
             if self.ds is None:
                 raise IOError("could not open file {}".format(self.filename))
             self.own = True
