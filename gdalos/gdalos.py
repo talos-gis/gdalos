@@ -187,6 +187,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
 
     translate_options = {}
     warp_options = {}
+    open_options = {}
 
     # todo needs a parameter to pass Open options
     ds = gdal.Open(str(filename))
@@ -206,7 +207,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             # in this case we need to discard the selected src_ovr, becuase we want only the last ovrs
             src_ovr = max(-1, overview_count + dst_ovr_count)
 
-    do_warp = (src_ovr >= 0) or (warp_CRS is not None)
+    do_warp = (warp_CRS is not None)
 
     if src_ovr >= 0:
         # we should process only the given src_ovr, thus discarding ovr_type
@@ -457,8 +458,15 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
                     info('wrap options: ' + str(warp_options))
                 ret_code = gdal.Warp(str(out_filename), str(filename), **common_options, **warp_options)
             else:
+                if src_ovr >= 0:
+                    open_options['OVERVIEW_LEVEL'] = src_ovr
                 if verbose:
+                    info('open options: ' + str(open_options))
                     info('translate options: ' + str(translate_options))
+                if open_options:
+                    del ds
+                    open_options = ['{}={}'.format(k,v) for k,v in open_options.items()]
+                    ds = gdal.OpenEx(str(filename), open_options=open_options)
                 ret_code = gdal.Translate(str(out_filename), str(filename), **common_options, **translate_options)
         finally:
             for key, val in config_options.items():
