@@ -33,10 +33,9 @@ class GdalosWidget(FidgetConverter):
                     FidgetEditCombo.template('output extension', options=('tif',),
                                              make_title=True),
                     FidgetCheckBox.template('skip if exists', initial_value=False),
-                    FidgetCheckBox.template('tiled', options=('NO', 'YES')),
-                    FidgetCombo.template('BIGTIFF', options=['YES', 'NO', 'IF_NEEDED', 'IF_SAFER'],
-                                         initial_value='IF_SAFER',
-                                         make_title=True),
+                    FidgetCheckBox.template('cloud optimized geotiff', initial_value=False),
+                    FidgetCheckBox.template('create info', initial_value=True),
+                    FidgetCheckBox.template('write spec', initial_value=True),
                     FidgetMinimal.template(
                         FidgetOptional.template(
                             CrsWidget.template('wrap CRS', make_plaintext=True, make_indicator=True,
@@ -66,11 +65,10 @@ class GdalosWidget(FidgetConverter):
                         ), layout_cls=QHBoxLayout),
                         make_indicator=False, make_title=True, make_plaintext=True
                     ),
-                    FidgetCheckBox.template('create info', initial_value=True),
 
                     NodatavalueWidget.template('destination nodatavalue'),
                     NodatavalueWidget.template('source nodatavalue'),
-                    FidgetCheckBox.template('hide nodatavalue'),
+                    FidgetCheckBox.template('hide nodatavalue', initial_value=False),
                 ],
                 make_plaintext=False
             ),
@@ -112,6 +110,10 @@ class GdalosWidget(FidgetConverter):
                                          initial_index=0, make_title=True),
                     FidgetSpin.template('jpeg quality', 1, 100, initial_value=75, make_title=True),
                     FidgetCheckBox.template('keep alpha'),
+                    FidgetCheckBox.template('tiled', options=('NO', 'YES')),
+                    FidgetCombo.template('BIGTIFF', options=['YES', 'NO', 'IF_NEEDED', 'IF_SAFER'],
+                                         initial_value='IF_SAFER',
+                                         make_title=True),
                 ],
                 make_plaintext=False
             ),

@@ -1,5 +1,3 @@
-import logging
-
 from fidget.backend import prefer
 
 prefer('PyQt5')
@@ -30,34 +28,45 @@ def gdalos_qt_main():
     q.show()
     result = q.exec()
     print(result)
+
+    parameters = dict()
+    parameters['source file'] = 'filename'
+    parameters['source ovr'] = 'src_ovr'
+    parameters['output format'] = 'of'
+    parameters['cloud optimized geotiff'] = 'cog'
+    parameters['create info'] = 'create_info'
+    parameters['write spec'] = 'write_spec'
+    parameters['output extension'] = 'outext'
+    parameters['BIGTIFF'] = 'big_tiff'
+    parameters['wrap CRS'] = 'warp_CRS'
+    parameters['destination file'] = 'out_filename'
+    parameters['skip if exists'] = 'skip_if_exists'
+    parameters['raster kind'] = 'kind'
+    parameters['expand rgb'] = 'expand_rgb'
+    parameters['resolution'] = 'out_res'
+    parameters['destination nodatavalue'] = 'dst_nodatavalue'
+    parameters['source nodatavalue'] = 'src_nodatavalue'
+    parameters['hide nodatavalue'] = 'hide_nodatavalue'
+    parameters['source window'] = 'src_win'
+    parameters['ovr type'] = 'ovr_type'
+    parameters['resampling method'] = 'resampling_alg'
+    parameters['jpeg quality'] = 'jpeg_quality'
+    parameters['keep alpha'] = 'keep_alpha'
+
     if result.is_ok() and result.value is not None:
         for v in result.value:
             d = dict(v[0])
-            d['filename'] = str(d.pop('source file'))
-            d['src_ovr'] = d.pop('source ovr')
-            d['of'] = d.pop('output format')
-            d['outext'] = d.pop('output extension')
-            d['big_tiff'] = d.pop('BIGTIFF')
-            d['warp_CRS'] = d.pop('wrap CRS')
-            d['out_filename'] = d.pop('destination file')
-            d['skip_if_exists'] = d.pop('skip if exists')
-            d['kind'] = d.pop('raster kind')
-            d['expand_rgb'] = d.pop('expand rgb')
-            d['out_res'] = d.pop('resolution')
-            d['create_info'] = d.pop('create info')
-            d['dst_nodatavalue'] = d.pop('destination nodatavalue')
-            d['src_nodatavalue'] = d.pop('source nodatavalue')
-            d['hide_nodatavalue'] = d.pop('hide nodatavalue')
-            d['src_win'] = d.pop('source window')
-            d['ovr_type'] = d.pop('ovr type')
-            d['resampling_alg'] = d.pop('resampling method')
-            d['jpeg_quality'] = d.pop('jpeg quality')
-            d['keep_alpha'] = d.pop('keep alpha')
-            print(gdalos_trans(**d))
+            d2 = dict()
+            for k,v in d.items():
+                if k in parameters.keys():
+                    new_k = parameters[k]
+                else:
+                    new_k = k
+                d2[new_k] = d[k]
+
+            print(gdalos_trans(**d2))
     # app.exec_()
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
-
     gdalos_qt_main()

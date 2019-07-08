@@ -123,16 +123,16 @@ default_multi_byte_nodata_value = -32768
 
 @with_param_dict('all_args')
 def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_base_path: str = None,
-                 skip_if_exists=True, create_info=True, multi_file_as_vrt=False,
+                 skip_if_exists=True, create_info=True, cog=False, multi_file_as_vrt=False,
                  of: MaybeSequence[str] = 'GTiff', outext: str = 'tif', tiled=True, big_tiff: str = 'IF_SAFER',
                  open_options=None, creation_options=None, config_options: dict = ...,
                  extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None, src_win=None,
                  warp_CRS: MaybeSequence[Warp_crs_base] = None, out_res: Tuple[Real, Real] = None,
                  ovr_type: Optional[OvrType] = OvrType.auto_select,
-                 src_ovr: int = None, keep_src_ovr_suffixes: bool = True, dst_ovr_count: Optional[int] = None,
+                 src_ovr: Optional[int] = None, keep_src_ovr_suffixes: bool = True, dst_ovr_count: Optional[int] = None,
                  src_nodatavalue: Real = ..., dst_nodatavalue: Real = ..., hide_nodatavalue: bool = False,
                  kind: RasterKind = None, resampling_alg=None, lossy: bool = None, expand_rgb: bool = False,
-                 jpeg_quality: Real = 75, keep_alpha: bool = True, cog=False,
+                 jpeg_quality: Real = 75, keep_alpha: bool = True,
                  print_progress=..., print_time=False, logger=..., write_spec=True, *, all_args: dict = None):
 
     logger_handlers = []
@@ -211,7 +211,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             if new_src_ovr != src_ovr:
                 src_ovr = new_src_ovr
                 del ds
-                ds = gdal_helper.OpenDS(filename, src_ovr=src_ovr, open_options=open_options)
+                ds = gdal_helper.open_ds(filename, src_ovr=src_ovr, open_options=open_options, logger=logger)
 
     geo_transform = ds.GetGeoTransform()
     input_res = (geo_transform[1], geo_transform[5])
@@ -234,6 +234,8 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         if src_nodatavalue is None:
             # assume raster minimum is nodata if nodata isn't set
             src_nodatavalue = gdal_helper.get_raster_minimum(ds)
+            if abs(src_nodatavalue - default_multi_byte_nodata_value)>100:
+                src_nodatavalue = None
 
         if src_nodatavalue != dst_nodatavalue:
             do_warp = True
@@ -354,7 +356,6 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     else:
         comp = 'DEFLATE'
 
-
     # if (comp == 'JPEG') and (len(bands) == 3) or ((len(bands) == 4) and (keep_alpha)):
     if (comp == 'JPEG') and (len(band_types) in (3, 4)):
         common_options['creationOptions'].append('PHOTOMETRIC=YCBCR')
@@ -376,7 +377,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     common_options['format'] = of
 
     # decide ovr_type
-    post_cog = cog
+    cog_2_steps = cog
     if ovr_type in [..., OvrType.auto_select]:
         if overview_count > 0:
             # if the raster has overviews then use them, otherwise create overviews
@@ -387,12 +388,12 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     if ovr_type == OvrType.existing_auto:
         can_cog = not (
                 creation_options or extent or src_win or warp_CRS or out_res or translate_options or warp_options)
-        if can_cog:
-            post_cog = False
+        if cog and can_cog:
+            cog_2_steps = False
         else:
             ovr_type = OvrType.existing_reuse
 
-    if cog and not post_cog:
+    if cog and not cog_2_steps:
         common_options['creationOptions'].append('COPY_SRC_OVERVIEWS=YES')
 
     # make out_filename
@@ -400,7 +401,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     cog_filename = None
 
     if auto_out_filename:
-        if post_cog and ovr_type == OvrType.create_external_auto:
+        if cog_2_steps and ovr_type == OvrType.create_external_auto:
             # create overviews for the input file then create a cog
             out_filename = filename
         else:
@@ -416,7 +417,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
                 out_suffixes.append('x[{},{}]_y[{},{}]'.format(*out_extent_in_4326.lrdu))
             elif src_win is not None:
                 out_suffixes.append('off[{},{}]_size[{},{}]'.format(*src_win))
-            if cog and not post_cog:
+            if cog and not cog_2_steps:
                 out_suffixes.append('cog')
             if not out_suffixes:
                 if '.' + outext == os.path.splitext(filename)[1]:  # input and output have the same extension
@@ -432,7 +433,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         out_filename = Path(out_filename)
         if cog:
             cog_filename = out_filename
-            if post_cog:
+            if cog_2_steps:
                 out_filename = out_filename.with_suffix('.temp' + '.' + outext)
 
     if out_base_path is not None:
@@ -516,9 +517,11 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
                        ovr_type=ovr_type, dst_ovr_count=dst_ovr_count,
                        kind=kind, resampling_alg=resampling_alg,
                        print_progress=print_progress, logger=logger)
-        if post_cog:
+        if cog_2_steps:
             gdalos_trans(out_filename, out_filename=cog_filename, cog=True,
-                         logger=logger, create_info=create_info, write_spec=write_spec)
+                         of=of, outext=outext, tiled=tiled, big_tiff=big_tiff, src_ovr=src_ovr,
+                         print_progress=print_progress, print_time=print_time,
+                         logger=logger, skip_if_exists=skip_if_exists, create_info=create_info, write_spec=write_spec)
             create_info = False
         if create_info:
             gdalos_info(out_filename, skip_if_exists=skip_if_exists)

@@ -83,7 +83,7 @@ def get_nodatavalue(ds):
 
 
 def unset_nodatavalue(ds):
-    with OpenDS(ds, gdal.GA_Update) as ds:
+    with OpenDS(ds, access_mode=gdal.GA_Update) as ds:
         for b in _get_bands(ds):
             b.DeleteNoDataValue()
 
