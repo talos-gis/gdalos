@@ -4,7 +4,8 @@ import os
 import time
 import datetime
 from numbers import Real
-from logging import debug, info, warning, basicConfig, FileHandler, getLogger
+import logging
+from gdalos import gdalos_logger
 from enum import Enum, auto
 from pathlib import Path
 
@@ -71,19 +72,20 @@ def resampling_alg_by_kind(kind, expand_rgb=False):
         return 'cubic'
 
 
-def do_skip_if_exists(out_filename, skip_if_exists, verbose=True):
+def do_skip_if_exists(out_filename, skip_if_exists, logger=None):
+    verbose = logger is not None
     skip = False
     if os.path.isfile(out_filename):
         if skip_if_exists:
             skip = True
             if verbose:
-                warning('file {} exits, skip!\n'.format(out_filename))
+                logger.warning('file {} exits, skip!\n'.format(out_filename))
         else:
             if verbose:
-                warning('file {} exits, removing...!\n'.format(out_filename))
+                logger.warning('file {} exits, removing...!\n'.format(out_filename))
             os.remove(out_filename)
             if verbose:
-                warning('file {} removed!\n'.format(out_filename))
+                logger.warning('file {} removed!\n'.format(out_filename))
     return skip
 
 
@@ -131,9 +133,18 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
                  src_nodatavalue: Real = ..., dst_nodatavalue: Real = ..., hide_nodatavalue: bool = False,
                  kind: RasterKind = None, resampling_alg=None, lossy: bool = None, expand_rgb: bool = False,
                  jpeg_quality: Real = 75, keep_alpha: bool = True,
-                 print_progress=..., verbose=True, print_time=False, write_spec=True, *, all_args: dict = None):
+                 print_progress=..., print_time=False, logger=..., write_spec=True, *, all_args: dict = None):
+
+    logger_handlers = []
+    if logger is ...:
+        logger = logging.getLogger(__name__)
+        logger_handlers.append(gdalos_logger.set_logger_console(logger))
+    if write_spec and logger is None:
+        logger = logging.getLogger(__name__)
+    all_args['logger'] = logger
+    verbose = logger is not None
     if verbose:
-        info(all_args)
+        logger.info(all_args)
 
     key_list_arguments = ['filename', 'extent', 'warp_CRS', 'of', 'expand_rgb']
 
@@ -185,7 +196,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     if print_progress:
         common_options['callback'] = print_progress_callback(print_progress)
 
-    ds = gdal_helper.open_ds(filename, src_ovr=src_ovr, open_options=open_options)
+    ds = gdal_helper.open_ds(filename, src_ovr=src_ovr, open_options=open_options, logger=logger)
 
     if src_ovr is None:
         src_ovr = -1  # base raster
@@ -373,14 +384,9 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     if out_base_path is not None:
         out_filename = Path(out_base_path).joinpath(*out_filename.parts[1:])
 
-    handler = None
-    if write_spec is ...:
-        write_spec = create_info
     if write_spec:
         spec_filename = out_filename.with_suffix('.spec')
-        handler = FileHandler(spec_filename, 'w')
-        getLogger().addHandler(handler)
-        basicConfig(level='INFO')
+        logger_handlers.append(gdalos_logger.set_file_logger(logger, spec_filename))
 
     if not os.path.exists(os.path.dirname(out_filename)):
         os.makedirs(os.path.dirname(out_filename), exist_ok=True)
@@ -418,7 +424,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     if ovr_type == OvrType.existing_reuse:
         skipped = True
     else:
-        skipped = do_skip_if_exists(out_filename, skip_if_exists, verbose)
+        skipped = do_skip_if_exists(out_filename, skip_if_exists, logger)
 
     ret_code = 0
     if not skipped:
@@ -426,8 +432,8 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             print_time_now()
 
         if verbose:
-            info('filename: ' + str(out_filename) + ' ...')
-            info('common options: ' + str(common_options))
+            logger.info('filename: ' + str(out_filename) + ' ...')
+            logger.info('common options: ' + str(common_options))
 
         if config_options is None:
             config_options = dict()
@@ -438,17 +444,17 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
 
             if config_options:
                 if verbose:
-                    info('config options: ' + str(config_options))
+                    logger.info('config options: ' + str(config_options))
                 for k, v in config_options.items():
                     gdal.SetConfigOption(k, v)
 
             if do_warp:
                 if verbose:
-                    info('wrap options: ' + str(warp_options))
+                    logger.info('wrap options: ' + str(warp_options))
                 ret_code = gdal.Warp(str(out_filename), ds, **common_options, **warp_options)
             else:
                 if verbose:
-                    info('translate options: ' + str(translate_options))
+                    logger.info('translate options: ' + str(translate_options))
                 ret_code = gdal.Translate(str(out_filename), ds, **common_options, **translate_options)
         finally:
             for key, val in config_options.items():
@@ -456,7 +462,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
 
         if print_time:
             print_time_now()
-            warning('Time for creating file: {} is {} seconds'.format(out_filename, round(time.time() - start_time)))
+            logger.warning('Time for creating file: {} is {} seconds'.format(out_filename, round(time.time() - start_time)))
 
 
     if ret_code is not None:
@@ -471,6 +477,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             all_args_new['ovr_type'] = None
             all_args_new['dst_ovr_count'] = None
             all_args_new['out_base_path'] = None
+            all_args_new['write_spec'] = False
             # iterate backwards on the overviews
             for ovr_index in range(src_ovr_last, src_ovr - 1, -1):
                 all_args_new['out_filename'] = concat_paths(out_filename, '.ovr' * (ovr_index - src_ovr))
@@ -485,23 +492,24 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             gdalos_ovr(out_filename, skip_if_exists=skip_if_exists,
                        ovr_type=ovr_type, dst_ovr_count=dst_ovr_count,
                        kind=kind, resampling_alg=resampling_alg,
-                       print_progress=print_progress, verbose=verbose)
+                       print_progress=print_progress, logger=logger)
 
         if create_info:
             gdalos_info(out_filename, skip_if_exists=skip_if_exists)
 
-    if write_spec:
-        getLogger().removeHandler(handler)
+    for handler in logger_handlers:
+        logging.getLogger().removeHandler(handler)
     del ds
     return ret_code
 
 
-def add_ovr(filename, options, open_options, skip_if_exists=False, verbose=True):
+def add_ovr(filename, options, open_options, skip_if_exists=False, logger=None):
+    verbose = logger is not None
     filename = Path(filename)
     out_filename = gdal_helper.concat_paths(filename, '.ovr')
-    if not do_skip_if_exists(out_filename, skip_if_exists, verbose):
+    if not do_skip_if_exists(out_filename, skip_if_exists, logger):
         if verbose:
-            info('adding ovr: {} options: {} open_options: {}'.format(out_filename, options, open_options))
+            logger.info('adding ovr: {} options: {} open_options: {}'.format(out_filename, options, open_options))
         with gdal_helper.OpenDS(filename, open_options) as ds:
             return ds.BuildOverviews(**options)
     else:
@@ -514,7 +522,8 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
                ovr_type=...,  dst_ovr_count=default_dst_ovr_count,
                kind=None, resampling_alg=None,
                config_options: dict = None, ovr_options: dict = None,
-               print_progress=..., verbose=True):
+               print_progress=..., logger=None):
+    verbose = logger is not None
     filename = Path(filename)
     if os.path.isdir(filename):
         raise Exception(f'input is a dir, not a file: {filename}')
@@ -560,7 +569,7 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
     try:
         if config_options:
             if verbose:
-                info('config options: ' + str(config_options))
+                logger.info('config options: ' + str(config_options))
             for k, v in config_options.items():
                 gdal.SetConfigOption(k, v)
 
@@ -573,12 +582,12 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
             for i in range(dst_ovr_count):
                 ovr_levels.append(2 ** (i + 1))  # ovr_levels = '2 4 8 16 32 64 128 256 512 1024'
             ovr_options['overviewlist'] = ovr_levels
-            ret_code = add_ovr(out_filename, ovr_options, open_options, skip_if_exists, verbose)
+            ret_code = add_ovr(out_filename, ovr_options, open_options, skip_if_exists, logger)
         elif ovr_type == OvrType.create_external_multi:
             ovr_options['overviewlist'] = [2]
             ret_code = 0
             for i in range(dst_ovr_count):
-                ret_code = add_ovr(filename, ovr_options, open_options, skip_if_exists, verbose)
+                ret_code = add_ovr(filename, ovr_options, open_options, skip_if_exists, logger)
                 if ret_code != 0:
                     break
                 filename = gdal_helper.concat_paths(filename, '.ovr')
@@ -599,9 +608,9 @@ def gdalos_info(filename, skip_if_exists=False):
     out_filename = gdal_helper.concat_paths(filename, '.info')
     if not do_skip_if_exists(out_filename, skip_if_exists=skip_if_exists):
         with gdal_helper.OpenDS(filename) as ds:
-            info = gdal.Info(ds)
+            gdal_info = gdal.Info(ds)
         with open(out_filename, 'w') as w:
-            w.write(info)
+            w.write(gdal_info)
         ret_code = 0
     else:
         ret_code = 0

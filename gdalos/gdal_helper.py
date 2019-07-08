@@ -1,18 +1,18 @@
 import glob
 import os
-from logging import info
 from pathlib import Path
 from typing import Iterator
 from typing import Sequence
 
 import gdal
 
-def open_ds(filename, access_mode=gdal.GA_ReadOnly, src_ovr=None, open_options=None):
+def open_ds(filename, access_mode=gdal.GA_ReadOnly, src_ovr=None, open_options=None, logger=None):
     if open_options is None:
         open_options = {}
     if src_ovr is not None and src_ovr >= 0:
         open_options['OVERVIEW_LEVEL'] = src_ovr
-    info('open {} with options: {}'.format(filename, str(open_options)))
+    if logger is not None:
+        logger.info('openning file: "{}" with options: "{}"'.format(filename, str(open_options)))
     if open_options:
         open_options = ['{}={}'.format(k, v) for k, v in open_options.items()]
 
