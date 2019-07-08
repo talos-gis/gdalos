@@ -116,7 +116,7 @@ def expand_txt(filename):
 
 def flatten_and_expand_file_list(l, do_expand_txt=True, do_expand_glob=True):
     if is_path_like(l):
-        item = l.strip()
+        item = str(l).strip()
         if do_expand_glob:
             item1 = glob.glob(str(item).strip())
             if len(item1) == 1:

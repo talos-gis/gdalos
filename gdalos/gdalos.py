@@ -24,13 +24,13 @@ def print_time_now():
 
 
 class OvrType(Enum):
-    auto_select = auto()  # existing_reuse or create_external_auto (by existance of src overviews)
+    auto_select = auto()  # existing_auto or create_external_auto (by existance of src overviews)
     create_external_auto = auto()  # create_external_single or create_external_multi (by size)
     create_external_single = auto()  # create a single .ovr file with all the overviews
     create_external_multi = auto()  # create one ovr file per overview: .ovr, .ovr.ovr, .ovr.ovr.orv ....
     create_internal = auto()  # create overviews inside the main dataset file
+    existing_auto = auto()  # existing_reuse or create cog
     existing_reuse = auto()  # work with existing overviews
-    existing_copy = auto()  # COPY_SRC_OVERVIEWS
 
 
 class RasterKind(Enum):
@@ -132,7 +132,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
                  src_ovr: int = None, keep_src_ovr_suffixes: bool = True, dst_ovr_count: Optional[int] = None,
                  src_nodatavalue: Real = ..., dst_nodatavalue: Real = ..., hide_nodatavalue: bool = False,
                  kind: RasterKind = None, resampling_alg=None, lossy: bool = None, expand_rgb: bool = False,
-                 jpeg_quality: Real = 75, keep_alpha: bool = True,
+                 jpeg_quality: Real = 75, keep_alpha: bool = True, cog=False,
                  print_progress=..., print_time=False, logger=..., write_spec=True, *, all_args: dict = None):
 
     logger_handlers = []
@@ -145,6 +145,11 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     verbose = logger is not None
     if verbose:
         logger.info(all_args)
+
+    if isinstance(ovr_type, str):
+        ovr_type = OvrType[ovr_type]
+    if isinstance(kind, str):
+        kind = RasterKind[kind]
 
     key_list_arguments = ['filename', 'extent', 'warp_CRS', 'of', 'expand_rgb']
 
@@ -177,11 +182,6 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
 
     if os.path.isdir(filename):
         raise Exception(f'input is a dir, not a file: {filename}')
-
-    if isinstance(ovr_type, str):
-        ovr_type = OvrType[ovr_type]
-    if isinstance(kind, str):
-        kind = RasterKind[kind]
 
     if not os.path.isfile(filename):
         raise OSError(f'file not found: {filename}')
@@ -354,42 +354,6 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     else:
         comp = 'DEFLATE'
 
-    if out_filename is None:
-        out_extent_in_4326 = extent
-        if extent_was_cropped and (out_extent_in_src_srs is not None):
-            transform = get_extent.get_transform(pjstr_src_srs, pjstr_4326)
-            if transform is not None:
-                out_extent_in_4326 = get_extent.translate_extent(out_extent_in_src_srs, transform)
-            else:
-                out_extent_in_4326 = out_extent_in_src_srs
-            out_extent_in_4326 = round(out_extent_in_4326, 2)
-        if out_extent_in_4326 is not None:
-            out_suffixes.append('x[{},{}]_y[{},{}]'.format(*out_extent_in_4326.lrdu))
-        elif src_win is not None:
-            out_suffixes.append('off[{},{}]_size[{},{}]'.format(*src_win))
-        if not out_suffixes:
-            if '.' + outext == os.path.splitext(filename)[1]:  # input and output have the same extension
-                out_suffixes.append('new')
-        if out_suffixes:
-            out_suffixes = '.' + '.'.join(out_suffixes)
-        else:
-            out_suffixes = ''
-        # out_filename = filename.with_suffix(out_suffixes + '.' + outext)
-        out_filename = gdal_helper.concat_paths(filename, out_suffixes + '.' + outext)
-        if keep_src_ovr_suffixes:
-            out_filename = gdal_helper.concat_paths(out_filename, '.ovr' * (src_ovr + 1))
-    else:
-        out_filename = Path(out_filename)
-
-    if out_base_path is not None:
-        out_filename = Path(out_base_path).joinpath(*out_filename.parts[1:])
-
-    if write_spec:
-        spec_filename = out_filename.with_suffix('.spec')
-        logger_handlers.append(gdalos_logger.set_file_logger(logger, spec_filename))
-
-    if not os.path.exists(os.path.dirname(out_filename)):
-        os.makedirs(os.path.dirname(out_filename), exist_ok=True)
 
     # if (comp == 'JPEG') and (len(bands) == 3) or ((len(bands) == 4) and (keep_alpha)):
     if (comp == 'JPEG') and (len(band_types) in (3, 4)):
@@ -411,17 +375,77 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     ))
     common_options['format'] = of
 
-    if ovr_type is not None:
-        if ovr_type == OvrType.existing_copy:
-            common_options['creationOptions'].append('COPY_SRC_OVERVIEWS=YES')
-        elif ovr_type in [..., OvrType.auto_select]:
-            if overview_count > 0:
-                # if the raster has overviews then use them, otherwise create overviews
-                ovr_type = OvrType.existing_reuse
-            else:
-                ovr_type = OvrType.create_external_auto
+    # decide ovr_type
+    post_cog = cog
+    if ovr_type in [..., OvrType.auto_select]:
+        if overview_count > 0:
+            # if the raster has overviews then use them, otherwise create overviews
+            ovr_type = OvrType.existing_auto
+        else:
+            ovr_type = OvrType.create_external_auto
 
-    if ovr_type == OvrType.existing_reuse:
+    if ovr_type == OvrType.existing_auto:
+        can_cog = not (
+                creation_options or extent or src_win or warp_CRS or out_res or translate_options or warp_options)
+        if can_cog:
+            post_cog = False
+        else:
+            ovr_type = OvrType.existing_reuse
+
+    if cog and not post_cog:
+        common_options['creationOptions'].append('COPY_SRC_OVERVIEWS=YES')
+
+    # make out_filename
+    auto_out_filename = out_filename is None
+    cog_filename = None
+
+    if auto_out_filename:
+        if post_cog and ovr_type == OvrType.create_external_auto:
+            # create overviews for the input file then create a cog
+            out_filename = filename
+        else:
+            out_extent_in_4326 = extent
+            if extent_was_cropped and (out_extent_in_src_srs is not None):
+                transform = get_extent.get_transform(pjstr_src_srs, pjstr_4326)
+                if transform is not None:
+                    out_extent_in_4326 = get_extent.translate_extent(out_extent_in_src_srs, transform)
+                else:
+                    out_extent_in_4326 = out_extent_in_src_srs
+                out_extent_in_4326 = round(out_extent_in_4326, 2)
+            if out_extent_in_4326 is not None:
+                out_suffixes.append('x[{},{}]_y[{},{}]'.format(*out_extent_in_4326.lrdu))
+            elif src_win is not None:
+                out_suffixes.append('off[{},{}]_size[{},{}]'.format(*src_win))
+            if cog and not post_cog:
+                out_suffixes.append('cog')
+            if not out_suffixes:
+                if '.' + outext == os.path.splitext(filename)[1]:  # input and output have the same extension
+                    out_suffixes.append('new')
+            if out_suffixes:
+                out_suffixes = '.' + '.'.join(out_suffixes)
+            else:
+                out_suffixes = ''
+            out_filename = gdal_helper.concat_paths(filename, out_suffixes + '.' + outext)
+            if keep_src_ovr_suffixes:
+                out_filename = gdal_helper.concat_paths(out_filename, '.ovr' * (src_ovr + 1))
+    else:
+        out_filename = Path(out_filename)
+        if cog:
+            cog_filename = out_filename
+            if post_cog:
+                out_filename = out_filename.with_suffix('.temp' + '.' + outext)
+
+    if out_base_path is not None:
+        out_filename = Path(out_base_path).joinpath(*out_filename.parts[1:])
+
+    if not os.path.exists(os.path.dirname(out_filename)):
+        os.makedirs(os.path.dirname(out_filename), exist_ok=True)
+
+    if write_spec:
+        spec_filename = out_filename.with_suffix('.spec')
+        logger_handlers.append(gdalos_logger.set_file_logger(logger, spec_filename))
+
+    if ovr_type == OvrType.existing_reuse or (filename==out_filename):
         skipped = True
     else:
         skipped = do_skip_if_exists(out_filename, skip_if_exists, logger)
@@ -441,7 +465,6 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             config_options = {'GDAL_HTTP_UNSAFESSL': 'YES'}  # for gdal-wms xml files
 
         try:
-
             if config_options:
                 if verbose:
                     logger.info('config options: ' + str(config_options))
@@ -464,7 +487,6 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             print_time_now()
             logger.warning('Time for creating file: {} is {} seconds'.format(out_filename, round(time.time() - start_time)))
 
-
     if ret_code is not None:
         if not skipped and hide_nodatavalue:
             gdal_helper.unset_nodatavalue(str(out_filename))
@@ -478,6 +500,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             all_args_new['dst_ovr_count'] = None
             all_args_new['out_base_path'] = None
             all_args_new['write_spec'] = False
+            all_args_new['cog'] = False
             # iterate backwards on the overviews
             for ovr_index in range(src_ovr_last, src_ovr - 1, -1):
                 all_args_new['out_filename'] = concat_paths(out_filename, '.ovr' * (ovr_index - src_ovr))
@@ -487,13 +510,16 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
                 if ret_code is None:
                     break
             create_info = False
-        elif (ovr_type is not None) and (ovr_type != OvrType.existing_copy):
+        elif (ovr_type is not None) and (ovr_type != OvrType.existing_auto):
             # create overviews from ds (internal or external)
             gdalos_ovr(out_filename, skip_if_exists=skip_if_exists,
                        ovr_type=ovr_type, dst_ovr_count=dst_ovr_count,
                        kind=kind, resampling_alg=resampling_alg,
                        print_progress=print_progress, logger=logger)
-
+        if post_cog:
+            gdalos_trans(out_filename, out_filename=cog_filename, cog=True,
+                         logger=logger, create_info=create_info, write_spec=write_spec)
+            create_info = False
         if create_info:
             gdalos_info(out_filename, skip_if_exists=skip_if_exists)
 
@@ -503,14 +529,14 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     return ret_code
 
 
-def add_ovr(filename, options, open_options, skip_if_exists=False, logger=None):
+def add_ovr(filename, options, access_mode, skip_if_exists=False, logger=None):
     verbose = logger is not None
     filename = Path(filename)
     out_filename = gdal_helper.concat_paths(filename, '.ovr')
     if not do_skip_if_exists(out_filename, skip_if_exists, logger):
         if verbose:
-            logger.info('adding ovr: {} options: {} open_options: {}'.format(out_filename, options, open_options))
-        with gdal_helper.OpenDS(filename, open_options) as ds:
+            logger.info('adding ovr: {} options: {} access_mode: {}'.format(out_filename, options, access_mode))
+        with gdal_helper.OpenDS(filename, access_mode=access_mode) as ds:
             return ds.BuildOverviews(**options)
     else:
         return 0
@@ -574,20 +600,20 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
                 gdal.SetConfigOption(k, v)
 
         out_filename = filename
-        open_options = gdal.GA_ReadOnly
+        access_mode = gdal.GA_ReadOnly
         if ovr_type in (OvrType.create_internal, OvrType.create_external_single):
             if ovr_type == OvrType.create_internal:
-                open_options = gdal.GA_Update
+                access_mode = gdal.GA_Update
             ovr_levels = []
             for i in range(dst_ovr_count):
                 ovr_levels.append(2 ** (i + 1))  # ovr_levels = '2 4 8 16 32 64 128 256 512 1024'
             ovr_options['overviewlist'] = ovr_levels
-            ret_code = add_ovr(out_filename, ovr_options, open_options, skip_if_exists, logger)
+            ret_code = add_ovr(out_filename, ovr_options, access_mode, skip_if_exists, logger)
         elif ovr_type == OvrType.create_external_multi:
             ovr_options['overviewlist'] = [2]
             ret_code = 0
             for i in range(dst_ovr_count):
-                ret_code = add_ovr(filename, ovr_options, open_options, skip_if_exists, logger)
+                ret_code = add_ovr(filename, ovr_options, access_mode, skip_if_exists, logger)
                 if ret_code != 0:
                     break
                 filename = gdal_helper.concat_paths(filename, '.ovr')
