@@ -6,7 +6,7 @@ from typing import Sequence
 
 import gdal
 
-def open_ds(filename, access_mode=gdal.GA_ReadOnly, src_ovr=None, open_options=None, logger=None):
+def open_ds(filename, access_mode=gdal.GA_ReadOnly, src_ovr:int=None, open_options:dict=None, logger=None):
     if open_options is None:
         open_options = {}
     if src_ovr is not None and src_ovr >= 0:

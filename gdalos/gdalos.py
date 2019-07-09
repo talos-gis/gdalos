@@ -125,7 +125,7 @@ default_multi_byte_nodata_value = -32768
 def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_base_path: str = None,
                  skip_if_exists=True, create_info=True, cog=False, multi_file_as_vrt=False,
                  of: MaybeSequence[str] = 'GTiff', outext: str = 'tif', tiled=True, big_tiff: str = 'IF_SAFER',
-                 open_options=None, creation_options=None, config_options: dict = ...,
+                 config_options: dict = None, open_options: dict = None, common_options:dict=None, creation_options:dict = None,
                  extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None, src_win=None,
                  warp_CRS: MaybeSequence[Warp_crs_base] = None, out_res: Tuple[Real, Real] = None,
                  ovr_type: Optional[OvrType] = OvrType.auto_select,
@@ -190,9 +190,17 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         start_time = time.time()
     else:
         start_time = None
-    extent_was_cropped = False
 
-    common_options = {'creationOptions': list(creation_options or [])}
+    if config_options is None:
+        config_options = dict()
+    if common_options is None:
+        common_options = dict()
+    if creation_options is None:
+        creation_options = dict()
+
+    extent_was_cropped = False
+    input_ext = os.path.splitext(filename)[1].lower()
+
     if print_progress:
         common_options['callback'] = print_progress_callback(print_progress)
 
@@ -354,12 +362,13 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         comp = 'JPEG'
         out_suffixes.append('jpg')
     else:
+        lossy = False
         comp = 'DEFLATE'
 
     # if (comp == 'JPEG') and (len(bands) == 3) or ((len(bands) == 4) and (keep_alpha)):
     if (comp == 'JPEG') and (len(band_types) in (3, 4)):
-        common_options['creationOptions'].append('PHOTOMETRIC=YCBCR')
-        common_options['creationOptions'].append('JPEG_QUALITY=' + str(jpeg_quality))
+        creation_options['PHOTOMETRIC'] = 'YCBCR'
+        creation_options['JPEG_QUALITY'] = str(jpeg_quality)
 
         if len(band_types) == 4:  # alpha channel is not supported with PHOTOMETRIC=YCBCR, thus we drop it
             translate_options['bandList'] = [1, 2, 3]
@@ -369,11 +378,9 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     no_yes = ('NO', 'YES')
     if not isinstance(tiled, str):
         tiled = no_yes[tiled]
-    common_options['creationOptions'].extend((
-        f'TILED={tiled}',
-        f'BIGTIFF={big_tiff}',
-        f'COMPRESS={comp}'
-    ))
+    creation_options['TILED'] = tiled
+    creation_options['BIGTIFF'] = big_tiff
+    creation_options['COMPRESS'] = comp
     common_options['format'] = of
 
     # decide ovr_type
@@ -385,7 +392,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         else:
             ovr_type = OvrType.create_external_auto
 
-    trans_or_warp = creation_options or extent or src_win or warp_CRS or out_res or translate_options or warp_options
+    trans_or_warp = extent or src_win or warp_CRS or out_res or lossy or translate_options or warp_options
     if ovr_type == OvrType.existing_auto:
         can_cog = not trans_or_warp
         if cog and can_cog:
@@ -394,7 +401,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             ovr_type = OvrType.existing_reuse
 
     if cog and not cog_2_steps:
-        common_options['creationOptions'].append('COPY_SRC_OVERVIEWS=YES')
+        creation_options['COPY_SRC_OVERVIEWS'] = 'YES'
 
     # make out_filename
     auto_out_filename = out_filename is None
@@ -416,7 +423,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             elif src_win is not None:
                 out_suffixes.append('off[{},{}]_size[{},{}]'.format(*src_win))
             if not out_suffixes:
-                if '.' + outext == os.path.splitext(filename)[1]:  # input and output have the same extension
+                if '.' + outext.lower() == input_ext:
                     out_suffixes.append('new')
             if out_suffixes:
                 out_suffixes = '.' + '.'.join(out_suffixes)
@@ -460,13 +467,17 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         if print_time:
             print_time_now()
 
+        if creation_options:
+            creation_options_list = []
+            for k,v in creation_options.items():
+                creation_options_list.append('{}={}'.format(k,v))
+            common_options['creationOptions'] = creation_options_list
+
         if verbose:
             logger.info('filename: ' + str(out_filename) + ' ...')
             logger.info('common options: ' + str(common_options))
 
-        if config_options is None:
-            config_options = dict()
-        elif config_options is ...:
+        if input_ext == '.xml':
             config_options = {'GDAL_HTTP_UNSAFESSL': 'YES'}  # for gdal-wms xml files
 
         try:
@@ -582,6 +593,8 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
 
     if ovr_options is None:
         ovr_options = dict()
+    if config_options is None:
+        config_options = dict()
     if resampling_alg in [None, ...]:
         if kind in [None, ...]:
             kind = RasterKind.guess(filename)
@@ -591,8 +604,6 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
     if print_progress:
         ovr_options['callback'] = print_progress_callback(print_progress)
 
-    if config_options is None:
-        config_options = dict()
     if comp is None:
         comp = gdal_helper.get_image_structure_metadata(filename, 'COMPRESSION')
     if comp == 'YCbCr JPEG':
