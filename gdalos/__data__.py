@@ -1,2 +1,2 @@
-__version__ = '0.23.0'
+__version__ = '0.24.0'
 __author__ = 'Idan Miara, Ben Avrahami'
