@@ -7,12 +7,14 @@ from typing import Sequence
 import gdal
 
 def open_ds(filename, access_mode=gdal.GA_ReadOnly, src_ovr:int=None, open_options:dict=None, logger=None):
-    if open_options is None:
-        open_options = {}
+    open_options = dict(open_options or dict())
     if src_ovr is not None and src_ovr >= 0:
         open_options['OVERVIEW_LEVEL'] = src_ovr
     if logger is not None:
-        logger.info('openning file: "{}" with options: "{}"'.format(filename, str(open_options)))
+        s = 'openning file: "{}"'.format(filename)
+        if open_options:
+            s = s + ' with options: {}'.format(str(open_options))
+        logger.debug(s)
     if open_options:
         open_options = ['{}={}'.format(k, v) for k, v in open_options.items()]
 
@@ -36,7 +38,7 @@ class OpenDS:
         if self.ds is None:
             self.ds = open_ds(self.filename, **self.kwargs)
             if self.ds is None:
-                raise IOError("could not open file {}".format(self.filename))
+                raise IOError('could not open file "{}"'.format(self.filename))
             self.own = True
         return self.ds
 

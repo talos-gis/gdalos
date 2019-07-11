@@ -1,17 +1,15 @@
-from typing import Optional, Sequence, List, Union, Tuple, TypeVar
-
+import datetime
+import logging
 import os
 import time
-import datetime
-from numbers import Real
-import logging
-from gdalos import gdalos_logger
 from enum import Enum, auto
+from numbers import Real
 from pathlib import Path
+from typing import Optional, Sequence, List, Union, Tuple, TypeVar
 
 import gdal
-
 from gdalos import gdal_helper
+from gdalos import gdalos_logger
 from gdalos import get_extent
 from gdalos import projdef
 from gdalos.__util__ import with_param_dict
@@ -79,13 +77,11 @@ def do_skip_if_exists(out_filename, skip_if_exists, logger=None):
         if skip_if_exists:
             skip = True
             if verbose:
-                logger.warning('file {} exits, skip!\n'.format(out_filename))
+                logger.warning('file "{}" exists, skip!'.format(out_filename))
         else:
             if verbose:
-                logger.warning('file {} exits, removing...!\n'.format(out_filename))
+                logger.warning('file "{}" exists, removing...!'.format(out_filename))
             os.remove(out_filename)
-            if verbose:
-                logger.warning('file {} removed!\n'.format(out_filename))
     return skip
 
 
@@ -125,7 +121,8 @@ default_multi_byte_nodata_value = -32768
 def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_base_path: str = None,
                  skip_if_exists=True, create_info=True, cog=False, multi_file_as_vrt=False,
                  of: MaybeSequence[str] = 'GTiff', outext: str = 'tif', tiled=True, big_tiff: str = 'IF_SAFER',
-                 config_options: dict = None, open_options: dict = None, common_options:dict=None, creation_options:dict = None,
+                 config_options: dict = None, open_options: dict = None, common_options: dict = None,
+                 creation_options: dict = None,
                  extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None, src_win=None,
                  warp_CRS: MaybeSequence[Warp_crs_base] = None, out_res: Tuple[Real, Real] = None,
                  ovr_type: Optional[OvrType] = OvrType.auto_select,
@@ -133,34 +130,30 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
                  src_nodatavalue: Real = ..., dst_nodatavalue: Real = ..., hide_nodatavalue: bool = False,
                  kind: RasterKind = None, resampling_alg=None, lossy: bool = None, expand_rgb: bool = False,
                  jpeg_quality: Real = 75, keep_alpha: bool = True,
-                 print_progress=..., print_time=False, logger=..., write_spec=True, *, all_args: dict = None):
+                 final_files: list = None, ovr_files: list = None, aux_files: list = None, temp_files: list = None,
+                 delete_temp_files=True,
+                 print_progress=..., logger=..., write_spec=True, *, all_args: dict = None):
+    print(all_args)
 
-    logger_handlers = []
-    if logger is ...:
-        logger = logging.getLogger(__name__)
-        logger_handlers.append(gdalos_logger.set_logger_console(logger))
-    if write_spec and logger is None:
-        logger = logging.getLogger(__name__)
-    all_args['logger'] = logger
-    verbose = logger is not None
-    if verbose:
-        logger.info(all_args)
-
-    if isinstance(ovr_type, str):
-        ovr_type = OvrType[ovr_type]
-    if isinstance(kind, str):
-        kind = RasterKind[kind]
+    if final_files is None:
+        final_files = []
+    if ovr_files is None:
+        ovr_files = []
+    if aux_files is None:
+        aux_files = []
+    if temp_files is None:
+        temp_files = []
 
     key_list_arguments = ['filename', 'extent', 'warp_CRS', 'of', 'expand_rgb']
-
     for key in key_list_arguments:
         val = all_args[key]
         val = gdal_helper.flatten_and_expand_file_list(val, do_expand_glob=key == 'filename')
         if key == 'filename':
             if gdal_helper.is_list_like(val) and multi_file_as_vrt:
-                vrt_filename = gdalos_vrt(val, resampling_alg=resampling_alg)
-                if vrt_filename is None:
+                vrt_path = gdalos_vrt(val, resampling_alg=resampling_alg)
+                if vrt_path is None:
                     raise Exception  # failed?
+                temp_files.append(vrt_path)
             filename = val
 
         if gdal_helper.is_list_like(val):
@@ -169,42 +162,74 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             ret_code = None
             for v in val:
                 all_args_new[key] = v
+                all_args_new['temp_files'] = []
+                all_args_new['final_files'] = []
+                all_args_new['ovr_files'] = []
+                all_args_new['aux_files'] = []
                 ret_code = gdalos_trans(**all_args_new)
-                if ret_code is None:
-                    break  # failed?
+                temp_files.extend(all_args_new['temp_files'])
+                final_files.extend(all_args_new['final_files'])
+                ovr_files.extend(all_args_new['ovr_files'])
+                aux_files.extend(all_args_new['aux_files'])
+                # if ret_code is None:
+                #     break  # failed?
             return ret_code
         else:
             all_args[key] = val  # adding the default parameters
 
     if not filename:
         return None
+    start_time = time.time()
+
+    logger_handlers = []
+    if logger is ...:
+        logger = logging.getLogger(__name__)
+        logger_handlers.append(gdalos_logger.set_logger_console(logger))
+        logger.debug('console handler added')
+    if write_spec and logger is None:
+        logger = logging.getLogger(__name__)
+    all_args['logger'] = logger
+    verbose = logger is not None
+    if verbose:
+        logger.info(all_args)
+
     filename = Path(filename.strip())
-
     if os.path.isdir(filename):
-        raise Exception(f'input is a dir, not a file: {filename}')
-
+        raise Exception('input is a dir, not a file: "{}"'.format(filename))
     if not os.path.isfile(filename):
-        raise OSError(f'file not found: {filename}')
+        raise OSError('file not found: "{}"'.format(filename))
 
-    if print_time:
-        start_time = time.time()
-    else:
-        start_time = None
+    # creating a copy of the input dictionaries, as I don't want to change the input
+    config_options = dict(config_options or dict())
+    common_options = dict(common_options or dict())
+    creation_options = dict(creation_options or dict())
+    out_suffixes = []
 
-    if config_options is None:
-        config_options = dict()
-    if common_options is None:
-        common_options = dict()
-    if creation_options is None:
-        creation_options = dict()
+    if isinstance(ovr_type, str):
+        ovr_type = OvrType[ovr_type]
+    if isinstance(kind, str):
+        kind = RasterKind[kind]
 
     extent_was_cropped = False
     input_ext = os.path.splitext(filename)[1].lower()
 
-    if print_progress:
-        common_options['callback'] = print_progress_callback(print_progress)
-
     ds = gdal_helper.open_ds(filename, src_ovr=src_ovr, open_options=open_options, logger=logger)
+
+    band_types = gdal_helper.get_band_types(ds)
+    if kind in [None, ...]:
+        kind = RasterKind.guess(band_types)
+
+    org_comp = gdal_helper.get_image_structure_metadata(ds, 'COMPRESSION')
+    src_is_lossy = (org_comp is not None) and ('JPEG' in org_comp)
+    if lossy is None:
+        lossy = src_is_lossy
+    if lossy and (kind == RasterKind.dtm):
+        lossy = False
+    if not lossy:
+        comp = 'DEFLATE'
+    else:
+        comp = 'JPEG'
+        out_suffixes.append('jpg')
 
     if src_ovr is None:
         src_ovr = -1  # base raster
@@ -225,11 +250,42 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     input_res = (geo_transform[1], geo_transform[5])
     translate_options = {}
     warp_options = {}
-    do_warp = (warp_CRS is not None)
 
-    band_types = gdal_helper.get_band_types(ds)
-    if kind in [None, ...]:
-        kind = RasterKind.guess(band_types)
+    pjstr_src_srs = projdef.get_srs_pj_from_ds(ds)
+    pjstr_tgt_srs = None
+    tgt_zone = None
+    if warp_CRS is not None:
+        if isinstance(warp_CRS, str) and warp_CRS.startswith('+'):
+            pjstr_tgt_srs = warp_CRS  # ProjString
+        else:
+            tgt_zone = projdef.get_number(warp_CRS)
+            if tgt_zone is None:
+                tgt_zone = projdef.get_zone_from_name(warp_CRS)
+            else:
+                warp_CRS = f'w84u{warp_CRS}'
+            # "short ProjString"
+            pjstr_tgt_srs = projdef.get_proj4_string(warp_CRS[0], tgt_zone)
+        if projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs):
+            warp_CRS = None  # no warp is really needed here
+
+    do_warp = warp_CRS is not None
+    if warp_CRS is not None:
+        if lossy is None:
+            lossy = True
+        if tgt_zone is not None:
+            if tgt_zone != 0:
+                # cropping according to tgt_zone bounds
+                zone_extent = GeoRectangle.from_points(projdef.get_utm_zone_extent_points(tgt_zone))
+                if extent is None:
+                    extent = zone_extent
+                else:
+                    extent = zone_extent.crop(extent)
+                extent_was_cropped = True
+            out_suffixes.append(projdef.get_canonic_name(warp_CRS[0], tgt_zone))
+        if kind == RasterKind.dtm:
+            common_options['outputType'] = gdal.GDT_Float32  # 'Float32'
+        warp_options["dstSRS"] = pjstr_tgt_srs
+
     if (dst_nodatavalue is ...):
         if (kind == RasterKind.dtm):
             dst_nodatavalue = default_multi_byte_nodata_value
@@ -241,67 +297,30 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             src_nodatavalue = src_nodatavalue_org
         if src_nodatavalue is None:
             # assume raster minimum is nodata if nodata isn't set
-            src_nodatavalue = gdal_helper.get_raster_minimum(ds)
-            if abs(src_nodatavalue - default_multi_byte_nodata_value)>100:
-                src_nodatavalue = None
+            src_min_value = gdal_helper.get_raster_minimum(ds)
+            if abs(src_min_value - default_multi_byte_nodata_value) < 100:
+                src_nodatavalue = src_min_value
+        if src_nodatavalue is not None:
+            if src_nodatavalue != dst_nodatavalue:
+                do_warp = True
+                warp_options['dstNodata'] = dst_nodatavalue
 
-        if src_nodatavalue != dst_nodatavalue:
-            do_warp = True
-            warp_options['dstNodata'] = dst_nodatavalue
-
-        if src_nodatavalue_org != src_nodatavalue:
-            translate_options['noData'] = src_nodatavalue
-            warp_options['srcNodata'] = src_nodatavalue
-
-    out_suffixes = []
+            if src_nodatavalue_org != src_nodatavalue:
+                translate_options['noData'] = src_nodatavalue
+                warp_options['srcNodata'] = src_nodatavalue
 
     if kind == RasterKind.pal and expand_rgb:
         translate_options['rgbExpand'] = 'rgb'
         out_suffixes.append('rgb')
 
-    if resampling_alg in [None, ...]:
-        resampling_alg = resampling_alg_by_kind(kind, expand_rgb)
-    if resampling_alg is not None:
-        common_options['resampleAlg'] = resampling_alg
+    resample_is_needed = do_warp or (out_res is not None)
 
-    pjstr_tgt_srs = None
-    if warp_CRS is not None:
-        if lossy is None:
-            lossy = True
-
-        if isinstance(warp_CRS, str) and warp_CRS.startswith('+'):
-            pjstr_tgt_srs = warp_CRS  # ProjString
-        else:
-            zone = projdef.get_number(warp_CRS)
-            if zone is None:
-                zone = projdef.get_zone_from_name(warp_CRS)
-            else:
-                warp_CRS = f'w84u{warp_CRS}'
-            # "short ProjString"
-            pjstr_tgt_srs = projdef.get_proj4_string(warp_CRS[0], zone)
-            if zone != 0:
-                # cropping according to zone bounds
-                zone_extent = GeoRectangle.from_points(projdef.get_utm_zone_extent_points(zone))
-                if extent is None:
-                    extent = zone_extent
-                else:
-                    extent = zone_extent.crop(extent)
-                extent_was_cropped = True
-            out_suffixes.append(projdef.get_canonic_name(warp_CRS[0], zone))
-
-        if kind == RasterKind.dtm:
-            common_options['outputType'] = gdal.GDT_Float32  # 'Float32'
-
-        warp_options["dstSRS"] = pjstr_tgt_srs
-
-    # todo I dunno what this is but instinct says var names this long should be in their own function
-    out_extent_in_src_srs = None
+    org_points_extent, _ = get_extent.get_points_extent_from_ds(ds)
+    org_extent_in_src_srs = GeoRectangle.from_points(org_points_extent)
+    if org_extent_in_src_srs.is_empty():
+        raise Exception(f'no input extent: {filename} [{org_extent_in_src_srs}]')
+    out_extent_in_src_srs = org_extent_in_src_srs
     if extent is not None:
-        org_points_extent, pjstr_src_srs, _ = get_extent.get_points_extent_from_ds(ds)
-        org_extent_in_src_srs = GeoRectangle.from_points(org_points_extent)
-        if org_extent_in_src_srs.is_empty():
-            raise Exception(f'no input extent: {filename} [{org_extent_in_src_srs}]')
-
         if pjstr_tgt_srs is None:
             pjstr_tgt_srs = pjstr_src_srs
             transform = None
@@ -336,34 +355,24 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         out_extent_in_src_srs = out_extent_in_src_srs.crop(org_extent_in_src_srs)
         if out_extent_in_src_srs.is_empty():
             raise Exception
-
-        if out_res is None:
-            transform_src_tgt = get_extent.get_transform(pjstr_src_srs, pjstr_tgt_srs)
-            if transform_src_tgt is not None:
-                in_res_y = input_res[1]  # geo_transform[5]  # Mpp.Y == geotransform[5]
-                out_res_x = get_extent.transform_resolution(transform_src_tgt, in_res_y, *out_extent_in_src_srs.lrdu)
-                out_res_x = get_extent.round_to_sig(out_res_x, -1)
-                out_res = (out_res_x, -out_res_x)
     elif src_win is not None:
         translate_options['srcWin'] = src_win
+
+    if warp_CRS is not None and out_res is None:
+        transform_src_tgt = get_extent.get_transform(pjstr_src_srs, pjstr_tgt_srs)
+        if transform_src_tgt is not None:
+            in_res_y = input_res[1]  # geo_transform[5]  # Mpp.Y == geotransform[5]
+            out_res_x = get_extent.transform_resolution(transform_src_tgt, in_res_y, *out_extent_in_src_srs.lrdu)
+            out_res_x = get_extent.round_to_sig(out_res_x, -1)
+            out_res = (out_res_x, -out_res_x)
 
     if out_res is None and src_ovr >= 0:
         out_res = input_res
 
-    if out_res is not None:
+    if resample_is_needed and out_res is not None:
         common_options['xRes'], common_options['yRes'] = out_res
         warp_options['targetAlignedPixels'] = True
         out_suffixes.append(str(out_res))
-
-    org_comp = gdal_helper.get_image_structure_metadata(ds, 'COMPRESSION')
-    if lossy is None:
-        lossy = (org_comp is not None) and ('JPEG' in org_comp)
-    if lossy and (kind != RasterKind.dtm):
-        comp = 'JPEG'
-        out_suffixes.append('jpg')
-    else:
-        lossy = False
-        comp = 'DEFLATE'
 
     # if (comp == 'JPEG') and (len(bands) == 3) or ((len(bands) == 4) and (keep_alpha)):
     if (comp == 'JPEG') and (len(band_types) in (3, 4)):
@@ -392,9 +401,9 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         else:
             ovr_type = OvrType.create_external_auto
 
-    trans_or_warp = extent or src_win or warp_CRS or out_res or lossy or translate_options or warp_options
+    trans_or_warp_is_needed = bool(extent or src_win or resample_is_needed or (lossy != src_is_lossy) or translate_options)
     if ovr_type == OvrType.existing_auto:
-        can_cog = not trans_or_warp
+        can_cog = not trans_or_warp_is_needed
         if cog and can_cog:
             cog_2_steps = False
         else:
@@ -406,7 +415,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     # make out_filename
     auto_out_filename = out_filename is None
     if auto_out_filename:
-        if cog_2_steps and ovr_type == OvrType.create_external_auto and not trans_or_warp:
+        if cog_2_steps and ovr_type == OvrType.create_external_auto and not trans_or_warp_is_needed:
             # create overviews for the input file then create a cog
             out_filename = filename
         else:
@@ -453,29 +462,52 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     else:
         cog_filename = out_filename
 
+    if cog_2_steps:
+        final_files_for_step_1 = temp_files
+        ovr_files_for_step_1 = temp_files
+    else:
+        final_files_for_step_1 = final_files
+        ovr_files_for_step_1 = ovr_files
+
     if write_spec:
         spec_filename = gdal_helper.concat_paths(cog_filename, '.spec')
         logger_handlers.append(gdalos_logger.set_file_logger(logger, spec_filename))
+        logger.debug('spec file handler added: "{}"'.format(spec_filename))
+        aux_files.append(spec_filename)
+        # logger.debug('debug')
+        # logger.info('info')
+        # logger.warning('warning')
+        # logger.error('error')
+        # logger.critical('critical')
 
-    if ovr_type == OvrType.existing_reuse or (filename==out_filename):
+    if ovr_type == OvrType.existing_reuse or (filename == out_filename):
         skipped = True
     else:
-        skipped = do_skip_if_exists(out_filename, skip_if_exists, logger)
+        skipped = do_skip_if_exists(cog_filename, skip_if_exists, logger)
+        if cog_2_steps and not skipped:
+            skipped = do_skip_if_exists(out_filename, skip_if_exists, logger)
 
-    ret_code = 0
+    ret_code = None
     if not skipped:
-        if print_time:
-            print_time_now()
-
         if creation_options:
             creation_options_list = []
-            for k,v in creation_options.items():
-                creation_options_list.append('{}={}'.format(k,v))
+            for k, v in creation_options.items():
+                creation_options_list.append('{}={}'.format(k, v))
             common_options['creationOptions'] = creation_options_list
 
+        if print_progress:
+            common_options['callback'] = print_progress_callback(print_progress)
+
+        if resample_is_needed:
+            if resampling_alg in [None, ...]:
+                resampling_alg = resampling_alg_by_kind(kind, expand_rgb)
+            if resampling_alg is not None:
+                common_options['resampleAlg'] = resampling_alg
+
         if verbose:
-            logger.info('filename: ' + str(out_filename) + ' ...')
-            logger.info('common options: ' + str(common_options))
+            logger.info('filename: "' + str(out_filename) + '" ...')
+            if common_options:
+                logger.info('common options: ' + str(common_options))
 
         if input_ext == '.xml':
             config_options = {'GDAL_HTTP_UNSAFESSL': 'YES'}  # for gdal-wms xml files
@@ -488,32 +520,38 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
                     gdal.SetConfigOption(k, v)
 
             if do_warp:
-                if verbose:
+                if verbose and warp_options:
                     logger.info('wrap options: ' + str(warp_options))
-                ret_code = gdal.Warp(str(out_filename), ds, **common_options, **warp_options)
+                ret_code = gdal.Warp(str(out_filename), ds, **common_options, **warp_options) is not None
             else:
-                if verbose:
+                if verbose and translate_options:
                     logger.info('translate options: ' + str(translate_options))
-                ret_code = gdal.Translate(str(out_filename), ds, **common_options, **translate_options)
+                ret_code = gdal.Translate(str(out_filename), ds, **common_options, **translate_options) is not None
+            if ret_code:
+                final_files_for_step_1.append(out_filename)
         except Exception as e:
             if verbose:
                 logger.error(str(e))
         finally:
-            del ds
             for key, val in config_options.items():
                 gdal.SetConfigOption(key, None)
 
-        if print_time:
-            print_time_now()
-            logger.warning('Time for creating file: {} is {} seconds'.format(out_filename, round(time.time() - start_time)))
+        if verbose:
+            seconds = round(time.time() - start_time)
+            time_string = str(datetime.timedelta(seconds=seconds))
+            logger.info('time: {} for creating file: "{}"'.format(time_string, out_filename))
 
-    if ret_code is not None:
+    if verbose:
+        logger.debug('closing file: "{}"'.format(filename))
+    del ds
+
+    if ret_code or skipped:
         if not skipped and hide_nodatavalue:
             gdal_helper.unset_nodatavalue(str(out_filename))
 
         if ovr_type == OvrType.existing_reuse:
             # overviews are numbered as follows (i.e. for dst_ovr_count=3, meaning create base+3 ovrs=4 files):
-            # -1: base ds, 0: first ovr, 1: second ovr, 2: third ovr
+            # -1: base dataset, 0: first ovr, 1: second ovr, 2: third ovr
 
             all_args_new = all_args.copy()
             all_args_new['ovr_type'] = None
@@ -521,65 +559,142 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             all_args_new['out_base_path'] = None
             all_args_new['write_spec'] = False
             all_args_new['cog'] = False
+            all_args_new['logger'] = logger
             # iterate backwards on the overviews
+            if verbose:
+                logger.debug('iterate on overviews creation, from {} to {}'.format(src_ovr_last, src_ovr))
             for ovr_index in range(src_ovr_last, src_ovr - 1, -1):
+                all_args_new['final_files'] = []
+                all_args_new['ovr_files'] = []  # there shouldn't be any
+                all_args_new['aux_files'] = []
+                all_args_new['temp_files'] = []  # there shouldn't be any
                 all_args_new['out_filename'] = concat_paths(out_filename, '.ovr' * (ovr_index - src_ovr))
                 all_args_new['src_ovr'] = ovr_index
                 all_args_new['create_info'] = create_info and (ovr_index == src_ovr) and not cog
                 ret_code = gdalos_trans(**all_args_new)
-                # if ret_code is None:
-                #     break
+                if ret_code:
+                    if ovr_index == src_ovr:
+                        final_files_for_step_1.extend(all_args_new['final_files'])
+                    else:
+                        ovr_files_for_step_1.extend(all_args_new['final_files'])
+                    if verbose:
+                        for f in ['ovr_files', 'temp_files']:
+                            if all_args_new[f]:
+                                logger.error(
+                                    'there shound not be any {} here, but there are! {}'.format(f, all_args_new[f]))
+                        if len(all_args_new['final_files']) != 1:
+                            logger.error(
+                                'ovr creating should have made exactly 1 file! {}'.format(all_args_new['final_files']))
+                    aux_files.extend(all_args_new['aux_files'])
             create_info = create_info and cog
         elif (ovr_type is not None) and (ovr_type != OvrType.existing_auto):
-            # create overviews from ds (internal or external)
-            gdalos_ovr(out_filename, skip_if_exists=skip_if_exists,
-                       ovr_type=ovr_type, dst_ovr_count=dst_ovr_count,
-                       kind=kind, resampling_alg=resampling_alg,
-                       print_progress=print_progress, logger=logger)
+            # create overviews from dataset (internal or external)
+            ret_code = gdalos_ovr(out_filename, skip_if_exists=skip_if_exists,
+                                  ovr_type=ovr_type, dst_ovr_count=dst_ovr_count,
+                                  kind=kind, resampling_alg=resampling_alg,
+                                  print_progress=print_progress, logger=logger, ovr_files=ovr_files_for_step_1)
         if cog_2_steps:
-            gdalos_trans(out_filename, out_filename=cog_filename, cog=True,
-                         of=of, outext=outext, tiled=tiled, big_tiff=big_tiff, src_ovr=src_ovr,
-                         print_progress=print_progress, print_time=print_time,
-                         logger=logger, skip_if_exists=skip_if_exists, create_info=create_info, write_spec=False)
-            create_info = False
+            if verbose:
+                logger.debug('running cog 2nd step...')
+            cog_final_files = []  # there should be exactly one!
+            cog_temp_files = []  # there shouldn't be any!
+            cog_ovr_files = []  # there shouldn't be any!
+            cog_aux_files = []
+            ret_code = gdalos_trans(out_filename, out_filename=cog_filename, cog=True,
+                                    of=of, outext=outext, tiled=tiled, big_tiff=big_tiff, src_ovr=src_ovr,
+                                    print_progress=print_progress,
+                                    final_files=cog_final_files, ovr_files=cog_ovr_files, aux_files=cog_aux_files,
+                                    temp_files=cog_temp_files, delete_temp_files=False,
+                                    logger=logger, skip_if_exists=skip_if_exists, create_info=create_info,
+                                    write_spec=False)
+            if ret_code and verbose:
+                if cog_temp_files:
+                    logger.error('cog 2nd step should not have any temp files, but it has! {}'.format(cog_temp_files))
+                if len(cog_final_files) != 1:
+                    logger.error('cog 2nd step should have made exactly 1 file! {}'.format(cog_final_files))
+            final_files.extend(cog_final_files)
+            aux_files.extend(cog_aux_files)
+            create_info = False  # we don't need an info for the temp file from first step
         if create_info:
-            gdalos_info(out_filename, skip_if_exists=skip_if_exists)
+            info = gdalos_info(out_filename, skip_if_exists=skip_if_exists, logger=logger)
+            if info is not None:
+                aux_files.append(info)
 
-    for handler in logger_handlers:
-        logging.getLogger().removeHandler(handler)
+    if verbose:
+        if final_files:
+            logger.info('final_files: {}'.format(final_files))
+        if aux_files:
+            logger.info('aux_files: {}'.format(aux_files))
+        if temp_files:
+            if delete_temp_files:
+                deleted = ''
+            else:
+                deleted = 'not '
+            logger.info('temp_files (will {}be deleted): {}'.format(deleted, temp_files))
+
+    if delete_temp_files and temp_files:
+        for f in temp_files:
+            if f == filename:
+                if verbose:
+                    logger.error('somehow the input file was set as a temp file for deletion: "{}")'.format(f))
+            elif os.path.isfile(f):
+                try:
+                    os.remove(f)
+                except Exception as e:
+                    logger.warning('could not delete file: "{}" ({})'.format(f, str(e)))
+            else:
+                logger.warning('file for deletion not found: "{}"'.format(f))
+        temp_files.clear()
+
+    if verbose:
+        logger.info('*** done! ***\n')
+
+    if logger_handlers:
+        logger.debug('removing {} logging handlers'.format(len(logger_handlers)))
+        for handler in logger_handlers:
+            handler.close()
+            logger.removeHandler(handler)
+        logger.debug('logging handlers removed')
     return ret_code
 
 
-def add_ovr(filename, options, access_mode, skip_if_exists=False, logger=None):
+def add_ovr(filename, options, access_mode, skip_if_exists=False, logger=None, ovr_files: list = None):
     verbose = logger is not None
     filename = Path(filename)
     out_filename = gdal_helper.concat_paths(filename, '.ovr')
     if not do_skip_if_exists(out_filename, skip_if_exists, logger):
         if verbose:
-            logger.info('adding ovr: {} options: {} access_mode: {}'.format(out_filename, options, access_mode))
-        with gdal_helper.OpenDS(filename, access_mode=access_mode) as ds:
-            return ds.BuildOverviews(**options)
+            logger.info('adding ovr for: "{}" options: {} access_mode: {}'.format(out_filename, options, access_mode))
+        with gdal_helper.OpenDS(filename, access_mode=access_mode, logger=logger) as ds:
+            ret_code = ds.BuildOverviews(**options) == 0
+            if ret_code and ovr_files is not None:
+                ovr_files.append(out_filename)
+            return ret_code
     else:
-        return 0
+        return None
+
 
 default_dst_ovr_count = 10
 
 
 def gdalos_ovr(filename, comp=None, skip_if_exists=False,
-               ovr_type=...,  dst_ovr_count=default_dst_ovr_count,
+               ovr_type=..., dst_ovr_count=default_dst_ovr_count,
                kind=None, resampling_alg=None,
                config_options: dict = None, ovr_options: dict = None,
-               print_progress=..., logger=None):
+               ovr_files: list = None, print_progress=..., logger=None):
     verbose = logger is not None
     filename = Path(filename)
     if os.path.isdir(filename):
-        raise Exception(f'input is a dir, not a file: {filename}')
+        raise Exception('input is a dir, not a file: "{}"'.format(filename))
 
     if not os.path.isfile(filename):
-        raise Exception(f'file not found: {filename}')
+        raise Exception('file not found: "{}"'.format(filename))
 
     if dst_ovr_count is None or dst_ovr_count <= 0:
         dst_ovr_count = default_dst_ovr_count
+
+    if ovr_files is None:
+        ovr_files = []
 
     if ovr_type in [..., OvrType.auto_select, OvrType.create_external_auto]:
         file_size = os.path.getsize(filename)
@@ -629,13 +744,13 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
             for i in range(dst_ovr_count):
                 ovr_levels.append(2 ** (i + 1))  # ovr_levels = '2 4 8 16 32 64 128 256 512 1024'
             ovr_options['overviewlist'] = ovr_levels
-            ret_code = add_ovr(out_filename, ovr_options, access_mode, skip_if_exists, logger)
+            ret_code = add_ovr(out_filename, ovr_options, access_mode, skip_if_exists, logger, ovr_files)
         elif ovr_type == OvrType.create_external_multi:
             ovr_options['overviewlist'] = [2]
-            ret_code = 0
+            ret_code = None
             for i in range(dst_ovr_count):
-                ret_code = add_ovr(filename, ovr_options, access_mode, skip_if_exists, logger)
-                if ret_code != 0:
+                ret_code = add_ovr(filename, ovr_options, access_mode, skip_if_exists, logger, ovr_files)
+                if not ret_code:
                     break
                 filename = gdal_helper.concat_paths(filename, '.ovr')
         else:
@@ -646,7 +761,7 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
     return ret_code
 
 
-def gdalos_info(filename, skip_if_exists=False):
+def gdalos_info(filename, skip_if_exists=False, logger=None):
     filename = Path(filename)
     if os.path.isdir(filename):
         raise Exception(f'input is a dir, not a file: {filename}')
@@ -654,35 +769,34 @@ def gdalos_info(filename, skip_if_exists=False):
         raise Exception('file not found: {}'.format(filename))
     out_filename = gdal_helper.concat_paths(filename, '.info')
     if not do_skip_if_exists(out_filename, skip_if_exists=skip_if_exists):
-        with gdal_helper.OpenDS(filename) as ds:
+        with gdal_helper.OpenDS(filename, logger=logger) as ds:
             gdal_info = gdal.Info(ds)
         with open(out_filename, 'w') as w:
             w.write(gdal_info)
-        ret_code = 0
+        return out_filename
     else:
-        ret_code = 0
-    return ret_code
+        return None
 
 
-def gdalos_vrt(filenames: MaybeSequence, vrt_filename=None, resampling_alg=None):
+def gdalos_vrt(filenames: MaybeSequence, vrt_path=None, resampling_alg=None):
     if gdal_helper.is_list_like(filenames):
         flatten_filenames = gdal_helper.flatten_and_expand_file_list(filenames)
     else:
         flatten_filenames = [filenames]
     flatten_filenames = [str(f) for f in flatten_filenames]
-    if vrt_filename is None:
-        vrt_filename = flatten_filenames[0] + '.vrt'
+    if vrt_path is None:
+        vrt_path = flatten_filenames[0] + '.vrt'
 
-    if os.path.isdir(vrt_filename):
+    if os.path.isdir(vrt_path):
+        vrt_path = os.path.join(vrt_path, os.path.basename(flatten_filenames[0]) + '.vrt')
+    if os.path.isfile(vrt_path):
+        os.remove(vrt_path)
+    if os.path.isfile(vrt_path):
         return None
-    if os.path.isfile(vrt_filename):
-        os.remove(vrt_filename)
-    if os.path.isfile(vrt_filename):
-        return None
-    os.makedirs(os.path.dirname(vrt_filename), exist_ok=True)
+    os.makedirs(os.path.dirname(vrt_path), exist_ok=True)
     vrt_options = gdal.BuildVRTOptions(resampleAlg=resampling_alg)
-    ret = gdal.BuildVRT(vrt_filename, flatten_filenames, options=vrt_options)
+    ret = gdal.BuildVRT(vrt_path, flatten_filenames, options=vrt_options)
     if ret is None:  # how does BuildVRT indicates an error?
         return None
-    if os.path.isfile(vrt_filename):
-        return vrt_filename
+    if os.path.isfile(vrt_path):
+        return vrt_path

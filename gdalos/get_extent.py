@@ -86,12 +86,7 @@ def get_points_extent_from_ds(ds):
     cols = ds.RasterXSize
     rows = ds.RasterYSize
     points_extent = get_points_extent(geo_transform, cols, rows)
-
-    src_srs = osr.SpatialReference()
-    src_srs.ImportFromWkt(ds.GetProjection())
-    src_srs_pj4 = src_srs.ExportToProj4()
-
-    return points_extent, src_srs_pj4, geo_transform
+    return points_extent, geo_transform
 
 
 def dist(p1x, p1y, p2x, p2y):

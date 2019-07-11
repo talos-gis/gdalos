@@ -1,4 +1,5 @@
 from numbers import Real
+from osgeo import gdal, osr, ogr
 
 
 def get_floats(s):
@@ -88,6 +89,23 @@ def get_utm_zone_extent_points(float_zone, width=10):
             extent_points.append([x, y])
         y_arr.reverse()
     return extent_points
+
+
+def get_srs_pj_from_ds(ds):
+    srs = osr.SpatialReference()
+    srs.ImportFromWkt(ds.GetProjection())
+    srs_pj4 = srs.ExportToProj4()
+    return srs_pj4
+
+
+def proj_is_equivalent(pj1, pj2):
+    srs1 = osr.SpatialReference()
+    srs1.ImportFromProj4(pj1)
+
+    srs2 = osr.SpatialReference()
+    srs2.ImportFromProj4(pj2)
+
+    return srs1.IsSame(srs2)
 
 
 ED50_towgs84 = '-87,-98,-121'

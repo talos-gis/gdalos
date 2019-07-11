@@ -1,11 +1,11 @@
 import logging
 
 
-def set_logger_console(logger):
+def set_logger_console(logger, level=logging.INFO):
     logger.setLevel(logging.DEBUG)
     # create console handler with a higher log level
     ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
+    ch.setLevel(level)
 
     # create formatter and add it to the handlers
     formatter = logging.Formatter('%(message)s')
@@ -16,10 +16,10 @@ def set_logger_console(logger):
     return ch
 
 
-def set_file_logger(logger, log_filename):
+def set_file_logger(logger, log_filename, level=logging.DEBUG):
     # create file handler which logs even debug messages
     fh = logging.FileHandler(log_filename, mode='w')
-    fh.setLevel(logging.DEBUG)
+    fh.setLevel(level)
 
     # create formatter and add it to the handlers
     # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
