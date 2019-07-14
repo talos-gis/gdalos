@@ -118,7 +118,8 @@ default_multi_byte_nodata_value = -32768
 
 
 @with_param_dict('all_args')
-def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_base_path: str = None,
+def gdalos_trans(filename: MaybeSequence[str], 
+                 out_filename: str = None, out_path: str = None, out_path_with_src_folders: str = True,
                  skip_if_exists=True, create_info=True, cog=False, multi_file_as_vrt=False,
                  of: MaybeSequence[str] = 'GTiff', outext: str = 'tif', tiled=True, big_tiff: str = 'IF_SAFER',
                  config_options: dict = None, open_options: dict = None, common_options: dict = None,
@@ -358,7 +359,12 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     elif src_win is not None:
         translate_options['srcWin'] = src_win
 
-    if warp_CRS is not None and out_res is None:
+    if out_res is not None:
+        if isinstance(out_res, str):
+            out_res = float(out_res)
+        if not isinstance(out_res, Sequence):
+            out_res = [out_res, -out_res]
+    elif warp_CRS is not None:
         transform_src_tgt = get_extent.get_transform(pjstr_src_srs, pjstr_tgt_srs)
         if transform_src_tgt is not None:
             in_res_y = input_res[1]  # geo_transform[5]  # Mpp.Y == geotransform[5]
@@ -444,8 +450,12 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
     else:
         out_filename = Path(out_filename)
 
-    if out_base_path is not None:
-        out_filename = Path(out_base_path).joinpath(*out_filename.parts[1:])
+    if out_path is not None:
+        if out_path_with_src_folders:
+            out_src_path = out_filename.parts[1:]
+        else:
+            out_src_path = [out_filename.parts[-1]]
+        out_filename = Path(out_path).joinpath(*out_src_path)
 
     if not os.path.exists(os.path.dirname(out_filename)):
         os.makedirs(os.path.dirname(out_filename), exist_ok=True)
@@ -469,7 +479,13 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         final_files_for_step_1 = final_files
         ovr_files_for_step_1 = ovr_files
 
-    if write_spec:
+    cog_ready = cog and do_skip_if_exists(cog_filename, skip_if_exists, logger)
+    if cog_ready or ovr_type == OvrType.existing_reuse or (filename == out_filename):
+        skipped = True
+    else:
+        skipped = do_skip_if_exists(out_filename, skip_if_exists, logger)
+
+    if not cog_ready and write_spec:
         spec_filename = gdal_helper.concat_paths(cog_filename, '.spec')
         logger_handlers.append(gdalos_logger.set_file_logger(logger, spec_filename))
         logger.debug('spec file handler added: "{}"'.format(spec_filename))
@@ -479,13 +495,6 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         # logger.warning('warning')
         # logger.error('error')
         # logger.critical('critical')
-
-    if ovr_type == OvrType.existing_reuse or (filename == out_filename):
-        skipped = True
-    else:
-        skipped = do_skip_if_exists(cog_filename, skip_if_exists, logger)
-        if cog_2_steps and not skipped:
-            skipped = do_skip_if_exists(out_filename, skip_if_exists, logger)
 
     ret_code = None
     if not skipped:
@@ -545,7 +554,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
         logger.debug('closing file: "{}"'.format(filename))
     del ds
 
-    if ret_code or skipped:
+    if not cog_ready and (ret_code or skipped):
         if not skipped and hide_nodatavalue:
             gdal_helper.unset_nodatavalue(str(out_filename))
 
@@ -556,7 +565,7 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
             all_args_new = all_args.copy()
             all_args_new['ovr_type'] = None
             all_args_new['dst_ovr_count'] = None
-            all_args_new['out_base_path'] = None
+            all_args_new['out_path'] = None
             all_args_new['write_spec'] = False
             all_args_new['cog'] = False
             all_args_new['logger'] = logger
@@ -570,6 +579,9 @@ def gdalos_trans(filename: MaybeSequence[str], out_filename: str = None, out_bas
                 all_args_new['temp_files'] = []  # there shouldn't be any
                 all_args_new['out_filename'] = concat_paths(out_filename, '.ovr' * (ovr_index - src_ovr))
                 all_args_new['src_ovr'] = ovr_index
+                if out_res is not None:
+                    res_factor = 2**(ovr_index+1)
+                    all_args_new['out_res'] = [r * res_factor for r in out_res]
                 all_args_new['create_info'] = create_info and (ovr_index == src_ovr) and not cog
                 ret_code = gdalos_trans(**all_args_new)
                 if ret_code:
