@@ -182,6 +182,7 @@ def gdalos_trans(filename: MaybeSequence[str],
         return None
     start_time = time.time()
 
+    # region console logger initialization
     logger_handlers = []
     if logger is ...:
         logger = logging.getLogger(__name__)
@@ -193,6 +194,7 @@ def gdalos_trans(filename: MaybeSequence[str],
     verbose = logger is not None
     if verbose:
         logger.info(all_args)
+    # endregion
 
     filename = Path(filename.strip())
     if os.path.isdir(filename):
@@ -204,34 +206,16 @@ def gdalos_trans(filename: MaybeSequence[str],
     config_options = dict(config_options or dict())
     common_options = dict(common_options or dict())
     creation_options = dict(creation_options or dict())
+    translate_options = {}
+    warp_options = {}
     out_suffixes = []
-
-    if isinstance(ovr_type, str):
-        ovr_type = OvrType[ovr_type]
-    if isinstance(kind, str):
-        kind = RasterKind[kind]
 
     extent_was_cropped = False
     input_ext = os.path.splitext(filename)[1].lower()
 
     ds = gdal_helper.open_ds(filename, src_ovr=src_ovr, open_options=open_options, logger=logger)
 
-    band_types = gdal_helper.get_band_types(ds)
-    if kind in [None, ...]:
-        kind = RasterKind.guess(band_types)
-
-    org_comp = gdal_helper.get_image_structure_metadata(ds, 'COMPRESSION')
-    src_is_lossy = (org_comp is not None) and ('JPEG' in org_comp)
-    if lossy is None:
-        lossy = src_is_lossy
-    if lossy and (kind == RasterKind.dtm):
-        lossy = False
-    if not lossy:
-        comp = 'DEFLATE'
-    else:
-        comp = 'JPEG'
-        out_suffixes.append('jpg')
-
+    # region decideing which overviews to make
     if src_ovr is None:
         src_ovr = -1  # base raster
     overview_count = gdal_helper.get_ovr_count(ds)
@@ -246,12 +230,18 @@ def gdalos_trans(filename: MaybeSequence[str],
                 src_ovr = new_src_ovr
                 del ds
                 ds = gdal_helper.open_ds(filename, src_ovr=src_ovr, open_options=open_options, logger=logger)
+    # endregion
 
     geo_transform = ds.GetGeoTransform()
     input_res = (geo_transform[1], geo_transform[5])
-    translate_options = {}
-    warp_options = {}
 
+    band_types = gdal_helper.get_band_types(ds)
+    if isinstance(kind, str):
+        kind = RasterKind[kind]
+    if kind in [None, ...]:
+        kind = RasterKind.guess(band_types)
+
+    # region warp CRS handling
     pjstr_src_srs = projdef.get_srs_pj_from_ds(ds)
     pjstr_tgt_srs = None
     tgt_zone = None
@@ -271,8 +261,6 @@ def gdalos_trans(filename: MaybeSequence[str],
 
     do_warp = warp_CRS is not None
     if warp_CRS is not None:
-        if lossy is None:
-            lossy = True
         if tgt_zone is not None:
             if tgt_zone != 0:
                 # cropping according to tgt_zone bounds
@@ -286,7 +274,30 @@ def gdalos_trans(filename: MaybeSequence[str],
         if kind == RasterKind.dtm:
             common_options['outputType'] = gdal.GDT_Float32  # 'Float32'
         warp_options["dstSRS"] = pjstr_tgt_srs
+    # endregion
 
+    # region compression
+    resample_is_needed = warp_CRS is not None or (out_res is not None)
+    org_comp = gdal_helper.get_image_structure_metadata(ds, 'COMPRESSION')
+    src_is_lossy = (org_comp is not None) and ('JPEG' in org_comp)
+    if lossy is None:
+        lossy = src_is_lossy or resample_is_needed
+    if lossy and (kind == RasterKind.dtm):
+        lossy = False
+    if not lossy:
+        comp = 'DEFLATE'
+    else:
+        comp = 'JPEG'
+        out_suffixes.append('jpg')
+    # endregion
+
+    # region expand_rgb
+    if kind == RasterKind.pal and expand_rgb:
+        translate_options['rgbExpand'] = 'rgb'
+        out_suffixes.append('rgb')
+    # endregion
+
+    # region nodatavalue
     if (dst_nodatavalue is ...):
         if (kind == RasterKind.dtm):
             dst_nodatavalue = default_multi_byte_nodata_value
@@ -309,13 +320,9 @@ def gdalos_trans(filename: MaybeSequence[str],
             if src_nodatavalue_org != src_nodatavalue:
                 translate_options['noData'] = src_nodatavalue
                 warp_options['srcNodata'] = src_nodatavalue
+    # endregion
 
-    if kind == RasterKind.pal and expand_rgb:
-        translate_options['rgbExpand'] = 'rgb'
-        out_suffixes.append('rgb')
-
-    resample_is_needed = do_warp or (out_res is not None)
-
+    # region extent
     org_points_extent, _ = get_extent.get_points_extent_from_ds(ds)
     org_extent_in_src_srs = GeoRectangle.from_points(org_points_extent)
     if org_extent_in_src_srs.is_empty():
@@ -358,7 +365,9 @@ def gdalos_trans(filename: MaybeSequence[str],
             raise Exception
     elif src_win is not None:
         translate_options['srcWin'] = src_win
+    # endregion
 
+    # region out_res
     if out_res is not None:
         if isinstance(out_res, str):
             out_res = float(out_res)
@@ -371,15 +380,15 @@ def gdalos_trans(filename: MaybeSequence[str],
             out_res_x = get_extent.transform_resolution(transform_src_tgt, in_res_y, *out_extent_in_src_srs.lrdu)
             out_res_x = get_extent.round_to_sig(out_res_x, -1)
             out_res = (out_res_x, -out_res_x)
-
-    if out_res is None and src_ovr >= 0:
-        out_res = input_res
-
-    if resample_is_needed and out_res is not None:
+    if out_res is not None:
         common_options['xRes'], common_options['yRes'] = out_res
         warp_options['targetAlignedPixels'] = True
         out_suffixes.append(str(out_res))
+    elif src_ovr >= 0:
+        out_res = input_res
+    # endregion
 
+    # region jpeg
     # if (comp == 'JPEG') and (len(bands) == 3) or ((len(bands) == 4) and (keep_alpha)):
     if (comp == 'JPEG') and (len(band_types) in (3, 4)):
         creation_options['PHOTOMETRIC'] = 'YCBCR'
@@ -389,16 +398,11 @@ def gdalos_trans(filename: MaybeSequence[str],
             translate_options['bandList'] = [1, 2, 3]
             if keep_alpha:
                 translate_options['maskBand'] = 4  # keep the alpha band as mask
+    # endregion
 
-    no_yes = ('NO', 'YES')
-    if not isinstance(tiled, str):
-        tiled = no_yes[tiled]
-    creation_options['TILED'] = tiled
-    creation_options['BIGTIFF'] = big_tiff
-    creation_options['COMPRESS'] = comp
-    common_options['format'] = of
-
-    # decide ovr_type
+    # region decide ovr_type
+    if isinstance(ovr_type, str):
+        ovr_type = OvrType[ovr_type]
     cog_2_steps = cog
     if ovr_type in [..., OvrType.auto_select]:
         if overview_count > 0:
@@ -414,11 +418,9 @@ def gdalos_trans(filename: MaybeSequence[str],
             cog_2_steps = False
         else:
             ovr_type = OvrType.existing_reuse
+    # endregion
 
-    if cog and not cog_2_steps:
-        creation_options['COPY_SRC_OVERVIEWS'] = 'YES'
-
-    # make out_filename
+    # region make out_filename
     auto_out_filename = out_filename is None
     if auto_out_filename:
         if cog_2_steps and ovr_type == OvrType.create_external_auto and not trans_or_warp_is_needed:
@@ -471,6 +473,7 @@ def gdalos_trans(filename: MaybeSequence[str],
                 out_filename = out_filename.with_suffix('.temp' + '.' + outext)
     else:
         cog_filename = out_filename
+    # endregion
 
     if cog_2_steps:
         final_files_for_step_1 = temp_files
@@ -496,8 +499,19 @@ def gdalos_trans(filename: MaybeSequence[str],
         # logger.error('error')
         # logger.critical('critical')
 
+    # region create base raster
     ret_code = None
     if not skipped:
+        no_yes = ('NO', 'YES')
+        if not isinstance(tiled, str):
+            tiled = no_yes[tiled]
+        creation_options['TILED'] = tiled
+        creation_options['BIGTIFF'] = big_tiff
+        creation_options['COMPRESS'] = comp
+        common_options['format'] = of
+        if cog and not cog_2_steps:
+            creation_options['COPY_SRC_OVERVIEWS'] = 'YES'
+
         if creation_options:
             creation_options_list = []
             for k, v in creation_options.items():
@@ -553,7 +567,9 @@ def gdalos_trans(filename: MaybeSequence[str],
     if verbose:
         logger.debug('closing file: "{}"'.format(filename))
     del ds
+    #end region
 
+    # region create overviews, cog, info
     if not cog_ready and (ret_code or skipped):
         if not skipped and hide_nodatavalue:
             gdal_helper.unset_nodatavalue(str(out_filename))
@@ -631,7 +647,9 @@ def gdalos_trans(filename: MaybeSequence[str],
             info = gdalos_info(out_filename, skip_if_exists=skip_if_exists, logger=logger)
             if info is not None:
                 aux_files.append(info)
+    # endregion
 
+    # region log file lists
     if verbose:
         if final_files:
             logger.info('final_files: {}'.format(final_files))
@@ -643,7 +661,9 @@ def gdalos_trans(filename: MaybeSequence[str],
             else:
                 deleted = 'not '
             logger.info('temp_files (will {}be deleted): {}'.format(deleted, temp_files))
+    # endregion
 
+    # region delete temp files
     if delete_temp_files and temp_files:
         for f in temp_files:
             if f == filename:
@@ -657,16 +677,19 @@ def gdalos_trans(filename: MaybeSequence[str],
             else:
                 logger.warning('file for deletion not found: "{}"'.format(f))
         temp_files.clear()
+    # endregion
 
     if verbose:
         logger.info('*** done! ***\n')
 
+    # region remove loggers
     if logger_handlers:
         logger.debug('removing {} logging handlers'.format(len(logger_handlers)))
         for handler in logger_handlers:
             handler.close()
             logger.removeHandler(handler)
-        logger.debug('logging handlers removed')
+        logger.debug('logging handlers removed')  # this shouldn't log anything
+    # end region
     return ret_code
 
 
