@@ -37,20 +37,22 @@ class RasterKind(Enum):
     dtm = auto()
 
     @classmethod
-    def guess(cls, bands):
-        if gdal_helper.is_path_like(bands):
-            bands = gdal_helper.get_band_types(bands)
-        if len(bands) == 0:
+    def guess(cls, band_types_or_filename_or_ds):
+        if isinstance(band_types_or_filename_or_ds, list):
+            band_types = band_types_or_filename_or_ds
+        else:
+            band_types = gdal_helper.get_band_types(band_types_or_filename_or_ds)
+        if len(band_types) == 0:
             raise Exception('no bands in raster')
 
-        if bands[0] == 'Byte':
-            if len(bands) in (3, 4):
+        if band_types[0] == 'Byte':
+            if len(band_types) in (3, 4):
                 return cls.photo
-            elif len(bands) == 1:
+            elif len(band_types) == 1:
                 return cls.pal
             else:
                 raise Exception("invalid raster band count")
-        elif len(bands) == 1:
+        elif len(band_types) == 1:
             return cls.dtm
 
         raise Exception('could not guess raster kind')
@@ -71,7 +73,7 @@ def resampling_alg_by_kind(kind, expand_rgb=False):
 
 
 def do_skip_if_exists(out_filename, skip_if_exists, logger=None):
-    verbose = logger is not None
+    verbose = logger is not None and logger is not ...
     skip = False
     if os.path.isfile(out_filename):
         if skip_if_exists:
@@ -145,16 +147,24 @@ def gdalos_trans(filename: MaybeSequence[str],
     if temp_files is None:
         temp_files = []
 
+    if isinstance(kind, str):
+        kind = RasterKind[kind]
+    if isinstance(ovr_type, str):
+        ovr_type = OvrType[ovr_type]
+    if isinstance(out_res, str):
+        out_res = float(out_res)
+
     key_list_arguments = ['filename', 'extent', 'warp_CRS', 'of', 'expand_rgb']
     for key in key_list_arguments:
         val = all_args[key]
         val = gdal_helper.flatten_and_expand_file_list(val, do_expand_glob=key == 'filename')
         if key == 'filename':
             if gdal_helper.is_list_like(val) and multi_file_as_vrt:
-                vrt_path = gdalos_vrt(val, resampling_alg=resampling_alg)
+                vrt_path = gdalos_vrt(val, resampling_alg=resampling_alg, kind=kind, skip_if_exists=skip_if_exists, logger=logger)
                 if vrt_path is None:
-                    raise Exception  # failed?
+                    raise Exception('failed to create a vrt file: {}'.format(vrt_path))  # failed?
                 temp_files.append(vrt_path)
+                val = vrt_path
             filename = val
 
         if gdal_helper.is_list_like(val):
@@ -191,7 +201,7 @@ def gdalos_trans(filename: MaybeSequence[str],
     if write_spec and logger is None:
         logger = logging.getLogger(__name__)
     all_args['logger'] = logger
-    verbose = logger is not None
+    verbose = logger is not None and logger is not ...
     if verbose:
         logger.info(all_args)
     # endregion
@@ -212,6 +222,7 @@ def gdalos_trans(filename: MaybeSequence[str],
 
     extent_was_cropped = False
     input_ext = os.path.splitext(filename)[1].lower()
+    input_is_vrt = input_ext == '.vrt'
 
     ds = gdal_helper.open_ds(filename, src_ovr=src_ovr, open_options=open_options, logger=logger)
 
@@ -236,8 +247,6 @@ def gdalos_trans(filename: MaybeSequence[str],
     input_res = (geo_transform[1], geo_transform[5])
 
     band_types = gdal_helper.get_band_types(ds)
-    if isinstance(kind, str):
-        kind = RasterKind[kind]
     if kind in [None, ...]:
         kind = RasterKind.guess(band_types)
 
@@ -369,8 +378,6 @@ def gdalos_trans(filename: MaybeSequence[str],
 
     # region out_res
     if out_res is not None:
-        if isinstance(out_res, str):
-            out_res = float(out_res)
         if not isinstance(out_res, Sequence):
             out_res = [out_res, -out_res]
     elif warp_CRS is not None:
@@ -401,8 +408,6 @@ def gdalos_trans(filename: MaybeSequence[str],
     # endregion
 
     # region decide ovr_type
-    if isinstance(ovr_type, str):
-        ovr_type = OvrType[ovr_type]
     cog_2_steps = cog
     if ovr_type in [..., OvrType.auto_select]:
         if overview_count > 0:
@@ -423,7 +428,7 @@ def gdalos_trans(filename: MaybeSequence[str],
     # region make out_filename
     auto_out_filename = out_filename is None
     if auto_out_filename:
-        if cog_2_steps and ovr_type == OvrType.create_external_auto and not trans_or_warp_is_needed:
+        if cog_2_steps and ovr_type == OvrType.create_external_auto and not trans_or_warp_is_needed and not input_is_vrt:
             # create overviews for the input file then create a cog
             out_filename = filename
         else:
@@ -694,7 +699,7 @@ def gdalos_trans(filename: MaybeSequence[str],
 
 
 def add_ovr(filename, options, access_mode, skip_if_exists=False, logger=None, ovr_files: list = None):
-    verbose = logger is not None
+    verbose = logger is not None and logger is not ...
     filename = Path(filename)
     out_filename = gdal_helper.concat_paths(filename, '.ovr')
     if not do_skip_if_exists(out_filename, skip_if_exists, logger):
@@ -717,7 +722,7 @@ def gdalos_ovr(filename, comp=None, skip_if_exists=False,
                kind=None, resampling_alg=None,
                config_options: dict = None, ovr_options: dict = None,
                ovr_files: list = None, print_progress=..., logger=None):
-    verbose = logger is not None
+    verbose = logger is not None and logger is not ...
     filename = Path(filename)
     if os.path.isdir(filename):
         raise Exception('input is a dir, not a file: "{}"'.format(filename))
@@ -813,25 +818,39 @@ def gdalos_info(filename, skip_if_exists=False, logger=None):
         return None
 
 
-def gdalos_vrt(filenames: MaybeSequence, vrt_path=None, resampling_alg=None):
+def gdalos_vrt(filenames: MaybeSequence, vrt_path=None, kind=None, resampling_alg=None, skip_if_exists=True, logger=None):
     if gdal_helper.is_list_like(filenames):
         flatten_filenames = gdal_helper.flatten_and_expand_file_list(filenames)
     else:
         flatten_filenames = [filenames]
     flatten_filenames = [str(f) for f in flatten_filenames]
+    if not flatten_filenames:
+        return None
+    first_filename = flatten_filenames[0]
     if vrt_path is None:
-        vrt_path = flatten_filenames[0] + '.vrt'
+        vrt_path = first_filename + '.vrt'
 
     if os.path.isdir(vrt_path):
-        vrt_path = os.path.join(vrt_path, os.path.basename(flatten_filenames[0]) + '.vrt')
-    if os.path.isfile(vrt_path):
-        os.remove(vrt_path)
-    if os.path.isfile(vrt_path):
-        return None
-    os.makedirs(os.path.dirname(vrt_path), exist_ok=True)
-    vrt_options = gdal.BuildVRTOptions(resampleAlg=resampling_alg)
-    ret = gdal.BuildVRT(vrt_path, flatten_filenames, options=vrt_options)
-    if ret is None:  # how does BuildVRT indicates an error?
-        return None
-    if os.path.isfile(vrt_path):
+        vrt_path = os.path.join(vrt_path, os.path.basename(first_filename) + '.vrt')
+    if do_skip_if_exists(vrt_path, skip_if_exists, logger):
         return vrt_path
+    if os.path.isfile(vrt_path):
+        raise Exception('could not delete var file: {}'.format(vrt_path))
+    os.makedirs(os.path.dirname(vrt_path), exist_ok=True)
+    vrt_options = dict()
+    if resampling_alg in [None, ...]:
+        if kind in [None, ...]:
+            kind = RasterKind.guess(first_filename)
+        resampling_alg = resampling_alg_by_kind(kind)
+    if resampling_alg is not None:
+        vrt_options['resampleAlg'] = resampling_alg
+    vrt_options = gdal.BuildVRTOptions(*vrt_options)
+    out_ds = gdal.BuildVRT(vrt_path, flatten_filenames, options=vrt_options)
+    if out_ds is None:
+        return None
+    del out_ds
+    success = os.path.isfile(vrt_path)
+    if success:
+        return vrt_path
+    else:
+        return None

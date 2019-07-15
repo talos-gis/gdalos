@@ -29,39 +29,12 @@ def gdalos_qt_main():
     result = q.exec()
     print(result)
 
-    parameters = dict()
-    parameters['source file'] = 'filename'
-    parameters['source ovr'] = 'src_ovr'
-    parameters['output format'] = 'of'
-    parameters['cloud optimized geotiff'] = 'cog'
-    parameters['create info'] = 'create_info'
-    parameters['write spec'] = 'write_spec'
-    parameters['output extension'] = 'outext'
-    parameters['BIGTIFF'] = 'big_tiff'
-    parameters['wrap CRS'] = 'warp_CRS'
-    parameters['destination file'] = 'out_filename'
-    parameters['skip if exists'] = 'skip_if_exists'
-    parameters['raster kind'] = 'kind'
-    parameters['expand rgb'] = 'expand_rgb'
-    parameters['resolution'] = 'out_res'
-    parameters['destination nodatavalue'] = 'dst_nodatavalue'
-    parameters['source nodatavalue'] = 'src_nodatavalue'
-    parameters['hide nodatavalue'] = 'hide_nodatavalue'
-    parameters['source window'] = 'src_win'
-    parameters['ovr type'] = 'ovr_type'
-    parameters['resampling method'] = 'resampling_alg'
-    parameters['jpeg quality'] = 'jpeg_quality'
-    parameters['keep alpha'] = 'keep_alpha'
-
     if result.is_ok() and result.value is not None:
         for v in result.value:
             d = dict(v[0])
             d2 = dict()
             for k,v in d.items():
-                if k in parameters.keys():
-                    new_k = parameters[k]
-                else:
-                    new_k = k
+                new_k = k.replace(' ', '_')
                 d2[new_k] = d[k]
 
             print(gdalos_trans(**d2))

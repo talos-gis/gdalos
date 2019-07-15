@@ -59,47 +59,47 @@ def _band_getmin(band):
     return band.GetMinimum()
 
 
-def get_band_types(ds):
-    with OpenDS(ds) as ds:
+def get_band_types(filename_or_ds):
+    with OpenDS(filename_or_ds) as ds:
         return [gdal.GetDataTypeName(band.DataType) for band in _get_bands(ds)]
 
 
-def get_raster_band(ds, bnd_index=1, ovr_index=None):
-    with OpenDS(ds) as ds:
+def get_raster_band(filename_or_ds, bnd_index=1, ovr_index=None):
+    with OpenDS(filename_or_ds) as ds:
         bnd = ds.GetRasterBand(bnd_index)
         if ovr_index is not None:
             bnd = bnd.GetOverview(ovr_index)
         return bnd
 
 
-def get_ovr_count(ds):
-    with OpenDS(ds) as ds:
+def get_ovr_count(filename_or_ds):
+    with OpenDS(filename_or_ds) as ds:
         bnd = ds.GetRasterBand(1)
         return bnd.GetOverviewCount()
 
 
-def get_nodatavalue(ds):
-    with OpenDS(ds) as ds:
+def get_nodatavalue(filename_or_ds):
+    with OpenDS(filename_or_ds) as ds:
         band = next(_get_bands(ds))
         return band.GetNoDataValue()
 
 
-def unset_nodatavalue(ds):
-    with OpenDS(ds, access_mode=gdal.GA_Update) as ds:
+def unset_nodatavalue(filename_or_ds):
+    with OpenDS(filename_or_ds, access_mode=gdal.GA_Update) as ds:
         for b in _get_bands(ds):
             b.DeleteNoDataValue()
 
 
-def get_raster_minimum(ds):
-    with OpenDS(ds) as ds:
+def get_raster_minimum(filename_or_ds):
+    with OpenDS(filename_or_ds) as ds:
         return min(_band_getmin(b) for b in _get_bands(ds))
 
 
-def get_image_structure_metadata(ds, key: str, default=None):
+def get_image_structure_metadata(filename_or_ds, key: str, default=None):
     key = key.strip()
     if not key.endswith('='):
         key = key + '='
-    with OpenDS(ds) as ds:
+    with OpenDS(filename_or_ds) as ds:
         metadata = ds.GetMetadata_List("IMAGE_STRUCTURE")
         if metadata is None:
             return default
