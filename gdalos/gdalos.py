@@ -289,7 +289,7 @@ def gdalos_trans(filename: MaybeSequence[str],
     resample_is_needed = warp_CRS is not None or (out_res is not None)
     org_comp = gdal_helper.get_image_structure_metadata(ds, 'COMPRESSION')
     src_is_lossy = (org_comp is not None) and ('JPEG' in org_comp)
-    if lossy is None:
+    if lossy in [None, ...]:
         lossy = src_is_lossy or resample_is_needed
     if lossy and (kind == RasterKind.dtm):
         lossy = False
@@ -383,10 +383,7 @@ def gdalos_trans(filename: MaybeSequence[str],
     elif warp_CRS is not None:
         transform_src_tgt = get_extent.get_transform(pjstr_src_srs, pjstr_tgt_srs)
         if transform_src_tgt is not None:
-            in_res_y = input_res[1]  # geo_transform[5]  # Mpp.Y == geotransform[5]
-            out_res_x = get_extent.transform_resolution(transform_src_tgt, in_res_y, *out_extent_in_src_srs.lrdu)
-            out_res_x = get_extent.round_to_sig(out_res_x, -1)
-            out_res = (out_res_x, -out_res_x)
+            out_res = get_extent.transform_resolution(transform_src_tgt, input_res, out_extent_in_src_srs)
     if out_res is not None:
         common_options['xRes'], common_options['yRes'] = out_res
         warp_options['targetAlignedPixels'] = True
@@ -401,10 +398,14 @@ def gdalos_trans(filename: MaybeSequence[str],
         creation_options['PHOTOMETRIC'] = 'YCBCR'
         creation_options['JPEG_QUALITY'] = str(jpeg_quality)
 
-        if len(band_types) == 4:  # alpha channel is not supported with PHOTOMETRIC=YCBCR, thus we drop it
-            translate_options['bandList'] = [1, 2, 3]
-            if keep_alpha:
-                translate_options['maskBand'] = 4  # keep the alpha band as mask
+        if len(band_types) == 4:  # alpha channel is not supported with PHOTOMETRIC=YCBCR, thus we drop it or keep it as a mask band
+            if do_warp:
+                raise Exception(
+                    'this mode is not supported: warp RGBA raster with JPEG output, you could do it in two steps: 1. warp with lossless ouput, 2. save as jpeg')
+            else:
+                translate_options['bandList'] = [1, 2, 3]
+                if keep_alpha:
+                    translate_options['maskBand'] = 4  # keep the alpha band as mask
     # endregion
 
     # region decide ovr_type
@@ -417,11 +418,11 @@ def gdalos_trans(filename: MaybeSequence[str],
             ovr_type = OvrType.create_external_auto
 
     trans_or_warp_is_needed = bool(extent or src_win or resample_is_needed or (lossy != src_is_lossy) or translate_options)
-    if ovr_type == OvrType.existing_auto:
+    if ovr_type in [None, OvrType.existing_reuse, OvrType.existing_auto]:
         can_cog = not trans_or_warp_is_needed
         if cog and can_cog:
             cog_2_steps = False
-        else:
+        elif ovr_type == OvrType.existing_auto:
             ovr_type = OvrType.existing_reuse
     # endregion
 
@@ -514,7 +515,7 @@ def gdalos_trans(filename: MaybeSequence[str],
         creation_options['BIGTIFF'] = big_tiff
         creation_options['COMPRESS'] = comp
         common_options['format'] = of
-        if cog and not cog_2_steps:
+        if cog and not cog_2_steps and (ovr_type != None):
             creation_options['COPY_SRC_OVERVIEWS'] = 'YES'
 
         if creation_options:
@@ -620,7 +621,7 @@ def gdalos_trans(filename: MaybeSequence[str],
                                 'ovr creating should have made exactly 1 file! {}'.format(all_args_new['final_files']))
                     aux_files.extend(all_args_new['aux_files'])
             create_info = create_info and cog
-        elif (ovr_type is not None) and (ovr_type != OvrType.existing_auto):
+        elif (ovr_type not in [None, OvrType.existing_reuse, OvrType.existing_auto]):
             # create overviews from dataset (internal or external)
             ret_code = gdalos_ovr(out_filename, skip_if_exists=skip_if_exists,
                                   ovr_type=ovr_type, dst_ovr_count=dst_ovr_count,
@@ -633,7 +634,7 @@ def gdalos_trans(filename: MaybeSequence[str],
             cog_temp_files = []  # there shouldn't be any!
             cog_ovr_files = []  # there shouldn't be any!
             cog_aux_files = []
-            ret_code = gdalos_trans(out_filename, out_filename=cog_filename, cog=True,
+            ret_code = gdalos_trans(out_filename, out_filename=cog_filename, cog=True, ovr_type=OvrType.existing_reuse,
                                     of=of, outext=outext, tiled=tiled, big_tiff=big_tiff, src_ovr=src_ovr,
                                     print_progress=print_progress,
                                     final_files=cog_final_files, ovr_files=cog_ovr_files, aux_files=cog_aux_files,

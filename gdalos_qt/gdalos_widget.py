@@ -67,10 +67,13 @@ class GdalosWidget(FidgetConverter):
             FidgetDict.template(
                 'conversion',
                 [
-                    ('kind',FidgetCombo.template('raster kind', options=list(chain((('AUTO', ...),), RasterKind.__members__.items())),
+                    FidgetCombo.template('lossy', options=[('AUTO', None), False, True],
+                                         initial_index=0,
+                                         make_title=True),
+                    ('kind',FidgetCombo.template('raster kind',
+                                         options=list(chain((('AUTO', ...),), RasterKind.__members__.items())),
                                          initial_index=0,
                                          make_title=True)),
-                    FidgetCheckBox.template('lossy', initial_value=False),
                     FidgetCheckBox.template('expand rgb', initial_value=False),
                     FidgetMinimal.template(
                         FidgetOptional.template(

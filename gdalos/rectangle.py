@@ -40,11 +40,13 @@ class GeoRectangle:
         return ret
 
     @classmethod
+    # # same as min_max
     def from_lrdu(cls, l, r, d, u):
         ret = cls(l, d, r - l, u - d)
         return ret
 
     @classmethod
+    # same as lrdu
     def from_min_max(cls, min_x, max_x, min_y, max_y):
         ret = cls(min_x, min_y, max_x - min_x, max_y - min_y)
         return ret
