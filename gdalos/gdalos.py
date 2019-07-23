@@ -409,6 +409,8 @@ def gdalos_trans(filename: MaybeSequence[str],
     # endregion
 
     # region decide ovr_type
+    if ovr_type is None:
+        cog = False
     cog_2_steps = cog
     if ovr_type in [..., OvrType.auto_select]:
         if overview_count > 0:
@@ -498,6 +500,7 @@ def gdalos_trans(filename: MaybeSequence[str],
         spec_filename = gdal_helper.concat_paths(cog_filename, '.spec')
         logger_handlers.append(gdalos_logger.set_file_logger(logger, spec_filename))
         logger.debug('spec file handler added: "{}"'.format(spec_filename))
+        logger.debug('gdalos versoin: {}'.format(gdalos.__version__))
         aux_files.append(spec_filename)
         # logger.debug('debug')
         # logger.info('info')
@@ -515,7 +518,7 @@ def gdalos_trans(filename: MaybeSequence[str],
         creation_options['BIGTIFF'] = big_tiff
         creation_options['COMPRESS'] = comp
         common_options['format'] = of
-        if cog and not cog_2_steps and (ovr_type != None):
+        if cog and not cog_2_steps:
             creation_options['COPY_SRC_OVERVIEWS'] = 'YES'
 
         if creation_options:
@@ -634,7 +637,7 @@ def gdalos_trans(filename: MaybeSequence[str],
             cog_temp_files = []  # there shouldn't be any!
             cog_ovr_files = []  # there shouldn't be any!
             cog_aux_files = []
-            ret_code = gdalos_trans(out_filename, out_filename=cog_filename, cog=True, ovr_type=OvrType.existing_reuse,
+            ret_code = gdalos_trans(out_filename, out_filename=cog_filename, cog=True, ovr_type=OvrType.existing_auto,
                                     of=of, outext=outext, tiled=tiled, big_tiff=big_tiff, src_ovr=src_ovr,
                                     print_progress=print_progress,
                                     final_files=cog_final_files, ovr_files=cog_ovr_files, aux_files=cog_aux_files,
