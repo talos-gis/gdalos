@@ -118,6 +118,8 @@ class GdalosWidget(FidgetConverter):
                         ),
                         make_title=True, make_indicator=False, make_plaintext=True
                     )),
+                    FidgetOptional.template(FidgetInt.template('partition', placeholder=False),
+                                            make_title=True),
                 ],
                 make_plaintext=False
             ),

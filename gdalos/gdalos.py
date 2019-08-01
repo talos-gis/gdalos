@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional, Sequence, List, Union, Tuple, TypeVar
 
 import gdal
+from gdalos.__data__ import __version__
 from gdalos import gdal_helper
 from gdalos import gdalos_logger
 from gdalos import get_extent
@@ -134,7 +135,7 @@ def gdalos_trans(filename: MaybeSequence[str],
                  kind: RasterKind = None, resampling_alg=None, lossy: bool = None, expand_rgb: bool = False,
                  jpeg_quality: Real = 75, keep_alpha: bool = True,
                  final_files: list = None, ovr_files: list = None, aux_files: list = None, temp_files: list = None,
-                 delete_temp_files=True,
+                 delete_temp_files=True, partition=None,
                  print_progress=..., logger=..., write_spec=True, *, all_args: dict = None):
     print(all_args)
 
@@ -154,7 +155,11 @@ def gdalos_trans(filename: MaybeSequence[str],
     if isinstance(out_res, str):
         out_res = float(out_res)
 
-    key_list_arguments = ['filename', 'extent', 'warp_CRS', 'of', 'expand_rgb']
+    if isinstance(partition, int):
+        partition = [GeoRectangle(i, j, partition, partition) for i in range(partition) for j in range(partition)]
+        all_args['partition'] = partition
+
+    key_list_arguments = ['filename', 'extent', 'warp_CRS', 'of', 'expand_rgb', 'partition']
     for key in key_list_arguments:
         val = all_args[key]
         val = gdal_helper.flatten_and_expand_file_list(val, do_expand_glob=key == 'filename')
@@ -337,7 +342,11 @@ def gdalos_trans(filename: MaybeSequence[str],
     if org_extent_in_src_srs.is_empty():
         raise Exception(f'no input extent: {filename} [{org_extent_in_src_srs}]')
     out_extent_in_src_srs = org_extent_in_src_srs
-    if extent is not None:
+    if extent is not None or partition is not None:
+        pjstr_4326 = projdef.get_proj4_string('w')  # 'EPSG:4326'
+        if extent is None:
+            transform = get_extent.get_transform(pjstr_src_srs, pjstr_4326)
+            extent = get_extent.translate_extent(org_extent_in_src_srs, transform)
         if pjstr_tgt_srs is None:
             pjstr_tgt_srs = pjstr_src_srs
             transform = None
@@ -348,27 +357,30 @@ def gdalos_trans(filename: MaybeSequence[str],
         if org_extent_in_tgt_srs.is_empty():
             raise Exception(f'no input extent: {filename} [{org_extent_in_tgt_srs}]')
 
-        pjstr_4326 = projdef.get_proj4_string('w')  # 'EPSG:4326'
         transform = get_extent.get_transform(pjstr_4326, pjstr_tgt_srs)
         out_extent_in_tgt_srs = get_extent.translate_extent(extent, transform)
         out_extent_in_tgt_srs = out_extent_in_tgt_srs.crop(org_extent_in_tgt_srs)
-        if not ((out_extent_in_tgt_srs == org_extent_in_tgt_srs)
-                or (transform is None and out_extent_in_tgt_srs == extent)):
+
+        if out_extent_in_tgt_srs != org_extent_in_tgt_srs:
             extent_was_cropped = True
+            transform = get_extent.get_transform(pjstr_tgt_srs, pjstr_4326)
+            extent = get_extent.translate_extent(out_extent_in_tgt_srs, transform)
 
         if out_extent_in_tgt_srs.is_empty():
             raise Exception(f'no output extent: {filename} [{out_extent_in_tgt_srs}]')
 
+        if partition:
+            out_extent_in_tgt_srs_part = out_extent_in_tgt_srs.get_partition(partition)
+        else:
+            out_extent_in_tgt_srs_part = out_extent_in_tgt_srs
+
         # -projwin minx maxy maxx miny (ulx uly lrx lry)
-        translate_options['projWin'] = out_extent_in_tgt_srs.lurd
+        translate_options['projWin'] = out_extent_in_tgt_srs_part.lurd
         # -te minx miny maxx maxy
-        warp_options['outputBounds'] = out_extent_in_tgt_srs.ldru
+        warp_options['outputBounds'] = out_extent_in_tgt_srs_part.ldru
 
         transform = get_extent.get_transform(pjstr_4326, pjstr_src_srs)
-        if transform is not None:
-            out_extent_in_src_srs = get_extent.translate_extent(extent, transform)
-        else:
-            out_extent_in_src_srs = extent
+        out_extent_in_src_srs = get_extent.translate_extent(extent, transform)
         out_extent_in_src_srs = out_extent_in_src_srs.crop(org_extent_in_src_srs)
         if out_extent_in_src_srs.is_empty():
             raise Exception
@@ -438,15 +450,13 @@ def gdalos_trans(filename: MaybeSequence[str],
             out_extent_in_4326 = extent
             if extent_was_cropped and (out_extent_in_src_srs is not None):
                 transform = get_extent.get_transform(pjstr_src_srs, pjstr_4326)
-                if transform is not None:
-                    out_extent_in_4326 = get_extent.translate_extent(out_extent_in_src_srs, transform)
-                else:
-                    out_extent_in_4326 = out_extent_in_src_srs
-                out_extent_in_4326 = round(out_extent_in_4326, 2)
+                out_extent_in_4326 = get_extent.translate_extent(out_extent_in_src_srs, transform)
             if out_extent_in_4326 is not None:
-                out_suffixes.append('x[{},{}]_y[{},{}]'.format(*out_extent_in_4326.lrdu))
+                out_suffixes.append('x[{},{}]_y[{},{}]'.format(*(round(x,2) for x in out_extent_in_4326.lrdu)))
             elif src_win is not None:
                 out_suffixes.append('off[{},{}]_size[{},{}]'.format(*src_win))
+            if partition is not None:
+                out_suffixes.append('part_x[{},{}]_y[{},{}]'.format(*partition.xwyh))
             if not out_suffixes:
                 if '.' + outext.lower() == input_ext:
                     out_suffixes.append('new')
@@ -500,7 +510,7 @@ def gdalos_trans(filename: MaybeSequence[str],
         spec_filename = gdal_helper.concat_paths(cog_filename, '.spec')
         logger_handlers.append(gdalos_logger.set_file_logger(logger, spec_filename))
         logger.debug('spec file handler added: "{}"'.format(spec_filename))
-        logger.debug('gdalos versoin: {}'.format(gdalos.__version__))
+        logger.debug('gdalos versoin: {}'.format(__version__))
         aux_files.append(spec_filename)
         # logger.debug('debug')
         # logger.info('info')
@@ -638,7 +648,7 @@ def gdalos_trans(filename: MaybeSequence[str],
             cog_ovr_files = []  # there shouldn't be any!
             cog_aux_files = []
             ret_code = gdalos_trans(out_filename, out_filename=cog_filename, cog=True, ovr_type=OvrType.existing_auto,
-                                    of=of, outext=outext, tiled=tiled, big_tiff=big_tiff, src_ovr=src_ovr,
+                                    of=of, outext=outext, tiled=tiled, big_tiff=big_tiff,
                                     print_progress=print_progress,
                                     final_files=cog_final_files, ovr_files=cog_ovr_files, aux_files=cog_aux_files,
                                     temp_files=cog_temp_files, delete_temp_files=False,

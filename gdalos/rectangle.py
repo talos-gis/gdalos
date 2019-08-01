@@ -30,6 +30,22 @@ class GeoRectangle:
             min(self.max_y, other.max_y)
         )
 
+    def round(self, digits):
+        self.x = round(self.x, digits)
+        self.y = round(self.y, digits)
+        self.w = round(self.w, digits)
+        self.h = round(self.h, digits)
+
+    def get_partition(self, part: 'GeoRectangle'):
+        # part: x,y - part indexes; w,h - part counts
+        part_width = self.w / part.w
+        part_hight = self.h / part.h
+        return GeoRectangle(
+            self.x + part.x * part_width,
+            self.y + part.y * part_hight,
+            part_width, part_hight
+        )
+
     @classmethod
     def empty(cls):
         return cls(0, 0, 0, 0)
@@ -49,6 +65,11 @@ class GeoRectangle:
     # same as lrdu
     def from_min_max(cls, min_x, max_x, min_y, max_y):
         ret = cls(min_x, min_y, max_x - min_x, max_y - min_y)
+        return ret
+
+    @classmethod
+    def from_xwyh(cls, x, w, y, h):
+        ret = cls(x, y, w, h)
         return ret
 
     @classmethod
@@ -115,6 +136,10 @@ class GeoRectangle:
     @property
     def min_max(self):
         return self.min_x, self.max_x, self.min_y, self.max_y
+
+    @property
+    def xwyh(self):
+        return self.x, self.w, self.y, self.h
 
     def __repr__(self):
         return f'Rectangle({self.x}, {self.y}, {self.w}, {self.h})'
