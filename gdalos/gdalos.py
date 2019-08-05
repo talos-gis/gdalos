@@ -176,7 +176,8 @@ def gdalos_trans(filename: MaybeSequence[str],
             # input argument is a list, recurse over its values
             all_args_new = all_args.copy()
             ret_code = None
-            for v in val:
+            for idx, v in enumerate(val):
+                print('iterate over {} ({}/{}) - {}'.format(key, idx+1, len(val), v))
                 all_args_new[key] = v
                 all_args_new['temp_files'] = []
                 all_args_new['final_files'] = []
@@ -619,20 +620,21 @@ def gdalos_trans(filename: MaybeSequence[str],
                     all_args_new['out_res'] = [r * res_factor for r in out_res]
                 all_args_new['create_info'] = create_info and (ovr_index == src_ovr) and not cog
                 ret_code = gdalos_trans(**all_args_new)
-                if ret_code:
-                    if ovr_index == src_ovr:
-                        final_files_for_step_1.extend(all_args_new['final_files'])
-                    else:
-                        ovr_files_for_step_1.extend(all_args_new['final_files'])
-                    if verbose:
-                        for f in ['ovr_files', 'temp_files']:
-                            if all_args_new[f]:
-                                logger.error(
-                                    'there shound not be any {} here, but there are! {}'.format(f, all_args_new[f]))
-                        if len(all_args_new['final_files']) != 1:
+                if not ret_code:
+                    logger.warning('return code was None for creating {}'.format(all_args_new['out_filename']))
+                if ovr_index == src_ovr:
+                    final_files_for_step_1.extend(all_args_new['final_files'])
+                else:
+                    ovr_files_for_step_1.extend(all_args_new['final_files'])
+                if verbose:
+                    for f in ['ovr_files', 'temp_files']:
+                        if all_args_new[f]:
                             logger.error(
-                                'ovr creating should have made exactly 1 file! {}'.format(all_args_new['final_files']))
-                    aux_files.extend(all_args_new['aux_files'])
+                                'there shound not be any {} here, but there are! {}'.format(f, all_args_new[f]))
+                    if len(all_args_new['final_files']) != 1:
+                        logger.error(
+                            'ovr creating should have made exactly 1 file! {}'.format(all_args_new['final_files']))
+                aux_files.extend(all_args_new['aux_files'])
             create_info = create_info and cog
         elif (ovr_type not in [None, OvrType.existing_reuse, OvrType.existing_auto]):
             # create overviews from dataset (internal or external)

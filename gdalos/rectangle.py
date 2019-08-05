@@ -62,14 +62,15 @@ class GeoRectangle:
         return ret
 
     @classmethod
-    # same as lrdu
-    def from_min_max(cls, min_x, max_x, min_y, max_y):
-        ret = cls(min_x, min_y, max_x - min_x, max_y - min_y)
+    # # same as min_max
+    def from_xwyh(cls, x, w, y, h):
+        ret = cls(x, y, w, h)
         return ret
 
     @classmethod
-    def from_xwyh(cls, x, w, y, h):
-        ret = cls(x, y, w, h)
+    # same as lrdu
+    def from_min_max(cls, min_x, max_x, min_y, max_y):
+        ret = cls(min_x, min_y, max_x - min_x, max_y - min_y)
         return ret
 
     @classmethod
@@ -134,12 +135,12 @@ class GeoRectangle:
         return self.x, self.y, self.w, self.h
 
     @property
-    def min_max(self):
-        return self.min_x, self.max_x, self.min_y, self.max_y
-
-    @property
     def xwyh(self):
         return self.x, self.w, self.y, self.h
+
+    @property
+    def min_max(self):
+        return self.min_x, self.max_x, self.min_y, self.max_y
 
     def __repr__(self):
         return f'Rectangle({self.x}, {self.y}, {self.w}, {self.h})'
