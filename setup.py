@@ -6,7 +6,9 @@ setuptools.setup(
     name=gdalos.__name__,
     version=gdalos.__version__,
     author=gdalos.__author__,
-    description='',
+    description='a simple gdal translate/warp/addo python wrapper for raster batch processing',
+    license='MIT',
+    url='https://github.com/talos-gis/gdalos',
     packages=['gdalos', 'gdalos_qt'],
     extras_require={
         'PyQt': ['PyQt5'],
@@ -15,6 +17,6 @@ setuptools.setup(
     python_requires='>=3.7.0',
     include_package_data=True,
     data_files=[
-        ('', ['README.md']),
+        ('', ['README.md', 'LICENSE']),
     ],
 )
