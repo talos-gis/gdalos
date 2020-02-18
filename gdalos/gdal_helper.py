@@ -6,6 +6,7 @@ from typing import Sequence
 
 import gdal
 
+
 def open_ds(filename, access_mode=gdal.GA_ReadOnly, src_ovr:int=None, open_options:dict=None, logger=None):
     open_options = dict(open_options or dict())
     if src_ovr is not None and src_ovr >= 0:
@@ -22,6 +23,7 @@ def open_ds(filename, access_mode=gdal.GA_ReadOnly, src_ovr:int=None, open_optio
         return gdal.OpenEx(str(filename), open_options=open_options)
     else:
         return gdal.Open(str(filename), access_mode)
+
 
 class OpenDS:
     def __init__(self, filename_or_ds, **kwargs):
@@ -51,6 +53,7 @@ def _get_bands(ds: gdal.Dataset) -> Iterator[gdal.Band]:
     return (
         ds.GetRasterBand(i + 1) for i in range(ds.RasterCount)
     )
+
 
 def _band_getmin(band):
     ret = band.GetMinimum()

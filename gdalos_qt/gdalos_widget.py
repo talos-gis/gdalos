@@ -25,8 +25,8 @@ class GdalosWidget(FidgetConverter):
                 'basic',
                 [
                     ('filename',raster_fidget.template('source file', exist_cond=True)),
-                    ('cog',FidgetCheckBox.template('make cloud optimized geotiff', initial_value=False)),
-                    FidgetCheckBox.template('delete_temp_files', initial_value=True),
+                    ('cog',FidgetCheckBox.template('make cloud optimized geotiff', initial_value=True)),
+                    FidgetCheckBox.template('delete temp files', initial_value=True),
                     FidgetCheckBox.template('skip if exists', initial_value=True),
                     ('multi_file_as_vrt',FidgetCheckBox.template('treat multi file as vrt', initial_value=False)),
                     FidgetCheckBox.template('create info', initial_value=True),
@@ -45,7 +45,7 @@ class GdalosWidget(FidgetConverter):
                     FidgetCombo.template('ovr type',
                                          options=list(chain((('AUTO', ...), ('None', None)), OvrType.__members__)),
                                          initial_index=0, make_title=True),
-                    FidgetCheckBox.template('keep_src_ovr_suffixes', initial_value=True),
+                    FidgetCheckBox.template('keep src ovr suffixes', initial_value=True),
                 ],
                 make_plaintext=False
             ),

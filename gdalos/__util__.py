@@ -4,6 +4,7 @@ from inspect import signature, Parameter
 from itertools import chain
 from functools import wraps
 
+
 class CallParamDict:
     def __init__(self, func, args: tuple, kwargs: dict, pos_param_names: Sequence[str], all_params: Mapping[str, Parameter]):
         self.func = func

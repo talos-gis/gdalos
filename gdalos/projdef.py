@@ -1,5 +1,5 @@
 from numbers import Real
-from osgeo import gdal, osr, ogr
+from osgeo import osr
 
 
 def get_floats(s):
@@ -22,7 +22,6 @@ def get_float(s):
         except ValueError:
             pass
     return res
-
 
 
 def get_number(x):

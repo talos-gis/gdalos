@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, Sequence, List, Union, Tuple, TypeVar
 
 import gdal
-from gdalos.__data__ import __version__
+from gdalos import __version__
 from gdalos import gdal_helper
 from gdalos import gdalos_logger
 from gdalos import get_extent
