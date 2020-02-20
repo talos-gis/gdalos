@@ -76,17 +76,22 @@ Usage - Running:
 
 Using the gdalos_qt GUI:
 ========================
-gdalos GUI currently is very minimalistic... basic usage is as follows:
+* gdalos main UI is very minimalistic...
+    *  press on the '...' button next to button "0" to open the "New job GUI"
 
-*  press on the '...' button next to button "0" to open the "job GUI"
-*  press on the '...' button next to "source file" to select a source file
-*  (optional) use whichever additional process you like
-    * cropping
-    * wrapping
-    * output
-* press OK
-* (optional) press on the "0" button to add more job rows and repeat the above
-* press OK to start
+    .. image:: /data/images/gdalos _main_ui.png
+
+* New Job UI
+    *  press on the '...' button next to "source file" to select a source file
+    *  (optional) use whichever additional process you like
+        * cropping
+        * wrapping
+        * output
+    * press OK
+    * (optional) press on the "0" button to add more job rows and repeat the above
+    * press OK to start
+
+    .. image:: /data/images/gdalos_add_job.png
 
 
 Support
