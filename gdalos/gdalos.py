@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, Sequence, List, Union, Tuple, TypeVar
 
 import gdal
-from gdalos import __version__
+from gdalos_data import __version__
 from gdalos import gdal_helper
 from gdalos import gdalos_logger
 from gdalos import get_extent
@@ -123,7 +123,7 @@ default_multi_byte_nodata_value = -32768
 @with_param_dict('all_args')
 def gdalos_trans(filename: MaybeSequence[str], 
                  out_filename: str = None, out_path: str = None, out_path_with_src_folders: str = True,
-                 skip_if_exists=True, create_info=True, cog=False, multi_file_as_vrt=False,
+                 skip_if_exists=True, create_info=True, cog=True, multi_file_as_vrt=False,
                  of: MaybeSequence[str] = 'GTiff', outext: str = 'tif', tiled=True, big_tiff: str = 'IF_SAFER',
                  config_options: dict = None, open_options: dict = None, common_options: dict = None,
                  creation_options: dict = None,
@@ -241,7 +241,7 @@ def gdalos_trans(filename: MaybeSequence[str],
         if dst_ovr_count >= 0:
             src_ovr_last = min(overview_count - 1, src_ovr + dst_ovr_count)
         else:
-            # in this case we'll reopen the ds with a new src_ovr, becuase we want only the last ovrs
+            # in this case we'll reopen the ds with a new src_ovr, because we want only the last overviews
             new_src_ovr = max(-1, overview_count + dst_ovr_count)
             if new_src_ovr != src_ovr:
                 src_ovr = new_src_ovr
