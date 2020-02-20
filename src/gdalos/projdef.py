@@ -1,13 +1,14 @@
 from numbers import Real
+
 from osgeo import osr
 
 
 def get_floats(s):
     # get all floats from a string
-    l = []
+    lst = []
     for t in s.split():
         try:
-            l.append(float(t))
+            lst.append(float(t))
         except ValueError:
             pass
 
@@ -44,7 +45,7 @@ def get_number(x):
 
 
 def get_zone_from_name(s):
-    split_string = s.lower().rsplit('u', 1)
+    split_string = s.lower().rsplit("u", 1)
     c = len(split_string)
     if c == 2:
         s = split_string[1]
@@ -66,14 +67,14 @@ def get_zone_center(float_zone):
 
 
 def get_canonic_name(datum, zone):
-    if datum[0].lower() != 'e':
-        res = 'w84'
+    if datum[0].lower() != "e":
+        res = "w84"
     else:
-        res = 'e50'
+        res = "e50"
     if zone != 0:
-        res = res + 'u' + str(zone)
+        res = res + "u" + str(zone)
     else:
-        res = res + 'geo'
+        res = res + "geo"
     return res
 
 
@@ -107,7 +108,7 @@ def proj_is_equivalent(pj1, pj2):
     return srs1.IsSame(srs2)
 
 
-ED50_towgs84 = '-87,-98,-121'
+ED50_towgs84 = "-87,-98,-121"
 
 
 def get_proj4_string(datum, zone=None):
@@ -122,16 +123,18 @@ def get_proj4_string(datum, zone=None):
 
     isGeo = zone is None or (zone <= 0)
     if isGeo:
-        result = r'+proj=latlong'
+        result = r"+proj=latlong"
     elif float(zone).is_integer():
-        result = r'+proj=utm +zone={}'.format(zone)
+        result = r"+proj=utm +zone={}".format(zone)
     else:
-        result = r'+proj=tmerc +k=0.9996 +lon_0={} +x_0=500000'.format(get_zone_center(zone))
-    if datum[0].lower() != 'e':
-        result = result + ' +datum=WGS84'
+        result = r"+proj=tmerc +k=0.9996 +lon_0={} +x_0=500000".format(
+            get_zone_center(zone)
+        )
+    if datum[0].lower() != "e":
+        result = result + " +datum=WGS84"
     else:
-        result = result + ' +ellps=intl +towgs84=' + ED50_towgs84
+        result = result + " +ellps=intl +towgs84=" + ED50_towgs84
     if not isGeo:
-        result = result + ' +units=m'
-    result = result + ' +no_defs'
+        result = result + " +units=m"
+    result = result + " +no_defs"
     return result

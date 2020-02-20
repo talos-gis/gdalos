@@ -4,7 +4,14 @@
 # Do not make changes to this file unless you know what you are doing--modify
 # the SWIG interface file instead.
 
+import sys
 from sys import version_info as _swig_python_version_info
+
+import osgeo.ogr
+import osgeo.osr
+from osgeo import gdalconst
+from osgeo.gdalconst import *
+
 if _swig_python_version_info >= (2, 7, 0):
     def swig_import_helper():
         import importlib
@@ -113,11 +120,8 @@ def deprecation_warn(module):
        DeprecationWarning)
 
 
-from osgeo.gdalconst import *
-from osgeo import gdalconst
 
 
-import sys
 byteorders = {"little": "<",
               "big": ">"}
 array_modes = { gdalconst.GDT_Int16:    ("%si2" % byteorders[sys.byteorder]),
@@ -1737,8 +1741,6 @@ class Driver(MajorObject):
 Driver_swigregister = _gdal.Driver_swigregister
 Driver_swigregister(Driver)
 
-import osgeo.ogr
-import osgeo.osr
 class ColorEntry(object):
     """Proxy of C++ GDALColorEntry class."""
 
@@ -3370,5 +3372,3 @@ def BuildVRTInternalObjects(*args):
 def BuildVRTInternalNames(*args):
     """BuildVRTInternalNames(char const * dest, char ** source_filenames, GDALBuildVRTOptions options, GDALProgressFunc callback=0, void * callback_data=None) -> Dataset"""
     return _gdal.BuildVRTInternalNames(*args)
-
-

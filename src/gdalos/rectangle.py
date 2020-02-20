@@ -15,19 +15,17 @@ class GeoRectangle:
         return self.xywh == other.xywh
 
     def __round__(self, *args, **kwargs):
-        return self.from_lrdu(
-            *(round(i, *args, **kwargs) for i in self.lrdu)
-        )
+        return self.from_lrdu(*(round(i, *args, **kwargs) for i in self.lrdu))
 
     def is_empty(self):
         return self.w <= 0 or self.h <= 0
 
-    def crop(self, other: 'GeoRectangle'):
+    def crop(self, other: "GeoRectangle"):
         return GeoRectangle.from_min_max(
             max(self.min_x, other.min_x),
             min(self.max_x, other.max_x),
             max(self.min_y, other.min_y),
-            min(self.max_y, other.max_y)
+            min(self.max_y, other.max_y),
         )
 
     def round(self, digits):
@@ -36,14 +34,15 @@ class GeoRectangle:
         self.w = round(self.w, digits)
         self.h = round(self.h, digits)
 
-    def get_partition(self, part: 'GeoRectangle'):
+    def get_partition(self, part: "GeoRectangle"):
         # part: x,y - part indexes; w,h - part counts
         part_width = self.w / part.w
         part_hight = self.h / part.h
         return GeoRectangle(
             self.x + part.x * part_width,
             self.y + part.y * part_hight,
-            part_width, part_hight
+            part_width,
+            part_hight,
         )
 
     @classmethod
@@ -143,4 +142,4 @@ class GeoRectangle:
         return self.min_x, self.max_x, self.min_y, self.max_y
 
     def __repr__(self):
-        return f'Rectangle({self.x}, {self.y}, {self.w}, {self.h})'
+        return f"Rectangle({self.x}, {self.y}, {self.w}, {self.h})"

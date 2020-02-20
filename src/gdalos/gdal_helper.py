@@ -1,23 +1,28 @@
 import glob
 import os
 from pathlib import Path
-from typing import Iterator
-from typing import Sequence
+from typing import Iterator, Sequence
 
 import gdal
 
 
-def open_ds(filename, access_mode=gdal.GA_ReadOnly, src_ovr:int=None, open_options:dict=None, logger=None):
+def open_ds(
+    filename,
+    access_mode=gdal.GA_ReadOnly,
+    src_ovr: int = None,
+    open_options: dict = None,
+    logger=None,
+):
     open_options = dict(open_options or dict())
     if src_ovr is not None and src_ovr >= 0:
-        open_options['OVERVIEW_LEVEL'] = src_ovr
+        open_options["OVERVIEW_LEVEL"] = src_ovr
     if logger is not None:
         s = 'openning file: "{}"'.format(filename)
         if open_options:
-            s = s + ' with options: {}'.format(str(open_options))
+            s = s + " with options: {}".format(str(open_options))
         logger.debug(s)
     if open_options:
-        open_options = ['{}={}'.format(k, v) for k, v in open_options.items()]
+        open_options = ["{}={}".format(k, v) for k, v in open_options.items()]
 
     if open_options:
         return gdal.OpenEx(str(filename), open_options=open_options)
@@ -36,7 +41,7 @@ class OpenDS:
         self.kwargs = kwargs
         self.own = None
 
-    def __enter__(self)->gdal.Dataset:
+    def __enter__(self) -> gdal.Dataset:
         if self.ds is None:
             self.ds = open_ds(self.filename, **self.kwargs)
             if self.ds is None:
@@ -50,9 +55,7 @@ class OpenDS:
 
 
 def _get_bands(ds: gdal.Dataset) -> Iterator[gdal.Band]:
-    return (
-        ds.GetRasterBand(i + 1) for i in range(ds.RasterCount)
-    )
+    return (ds.GetRasterBand(i + 1) for i in range(ds.RasterCount))
 
 
 def _band_getmin(band):
@@ -100,15 +103,15 @@ def get_raster_minimum(filename_or_ds):
 
 def get_image_structure_metadata(filename_or_ds, key: str, default=None):
     key = key.strip()
-    if not key.endswith('='):
-        key = key + '='
+    if not key.endswith("="):
+        key = key + "="
     with OpenDS(filename_or_ds) as ds:
         metadata = ds.GetMetadata_List("IMAGE_STRUCTURE")
         if metadata is None:
             return default
         for metadata in metadata:
             if metadata.startswith(key):
-                return metadata[len(key):]
+                return metadata[len(key) :]
         return default
 
 
@@ -129,9 +132,12 @@ def flatten_and_expand_file_list(l, do_expand_txt=True, do_expand_glob=True):
             elif len(item1) > 1:
                 return flatten_and_expand_file_list(item1)
 
-        if do_expand_txt and \
-                os.path.isfile(item) and not os.path.isdir(item) and \
-                Path(item).suffix.lower() == '.txt':
+        if (
+            do_expand_txt
+            and os.path.isfile(item)
+            and not os.path.isdir(item)
+            and Path(item).suffix.lower() == ".txt"
+        ):
             return flatten_and_expand_file_list(expand_txt(item))
         else:
             return item.strip()
@@ -157,6 +163,4 @@ def is_list_like(lst):
 
 
 def concat_paths(*argv):
-    return Path(''.join([str(p) for p in argv]))
-
-
+    return Path("".join([str(p) for p in argv]))
