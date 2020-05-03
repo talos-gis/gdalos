@@ -283,6 +283,7 @@ def gdalos_trans(
     out_suffixes = []
 
     extent_was_cropped = False
+    extent_aligned = True
     input_ext = os.path.splitext(filename)[1].lower()
     input_is_vrt = input_ext == ".vrt"
 
@@ -290,7 +291,7 @@ def gdalos_trans(
         filename, src_ovr=src_ovr, open_options=open_options, logger=logger
     )
 
-    # region decideing which overviews to make
+    # region decide which overviews to make
     if src_ovr is None:
         src_ovr = -1  # base raster
     overview_count = gdal_helper.get_ovr_count(ds)
@@ -308,6 +309,15 @@ def gdalos_trans(
                     filename, src_ovr=src_ovr, open_options=open_options, logger=logger
                 )
     # endregion
+
+    # In case of north up images,
+    # GT(2) and GT(4) coefficients are zero,
+    # GT(1) is pixel width,
+    # GT(5) is pixel height.
+    # (GT(0),GT(3)) position is the top left corner of the top left pixel of the raster.
+    # Note that the pixel/line coordinates in the above are from (0.0,0.0) at the top left corner of the top left pixel
+    # to (width_in_pixels,height_in_pixels) at the bottom right corner of the bottom right pixel.
+    # The pixel/line location of the center of the top left pixel would therefore be (0.5,0.5).
 
     geo_transform = ds.GetGeoTransform()
     input_res = (geo_transform[1], geo_transform[5])
@@ -336,6 +346,7 @@ def gdalos_trans(
 
     do_warp = warp_CRS is not None
     if warp_CRS is not None:
+        extent_aligned = False
         if tgt_zone is not None:
             if tgt_zone != 0:
                 # cropping according to tgt_zone bounds
@@ -439,6 +450,9 @@ def gdalos_trans(
         else:
             out_extent_in_tgt_srs_part = out_extent_in_tgt_srs
 
+        if extent_aligned:
+            out_extent_in_tgt_srs_part = out_extent_in_tgt_srs_part.align(geo_transform)
+
         # -projwin minx maxy maxx miny (ulx uly lrx lry)
         translate_options["projWin"] = out_extent_in_tgt_srs_part.lurd
         # -te minx miny maxx maxy
@@ -505,7 +519,8 @@ def gdalos_trans(
             ovr_type = OvrType.create_external_auto
 
     trans_or_warp_is_needed = bool(
-        extent
+        do_warp
+        or extent
         or src_win
         or resample_is_needed
         or (lossy != src_is_lossy)

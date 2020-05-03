@@ -34,6 +34,14 @@ class GeoRectangle:
         self.w = round(self.w, digits)
         self.h = round(self.h, digits)
 
+    def align(self, geo_transform):
+        # compute the pixel-aligned bounding box (larger than the feature's bbox)
+        left = self.min_x - (self.min_x - geo_transform[0]) % geo_transform[1]
+        right = self.max_x + (geo_transform[1] - ((self.max_x - geo_transform[0]) % geo_transform[1]))
+        bottom = self.min_y + (geo_transform[5] - ((self.min_y - geo_transform[3]) % geo_transform[5]))
+        top = self.max_y - (self.max_y - geo_transform[3]) % geo_transform[5]
+        return self.from_lrud(left, right, top, bottom)
+
     def get_partition(self, part: "GeoRectangle"):
         # part: x,y - part indexes; w,h - part counts
         part_width = self.w / part.w

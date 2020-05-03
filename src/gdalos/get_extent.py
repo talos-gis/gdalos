@@ -124,8 +124,7 @@ def transform_resolution_old(transform, input_res, extent: GeoRectangle):
 
 
 def transform_resolution(
-    transform, input_res, extent: GeoRectangle, equal_res=..., sample_count=1000
-):
+    transform, input_res, extent: GeoRectangle, equal_res=..., sample_count=1000):
     dx, dy = calc_dx_dy(extent, sample_count)
 
     calc_only_res_y = equal_res is ...
