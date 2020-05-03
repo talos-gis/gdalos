@@ -1,5 +1,5 @@
 # installing twine
-python -m pip install twine
+python -m pip install twine wheel
 
 # uploade to twine
 
