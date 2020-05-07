@@ -359,7 +359,7 @@ def gdalos_trans(
                 if extent is None:
                     extent = zone_extent
                 else:
-                    extent = zone_extent.crop(extent)
+                    extent = zone_extent.intersect(extent)
                 extent_was_cropped = True
             out_suffixes.append(projdef.get_canonic_name(warp_CRS[0], tgt_zone))
         if kind == RasterKind.dtm:
@@ -441,7 +441,7 @@ def gdalos_trans(
             out_extent_in_tgt_srs = get_extent.translate_extent(extent, transform)
         else:
             out_extent_in_tgt_srs = extent
-        out_extent_in_tgt_srs = out_extent_in_tgt_srs.crop(org_extent_in_tgt_srs)
+        out_extent_in_tgt_srs = out_extent_in_tgt_srs.intersect(org_extent_in_tgt_srs)
 
         if out_extent_in_tgt_srs != org_extent_in_tgt_srs:
             extent_was_cropped = True
@@ -466,7 +466,7 @@ def gdalos_trans(
 
         transform = get_extent.get_transform(pjstr_4326, pjstr_src_srs)
         out_extent_in_src_srs = get_extent.translate_extent(extent, transform)
-        out_extent_in_src_srs = out_extent_in_src_srs.crop(org_extent_in_src_srs)
+        out_extent_in_src_srs = out_extent_in_src_srs.intersect(org_extent_in_src_srs)
         if out_extent_in_src_srs.is_empty():
             raise Exception
     elif src_win is not None:
@@ -1078,7 +1078,7 @@ def gdalos_vrt(
     if do_skip_if_exists(vrt_path, skip_if_exists, logger):
         return vrt_path
     if os.path.isfile(vrt_path):
-        raise Exception("could not delete var file: {}".format(vrt_path))
+        raise Exception("could not delete vrt file: {}".format(vrt_path))
     os.makedirs(os.path.dirname(vrt_path), exist_ok=True)
     vrt_options = dict()
     if resampling_alg in [None, ...]:

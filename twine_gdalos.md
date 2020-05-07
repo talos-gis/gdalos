@@ -4,7 +4,8 @@ python -m pip install twine wheel
 # uploade to twine
 
 ## delete old dists
-rm dist/*.gz && rm dist/*.whl
+rm dist/*.*
+del dist\*.*
 
 ## creating the package
 python setup.py sdist bdist_wheel
@@ -13,9 +14,9 @@ python setup.py sdist bdist_wheel
 python -m twine upload dist/*.gz dist/*.whl
 
 ## one liner to the test pypi
-rm dist/*.gz ; rm dist/*.whl ; python setup.py sdist bdist_wheel && python -m twine upload dist/*.gz dist/*.whl
+rm dist/*.* ; python setup.py sdist bdist_wheel && python -m twine upload dist/*.gz dist/*.whl
 or (test)
-rm dist/*.gz ; rm dist/*.whl ; python setup.py sdist bdist_wheel && python -m twine upload --repository-url https://test.pypi.org/legacy/ dist/*.gz dist/*.whl
+rm dist/*.* ; python setup.py sdist bdist_wheel && python -m twine upload --repository-url https://test.pypi.org/legacy/ dist/*.gz dist/*.whl
 
 # upgrade gdalos
 python -m pip install --upgrade gdalos

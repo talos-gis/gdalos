@@ -20,12 +20,20 @@ class GeoRectangle:
     def is_empty(self):
         return self.w <= 0 or self.h <= 0
 
-    def crop(self, other: "GeoRectangle"):
+    def intersect(self, other: "GeoRectangle"):
         return GeoRectangle.from_min_max(
             max(self.min_x, other.min_x),
             min(self.max_x, other.max_x),
             max(self.min_y, other.min_y),
             min(self.max_y, other.max_y),
+        )
+
+    def union(self, other: "GeoRectangle"):
+        return GeoRectangle.from_min_max(
+            min(self.min_x, other.min_x),
+            max(self.max_x, other.max_x),
+            min(self.min_y, other.min_y),
+            max(self.max_y, other.max_y),
         )
 
     def round(self, digits):
