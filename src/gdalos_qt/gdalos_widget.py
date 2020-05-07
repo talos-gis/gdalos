@@ -207,6 +207,13 @@ class GdalosWidget(FidgetConverter):
                         make_plaintext=True,
                     ),
                     (
+                        "extent_in_4326",
+                        FidgetCheckBox.template(
+                            "extent is in EPSG:4326 (WGS84Geo), otherwise it should be in target srs",
+                            initial_value=True
+                        ),
+                    ),
+                    (
                         "src_win",
                         FidgetOptional.template(
                             FidgetConverter.template(

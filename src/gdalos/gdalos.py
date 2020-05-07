@@ -144,6 +144,7 @@ def gdalos_trans(
     common_options: dict = None,
     creation_options: dict = None,
     extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None,
+    extent_in_4326: bool = True,
     src_win=None,
     warp_CRS: MaybeSequence[Warp_crs_base] = None,
     out_res: Tuple[Real, Real] = None,
@@ -274,6 +275,8 @@ def gdalos_trans(
     if not os.path.isfile(filename):
         raise OSError('file not found: "{}"'.format(filename))
 
+    if extent is None:
+        extent_in_4326 = True
     # creating a copy of the input dictionaries, as I don't want to change the input
     config_options = dict(config_options or dict())
     common_options = dict(common_options or dict())
@@ -433,8 +436,11 @@ def gdalos_trans(
         if org_extent_in_tgt_srs.is_empty():
             raise Exception(f"no input extent: {filename} [{org_extent_in_tgt_srs}]")
 
-        transform = get_extent.get_transform(pjstr_4326, pjstr_tgt_srs)
-        out_extent_in_tgt_srs = get_extent.translate_extent(extent, transform)
+        if extent_in_4326:
+            transform = get_extent.get_transform(pjstr_4326, pjstr_tgt_srs)
+            out_extent_in_tgt_srs = get_extent.translate_extent(extent, transform)
+        else:
+            out_extent_in_tgt_srs = extent
         out_extent_in_tgt_srs = out_extent_in_tgt_srs.crop(org_extent_in_tgt_srs)
 
         if out_extent_in_tgt_srs != org_extent_in_tgt_srs:
