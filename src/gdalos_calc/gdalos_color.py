@@ -24,11 +24,15 @@ class ColorPalette:
         self.pal = OrderedDict()
         self._all_numeric = True
 
+    def __repr__(self):
+        return str(self.pal)
+
     def apply_percent(self, min_val, max_val):
         if self._all_numeric:
             # nothing to do
             return
         all_numeric = True
+        new_pal = self.pal.copy()
         for val in self.pal.keys():
             if not isinstance(val, str):
                 continue
@@ -38,8 +42,8 @@ class ColorPalette:
                 try:
                     new_val = to_number(new_val)
                     if is_percent:
-                        val = (max_val - min_val) * val * 0.01 + min_val
-                    self.pal[new_val] = self.pal.pop(val)
+                        new_val = (max_val - min_val) * new_val * 0.01 + min_val
+                    new_pal[new_val] = new_pal.pop(val)
                 except ValueError:
                     all_numeric = False
             else:
@@ -47,8 +51,9 @@ class ColorPalette:
                 continue
         if all_numeric:
             self._all_numeric = True
+        self.pal = new_pal
 
-    def read_color_file(self, color_filename, min_val=0, max_val=256):
+    def read_color_file(self, color_filename):
         self.pal.clear()
         try:
             with open(str(color_filename)) as fp:
@@ -65,7 +70,7 @@ class ColorPalette:
                         pass
                     self.pal[value] = color
         except IOError:
-            values = None
+            pass
 
     def write_color_file(self, color_filename):
         with open(str(color_filename), mode='w') as fp:
@@ -138,9 +143,9 @@ class ColorPalette:
             if len(cc) == 1:
                 return int(cc[0])
             elif len(cc) == 3:
-                return (int(cc[0]) << 8 + int(cc[1])) << 8 + int(cc[2])
+                return (((int(cc[0]) << 8) + int(cc[1])) << 8) + int(cc[2])
             elif len(cc) == 4:
-                return ((int(cc[3]) << 8 + int(cc[0])) << 8 + int(cc[1])) << 8 + int(cc[2])
+                return (((((int(cc[3]) << 8) + int(cc[0])) << 8) + int(cc[1])) << 8) + int(cc[2])
             else:
                 return 0
         except:
