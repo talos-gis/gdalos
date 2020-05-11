@@ -350,7 +350,7 @@ def gdalos_trans(
     do_warp = warp_CRS is not None
     if warp_CRS is not None:
         extent_aligned = False
-        if tgt_zone is not None:
+        if tgt_zone is not None and extent_in_4326:
             if tgt_zone != 0:
                 # cropping according to tgt_zone bounds
                 zone_extent = GeoRectangle.from_points(
