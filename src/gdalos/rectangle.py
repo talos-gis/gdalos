@@ -97,6 +97,18 @@ class GeoRectangle:
             max(p[1] for p in points),
         )
 
+    @classmethod
+    def from_geotransform_and_size(cls, gt, size):
+        origin = (gt[0], gt[3])
+        pixel_size = (gt[1], gt[5])
+        pix_origin = list(origin[i] / pixel_size[i] for i in (0, 1))
+        # pix_bounds = list(origin[i] / pixel_size[i] + size[i] for i in (0, 1))
+        return cls.from_xwyh(pix_origin[0], size[0], pix_origin[1], size[1])
+
+    @property
+    def size(self):
+        return self.w, self.h
+
     @property
     def left(self):
         return self.x

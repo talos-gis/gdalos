@@ -23,12 +23,12 @@ def talos_run(md, interval, grid_range, center, oz, tz, output_path, func_name, 
             talos.SetVal(f, 'TargetHeight', tz)
             talos.Run(func_name)
             if save_to_file:
-                filename = output_path / (name + '.tif')
+                filename = output_path / func_name / (name + '.tif')
                 # talos.ShowMessage(filename)
                 talos.RasterSaveToFile(f, str(filename), False)
     if save_to_file:
         combined = talos.GetObjects(comb_classname)[0]
-        filename = output_path / 'combined.tif'
+        filename = output_path / comb_classname / 'combined.tif'
         # talos.ShowMessage(filename)
         talos.RasterSaveToFile(combined, str(filename), False)
 

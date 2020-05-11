@@ -4,8 +4,8 @@ import gdal
 import tempfile
 from pathlib import Path
 from gdalos import gdal_helper, get_extent, GeoRectangle
-from gdalos_calc.gdal_calc0 import Calc, AlphaList
-from gdalos_calc.gdalos_color import make_color_table
+from gdalos_calc.gdal_calc import Calc, AlphaList
+from gdalos_calc.gdalos_color import ColorPalette
 
 
 def do_comb(filenames, outfile, extent, color_table, alpha_pattern):
@@ -74,9 +74,12 @@ def build_vrts(filenames, dss, extent: GeoRectangle, suffix):
 
 
 if __name__ == '__main__':
-    path = Path(r'd:\dev\TaLoS\data\grid_comb')
-    color_filename = path / Path(r'comb_color_file.txt')
-    color_table = make_color_table(color_filename)
+    path = Path(r'../../sample')
+    color_filename = path / Path(r'color_files/comb.qlr')
+    pal = ColorPalette()
+    pal.read(color_filename)
+    pal.write_color_file(color_filename.with_suffix('.txt'))
+    color_table = pal.get_color_table()
     alpha_pattern = '1*({}>3)'
 
     # path = Path(r'd:\dev\TaLoS\data\6comb\1')

@@ -53,29 +53,34 @@ class ColorPalette:
             self._all_numeric = True
         self.pal = new_pal
 
+    def read(self, filename):
+        if Path(filename).suffix.lower() == '.qlr':
+            self.read_qlr(filename)
+        else:
+            self.read_color_file(filename)
+
     def read_color_file(self, color_filename):
         self.pal.clear()
-        try:
-            with open(str(color_filename)) as fp:
-                for line in fp:
-                    split_line = line.strip().split(' ', maxsplit=1)
-                    color = self.pal_color_to_rgb(split_line[1])
+        with open(str(color_filename)) as fp:
+            for line in fp:
+                split_line = line.strip().split(' ', maxsplit=1)
+                color = self.pal_color_to_rgb(split_line[1])
 
-                    value = split_line[0].strip()
-                    try:
-                        value = to_number(value)
-                    except ValueError:
-                        # percent or color name
-                        self._all_numeric = False
-                        pass
-                    self.pal[value] = color
-        except IOError:
-            pass
+                key = split_line[0].strip()
+                try:
+                    key = to_number(key)
+                except ValueError:
+                    # should be percent
+                    self._all_numeric = False
+                    pass
+                self.pal[key] = color
 
     def write_color_file(self, color_filename):
         with open(str(color_filename), mode='w') as fp:
-            for value, color in self.pal.items():
-                fp.write('{} {}\n'.format(value, self.color_to_cc(color)))
+            for key, color in self.pal.items():
+                cc = self.color_to_cc(color)
+                cc = ' '.join(str(c) for c in cc)
+                fp.write('{} {}\n'.format(key, cc))
 
     def read_qlr(self, qlr_filename):
         self.pal.clear()
@@ -88,48 +93,43 @@ class ColorPalette:
                 color = int(color[1:], 16)
             alpha = int(palette_entry.getAttribute("alpha"))
             color = color + alpha * 255**3
-            value = int(palette_entry.getAttribute("value"))
-            self.pal[value] = color
+            key = int(palette_entry.getAttribute("value"))
+            self.pal[key] = color
 
     def get_color_table(self):
         # create color table
         color_table = gdal.ColorTable()
-        values, colors = self.pal.items()
-        min_val = values[0]
-        min_col = colors[0]
-        max_val = values[-1]
-        max_col = colors[-1]
-        for val, col in self.pal.items():
-            # set color for each value
-            color_table.SetColorEntry(val, col)
-            # if val < min_val:
-            #     min_val = val
-            #     min_col = col
-            # if val > min_val:
-            #     max_val = val
-            #     max_col = col
+        for key, col in self.pal.items():
+            color_table.SetColorEntry(key, self.color_to_cc(col))  # set color for each key
 
         # fill palette below min and above max
-        for i in range(0, min_val):
+        keys = list(self.pal.keys())
+        colors = list(self.pal.values())
+        min_key = keys[0]
+        min_col = self.color_to_cc(colors[0])
+        for i in range(0, min_key):
             color_table.SetColorEntry(i, min_col)
-        for i in range(max_val, 256):
+        max_key = keys[-1]
+        max_col = self.color_to_cc(colors[-1])
+        for i in range(max_key+1, 256):
             color_table.SetColorEntry(i, max_col)
+
         return color_table
 
     @staticmethod
     def color_to_cc(color):
         if color < 256:
-            res = str(color)
+            return color
         else:
             b = byte(color, 1)
             g = byte(color, 2)
             r = byte(color, 3)
             a = byte(color, 4)
 
-            res = '{} {} {}'.format(r, g, b)
             if a > 0:
-                res = '{} {}'.format(res, a)
-        return res
+                return r, g, b, a
+            else:
+                return r, g, b
 
     @staticmethod
     def pal_color_to_rgb(cc):

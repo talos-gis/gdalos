@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/idan/anaconda3/envs/geo37/bin/python
 # -*- coding: utf-8 -*-
 # ******************************************************************************
 #
@@ -8,7 +8,7 @@
 #
 # ******************************************************************************
 #  Copyright (c) 2010, Chris Yesson <chris.yesson@ioz.ac.uk>
-#  Copyright (c) 2010-2011, Even Rouault <even dot rouault at spatialys.com>
+#  Copyright (c) 2010-2011, Even Rouault <even dot rouault at mines-paris dot org>
 #  Copyright (c) 2016, Piers Titus van der Torren <pierstitus@gmail.com>
 #
 #  Permission is hereby granted, free of charge, to any person obtaining a
@@ -53,15 +53,14 @@ import numpy
 
 from osgeo import gdal
 from osgeo import gdalnumeric
-from gdalos.geotransform_util import get_extent, get_offsets
+from gdalos.rectangle import GetExtent, GetOffsets
 
 # create alphabetic list for storing input layers
-AlphaList = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
-             "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
+AlphaList =  ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+              "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
 
 # set up some default nodatavalues for each datatype
-DefaultNDVLookup = {'Byte': 255, 'UInt16': 65535, 'Int16': -32767, 'UInt32': 4294967293, 'Int32': -2147483647,
-                    'Float32': 3.402823466E+38, 'Float64': 1.7976931348623158E+308}
+DefaultNDVLookup = {'Byte': 255, 'UInt16': 65535, 'Int16': -32767, 'UInt32': 4294967293, 'Int32': -2147483647, 'Float32': 3.402823466E+38, 'Float64': 1.7976931348623158E+308}
 
 
 def DoesDriverHandleExtension(drv, ext):
@@ -83,7 +82,7 @@ def GetOutputDriversFor(filename):
         drv = gdal.GetDriver(i)
         if (drv.GetMetadataItem(gdal.DCAP_CREATE) is not None or
             drv.GetMetadataItem(gdal.DCAP_CREATECOPY) is not None) and \
-                drv.GetMetadataItem(gdal.DCAP_RASTER) is not None:
+           drv.GetMetadataItem(gdal.DCAP_RASTER) is not None:
             if ext and DoesDriverHandleExtension(drv, ext):
                 drv_list.append(drv.ShortName)
             else:
@@ -94,7 +93,7 @@ def GetOutputDriversFor(filename):
     # GMT is registered before netCDF for opening reasons, but we want
     # netCDF to be used by default for output.
     if ext.lower() == 'nc' and not drv_list and \
-            drv_list[0].upper() == 'GMT' and drv_list[1].upper() == 'NETCDF':
+       drv_list[0].upper() == 'GMT' and drv_list[1].upper() == 'NETCDF':
         drv_list = ['NETCDF', 'GMT']
 
     return drv_list
@@ -111,7 +110,6 @@ def GetOutputDriverFor(filename):
     elif len(drv_list) > 1:
         print("Several drivers matching %s extension. Using %s" % (ext if ext else '', drv_list[0]))
     return drv_list[0]
-
 
 ################################################################
 
@@ -224,8 +222,8 @@ def doit(opts, args):
                 GeoTransformCheck = myFileGeoTransform
 
             if opts.debug:
-                print("file %s: %s, dimensions: %s, %s, type: %s" % (
-                myI, myF, DimensionsCheck[0], DimensionsCheck[1], myDataType[-1]))
+                print("file %s: %s, dimensions: %s, %s, type: %s" % (myI, myF, DimensionsCheck[0], DimensionsCheck[1], myDataType[-1]))
+
 
     # process allBands option
     allBandsIndex = None
@@ -240,7 +238,7 @@ def doit(opts, args):
             allBandsIndex = None
 
     if opts.geotransforms and GeoTransformDiffer:
-        extent = get_extent(GeoTransforms, Dimensions, opts.geotransforms == 2)
+        extent = GetExtent(GeoTransforms, Dimensions, opts.geotransforms == 2)
         if extent is None:
             raise Exception("Error! The requested extent is empty. Cannot proceed")
         GeoTransformCheck, DimensionsCheck = extent
@@ -253,7 +251,7 @@ def doit(opts, args):
             myOut.SetGeoTransform(GeoTransformCheck)
             myOut.SetProjection(ProjectionCheck)
 
-            offsets = get_offsets(GeoTransforms[i], Dimensions[i], GeoTransformCheck, DimensionsCheck)
+            offsets = GetOffsets(GeoTransforms[i], Dimensions[i], GeoTransformCheck, DimensionsCheck)
             if offsets is None:
                 raise Exception("Error! The requested extent is empty. Cannot proceed")
             src_offset, dst_offset = offsets
@@ -353,8 +351,7 @@ def doit(opts, args):
             myOutB = None
 
     if opts.debug:
-        print("output file: %s, dimensions: %s, %s, type: %s" % (
-        opts.outF, myOut.RasterXSize, myOut.RasterYSize, myOutType))
+        print("output file: %s, dimensions: %s, %s, type: %s" % (opts.outF, myOut.RasterXSize, myOut.RasterYSize, myOutType))
 
     ################################################################
     # find block size to chop grids into bite-sized chunks
@@ -384,7 +381,7 @@ def doit(opts, args):
         ################################################################
         # start looping through blocks of data
         ################################################################
-
+        
         # store these numbers in variables that may change later
         nXValid = myBlockSize[0]
         nYValid = myBlockSize[1]
@@ -480,9 +477,7 @@ def doit(opts, args):
 ################################################################
 
 
-def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_options=None, allBands='', overwrite=False,
-         debug=False, quiet=False, ignoreNoDataValue=False, projectionCheck=False, color_table=None, geotransforms=0,
-         extent=None, **input_files):
+def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_options=None, allBands='', overwrite=False, debug=False, quiet=False, **input_files):
     """ Perform raster calculations with numpy syntax.
     Use any basic arithmetic supported by numpy arrays such as +-*\ along with logical
     operators such as >. Note that all files must have the same dimensions, but no projection checking is performed.
@@ -514,16 +509,6 @@ def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_optio
     opts.debug = debug
     opts.quiet = quiet
 
-    opts.ignoreNoDataValue = ignoreNoDataValue
-    opts.projectionCheck = projectionCheck
-    opts.color_table = color_table
-    opts.geotransforms = geotransforms
-    opts.extent = extent
-    # extent=None - default - use the extent of the first file
-    # extent=False - Intersection
-    # extent=True - Union
-    # extent=given extent - use the given extent
-
     doit(opts, None)
 
 
@@ -539,50 +524,38 @@ def add_alpha_args(parser, argv):
     given_args = set([a[1] for a in argv if a[1:2] in AlphaList] + ['A'])
     for myAlpha in given_args:
         try:
-            parser.add_option("-%s" % myAlpha, action="callback", callback=store_input_file, type=str,
-                              help="input gdal raster file, you can use any letter (A-Z)", metavar='filename')
-            parser.add_option("--%s_band" % myAlpha, action="callback", callback=store_input_file, type=int,
-                              help="number of raster band for file %s (default 1)" % myAlpha, metavar='n')
+            parser.add_option("-%s" % myAlpha, action="callback", callback=store_input_file, type=str, help="input gdal raster file, you can use any letter (A-Z)", metavar='filename')
+            parser.add_option("--%s_band" % myAlpha, action="callback", callback=store_input_file, type=int, help="number of raster band for file %s (default 1)" % myAlpha, metavar='n')
         except OptionConflictError:
             pass
 
 
-def main():
+def main(argv):
     usage = """usage: %prog --calc=expression --outfile=out_filename [-A filename]
                     [--A_band=n] [-B...-Z filename] [other_options]"""
     parser = OptionParser(usage)
 
     # define options
-    parser.add_option("--calc", dest="calc",
-                      help="calculation in gdalnumeric syntax using +-/* or any numpy array functions (i.e. log10())",
-                      metavar="expression")
-    add_alpha_args(parser, sys.argv)
+    parser.add_option("--calc", dest="calc", help="calculation in gdalnumeric syntax using +-/* or any numpy array functions (i.e. log10())", metavar="expression")
+    add_alpha_args(parser, argv)
 
     parser.add_option("--outfile", dest="outF", help="output file to generate or fill", metavar="filename")
-    parser.add_option("--NoDataValue", dest="NoDataValue", type=float,
-                      help="output nodata value (default datatype specific value)", metavar="value")
-    parser.add_option("--ignoreNoDataValue", dest="ignoreNDV", action="store_true",
-                      help="ignores the NoDataValues of the rasters", metavar="value")
-    parser.add_option("--type", dest="type", help="output datatype, must be one of %s" % list(DefaultNDVLookup.keys()),
-                      metavar="datatype")
+    parser.add_option("--NoDataValue", dest="NoDataValue", type=float, help="output nodata value (default datatype specific value)", metavar="value")
+    parser.add_option("--ignoreNoDataValue", dest="ignoreNDV", action="store_true", help="ignores the NoDataValues of the rasters", metavar="value")
+    parser.add_option("--type", dest="type", help="output datatype, must be one of %s" % list(DefaultNDVLookup.keys()), metavar="datatype")
     parser.add_option("--format", dest="format", help="GDAL format for output file", metavar="gdal_format")
     parser.add_option(
         "--creation-option", "--co", dest="creation_options", default=[], action="append",
         help="Passes a creation option to the output format driver. Multiple "
-             "options may be listed. See format specific documentation for legal "
-             "creation options for each format.", metavar="option")
-    parser.add_option("--allBands", dest="allBands", default="", help="process all bands of given raster (A-Z)",
-                      metavar="[A-Z]")
-    parser.add_option("--overwrite", dest="overwrite", action="store_true",
-                      help="overwrite output file if it already exists")
+        "options may be listed. See format specific documentation for legal "
+        "creation options for each format.", metavar="option")
+    parser.add_option("--allBands", dest="allBands", default="", help="process all bands of given raster (A-Z)", metavar="[A-Z]")
+    parser.add_option("--overwrite", dest="overwrite", action="store_true", help="overwrite output file if it already exists")
     parser.add_option("--debug", dest="debug", action="store_true", help="print debugging information")
     parser.add_option("--quiet", dest="quiet", action="store_true", help="suppress progress messages")
-    parser.add_option("--optfile", dest="optfile", metavar="optfile",
-                      help="Read the named file and substitute the contents into the command line options list.")
-    parser.add_option("--geotransforms", dest="geotransforms", type=str,
-                      help="how to treat different geotrasnforms [ignore|fail|union|intersect]")
-    parser.add_option("--projectionCheck", dest="projectionCheck", action="store_true",
-                      help="check that all rasters share the same projection", metavar="value")
+    parser.add_option("--optfile", dest="optfile", metavar="optfile", help="Read the named file and substitute the contents into the command line options list.")
+    parser.add_option("--geotransforms", dest="geotransforms", type=str, help="how to treat different geotrasnforms [ignore|fail|union|intersect]")
+    parser.add_option("--projectionCheck", dest="projectionCheck", action="store_true", help="check that all rasters share the same projection", metavar="value")
     # when geotransforms don't agree: 0=ignore(check only dims)/1=fail (gt must also agree)/2=union/3=intersection
 
     (opts, args) = parser.parse_args()
@@ -605,7 +578,7 @@ def main():
         opts.input_files = input_files
         args = args + ofargs
 
-    if len(sys.argv) == 1:
+    if len(argv) == 1:
         parser.print_help()
         sys.exit(1)
     elif not opts.calc:
@@ -625,4 +598,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv)
