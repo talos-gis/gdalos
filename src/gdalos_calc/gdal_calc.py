@@ -558,7 +558,8 @@ def main():
                       help="output nodata value (default datatype specific value)", metavar="value")
     parser.add_option("--ignoreNoDataValue", dest="ignoreNDV", action="store_true",
                       help="ignores the NoDataValues of the rasters", metavar="value")
-    parser.add_option("--type", dest="type", help="output datatype, must be one of %s" % list(DefaultNDVLookup.keys()), metavar="datatype")
+    parser.add_option("--type", dest="type", help="output datatype, must be one of %s" % list(DefaultNDVLookup.keys()),
+                      metavar="datatype")
     parser.add_option("--format", dest="format", help="GDAL format for output file", metavar="gdal_format")
     parser.add_option(
         "--creation-option", "--co", dest="creation_options", default=[], action="append",
@@ -571,9 +572,12 @@ def main():
                       help="overwrite output file if it already exists")
     parser.add_option("--debug", dest="debug", action="store_true", help="print debugging information")
     parser.add_option("--quiet", dest="quiet", action="store_true", help="suppress progress messages")
-    parser.add_option("--optfile", dest="optfile", metavar="optfile", help="Read the named file and substitute the contents into the command line options list.")
-    parser.add_option("--geotransforms", dest="geotransforms", type=str, help="how to treat different geotrasnforms [ignore|fail|union|intersect]")
-    parser.add_option("--projectionCheck", dest="projectionCheck", action="store_true", help="check that all rasters share the same projection", metavar="value")
+    parser.add_option("--optfile", dest="optfile", metavar="optfile",
+                      help="Read the named file and substitute the contents into the command line options list.")
+    parser.add_option("--geotransforms", dest="geotransforms", type=str,
+                      help="how to treat different geotrasnforms [ignore|fail|union|intersect]")
+    parser.add_option("--projectionCheck", dest="projectionCheck", action="store_true",
+                      help="check that all rasters share the same projection", metavar="value")
     # when geotransforms don't agree: 0=ignore(check only dims)/1=fail (gt must also agree)/2=union/3=intersection
 
     (opts, args) = parser.parse_args()
