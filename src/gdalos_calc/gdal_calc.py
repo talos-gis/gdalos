@@ -53,6 +53,7 @@ import numpy
 
 from osgeo import gdal
 from osgeo import gdalnumeric
+from gdalos.rectangle import GetExtent, GetOffsets
 
 # create alphabetic list for storing input layers
 AlphaList = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
@@ -138,6 +139,7 @@ def doit(opts, args):
     ################################################################
 
     # set up some lists to store data for each band
+    myFileNames = []
     myFiles = []
     myBands = []
     myAlphaList = []
@@ -145,6 +147,11 @@ def doit(opts, args):
     myDataTypeNum = []
     myNDV = []
     DimensionsCheck = None
+    Dimensions = []
+    ProjectionCheck = None
+    GeoTransformCheck = None
+    GeoTransforms = []
+    GeoTransformDiffer = False
 
     # loop through input files - checking dimensions
     for myI, myF in opts.input_files.items():
@@ -159,20 +166,62 @@ def doit(opts, args):
             if not myFile:
                 raise IOError("No such file or directory: '%s'" % myF)
 
+            myFileNames.append(myF)
             myFiles.append(myFile)
             myBands.append(myBand)
             myAlphaList.append(myI)
             myDataType.append(gdal.GetDataTypeName(myFile.GetRasterBand(myBand).DataType))
             myDataTypeNum.append(myFile.GetRasterBand(myBand).DataType)
-            myNDV.append(myFile.GetRasterBand(myBand).GetNoDataValue())
+            myNDV.append(None if opts.ignoreNDV else myFile.GetRasterBand(myBand).GetNoDataValue())
+
             # check that the dimensions of each layer are the same
+            myFileDimensions = [myFile.RasterXSize, myFile.RasterYSize]
             if DimensionsCheck:
-                if DimensionsCheck != [myFile.RasterXSize, myFile.RasterYSize]:
-                    raise Exception(
-                        "Error! Dimensions of file %s (%i, %i) are different from other files (%i, %i).  Cannot proceed" %
-                        (myF, myFile.RasterXSize, myFile.RasterYSize, DimensionsCheck[0], DimensionsCheck[1]))
+                if DimensionsCheck != myFileDimensions:
+                    GeoTransformDiffer = True
+                    if opts.geotransforms <= 1:
+                        raise Exception("Error! Dimensions of file %s (%i, %i) are different from other files (%i, %i).  Cannot proceed" %
+                                        (myF, myFileDimensions[0], myFileDimensions[1], DimensionsCheck[0], DimensionsCheck[1]))
             else:
-                DimensionsCheck = [myFile.RasterXSize, myFile.RasterYSize]
+                DimensionsCheck = myFileDimensions
+
+            # check that the Projection of each layer are the same
+            myProjection = myFile.GetProjection()
+            if ProjectionCheck:
+                if opts.projectionCheck and ProjectionCheck != myProjection:
+                    raise Exception(
+                        "Error! Projection of file %s %s are different from other files %s.  Cannot proceed" %
+                        (myF, myProjection, ProjectionCheck))
+            else:
+                ProjectionCheck = myProjection
+
+            # check that the GeoTransforms of each layer are the same
+            myFileGeoTransform = myFile.GetGeoTransform()
+            if opts.geotransforms:
+                Dimensions.append(myFileDimensions)
+                GeoTransforms.append(myFileGeoTransform)
+                if GeoTransformCheck:
+                    if GeoTransformCheck != myFileGeoTransform:
+                        GeoTransformDiffer = True
+                        if opts.geotransforms == 1:
+                            raise Exception(
+                                "Error! GeoTransform of file %s %s are different from other files %s.  Cannot proceed" %
+                                (myF, myFileGeoTransform, GeoTransformCheck))
+                        else:
+                            for i in (1, 5):
+                                if GeoTransformCheck[i] != myFileGeoTransform[i]:
+                                    raise Exception(
+                                        "Error! Pixel size file %s %s are different from other files %s.  Cannot proceed" %
+                                        (myF, myFileGeoTransform, GeoTransformCheck))
+                            for i in (2, 4):
+                                if GeoTransformCheck[i] != myFileGeoTransform[i]:
+                                    raise Exception(
+                                        "Error! The rotation of file %s is %s, only 0 is accepted.  Cannot proceed" %
+                                        (myF, (myFileGeoTransform[2], myFileGeoTransform[4]), GeoTransformCheck))
+                else:
+                    GeoTransformCheck = myFileGeoTransform
+            else:
+                GeoTransformCheck = myFileGeoTransform
 
             if opts.debug:
                 print("file %s: %s, dimensions: %s, %s, type: %s" % (
@@ -190,6 +239,53 @@ def doit(opts, args):
         if allBandsCount <= 1:
             allBandsIndex = None
 
+    if opts.geotransforms and GeoTransformDiffer:
+        extent = GetExtent(GeoTransforms, Dimensions, opts.geotransforms == 2)
+        if extent is None:
+            raise Exception("Error! The requested extent is empty. Cannot proceed")
+        GeoTransformCheck, DimensionsCheck = extent
+        for i, myFileName in enumerate(myFileNames):
+            myFile = myFiles[i]
+            drv = gdal.GetDriverByName("VRT")
+            dt = gdal.GetDataTypeByName(myDataType[i])
+            myOut = drv.Create(
+                myFileName+".vrt", DimensionsCheck[0], DimensionsCheck[1], allBandsCount, dt)
+            myOut.SetGeoTransform(GeoTransformCheck)
+            myOut.SetProjection(ProjectionCheck)
+
+            offsets = GetOffsets(GeoTransforms[i], Dimensions[i], GeoTransformCheck, DimensionsCheck)
+            if offsets is None:
+                raise Exception("Error! The requested extent is empty. Cannot proceed")
+            src_offset, dst_offset = offsets
+
+            source_size = Dimensions[i]
+
+            for j in range(1, allBandsCount + 1):
+                band = myOut.GetRasterBand(j)
+                inBand = myFile.GetRasterBand(j)
+                myBlockSize = inBand.GetBlockSize()
+
+                myOutNDV = inBand.GetNoDataValue()
+                if myOutNDV is not None:
+                    band.SetNoDataValue(myOutNDV)
+                ndv_out = '' if myOutNDV is None else '<NODATA>%i</NODATA>' % myOutNDV
+
+                source_xml = '<SourceFilename relativeToVRT="1">%s</SourceFilename>' % myFileName + \
+                                '<SourceBand>%i</SourceBand>' % j + \
+                                '<SourceProperties RasterXSize="%i" RasterYSize="%i" DataType=%s BlockXSize="%i" BlockYSize="%i"/>' % \
+                                (*source_size, dt, *myBlockSize) + \
+                                '<SrcRect xOff="%i" yOff="%i" xSize="%i" ySize="%i"/>' % \
+                                (*src_offset, *source_size) + \
+                                '<DstRect xOff="%i" yOff="%i" xSize="%i" ySize="%i"/>' % \
+                                (*dst_offset, *source_size) + \
+                                ndv_out
+                source = '<ComplexSource>'+source_xml+'</ComplexSource>'
+                band.SetMetadataItem("source_%i" % j, source, 'new_vrt_sources')
+                band = None
+            myFiles[i] = myOut
+            myFile = None
+
+
     ################################################################
     # set up output file
     ################################################################
@@ -201,9 +297,17 @@ def doit(opts, args):
         if opts.debug:
             print("Output file %s exists - filling in results into file" % (opts.outF))
         myOut = gdal.Open(opts.outF, gdal.GA_Update)
+
+        error = None
         if [myOut.RasterXSize, myOut.RasterYSize] != DimensionsCheck:
-            raise Exception(
-                "Error! Output exists, but is the wrong size.  Use the --overwrite option to automatically overwrite the existing file")
+            error = 'size'
+        elif ProjectionCheck and ProjectionCheck != myOut.GetProjection():
+            error = 'geotransform'
+        elif GeoTransformCheck and GeoTransformCheck != myOut.GetGeoTransform():
+            error = 'projection'
+        if error:
+            raise Exception("Error! Output exists, but is the wrong %s.  Use the --overwrite option to automatically overwrite the existing file" % error)
+
         myOutB = myOut.GetRasterBand(1)
         myOutNDV = myOutB.GetNoDataValue()
         myOutType = gdal.GetDataTypeName(myOutB.DataType)
@@ -230,8 +334,12 @@ def doit(opts, args):
             gdal.GetDataTypeByName(myOutType), opts.creation_options)
 
         # set output geo info based on first input layer
-        myOut.SetGeoTransform(myFiles[0].GetGeoTransform())
-        myOut.SetProjection(myFiles[0].GetProjection())
+        if not GeoTransformCheck:
+            GeoTransformCheck = myFiles[0].GetGeoTransform()
+        myOut.SetGeoTransform(GeoTransformCheck)
+        if not ProjectionCheck:
+            ProjectionCheck = myFiles[0].GetProjection()
+        myOut.SetProjection(ProjectionCheck)
 
         if opts.NoDataValue is not None:
             myOutNDV = opts.NoDataValue
@@ -241,11 +349,6 @@ def doit(opts, args):
         for i in range(1, allBandsCount + 1):
             myOutB = myOut.GetRasterBand(i)
             myOutB.SetNoDataValue(myOutNDV)
-            if opts.color_table:
-                # set color table and color interpretation
-                myOutB.SetRasterColorTable(opts.color_table)
-                myOutB.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
-
             # write to band
             myOutB = None
 
@@ -340,7 +443,11 @@ def doit(opts, args):
 
                     # fill in nodata values
                     if myNDV[i] is not None:
+                        # myNDVs is a boolean buffer.
+                        # a cell equals to 1 if there is NDV in any of the corresponsing cells in input raster bands.
                         if myNDVs is None:
+                            # this is the first band that has NDV set. we initializes myNDVs to a zero buffer
+                            # as we didn't see any NDV value yet.
                             myNDVs = numpy.zeros(myBufSize)
                             myNDVs.shape = (nYValid, nXValid)
                         myNDVs = 1 * numpy.logical_or(myNDVs == 1, myval == myNDV[i])
@@ -369,7 +476,6 @@ def doit(opts, args):
 
     if not opts.quiet:
         print("100 - Done")
-
 
 ################################################################
 
@@ -450,8 +556,9 @@ def main():
     parser.add_option("--outfile", dest="outF", help="output file to generate or fill", metavar="filename")
     parser.add_option("--NoDataValue", dest="NoDataValue", type=float,
                       help="output nodata value (default datatype specific value)", metavar="value")
-    parser.add_option("--type", dest="type", help="output datatype, must be one of %s" % list(DefaultNDVLookup.keys()),
-                      metavar="datatype")
+    parser.add_option("--ignoreNoDataValue", dest="ignoreNDV", action="store_true",
+                      help="ignores the NoDataValues of the rasters", metavar="value")
+    parser.add_option("--type", dest="type", help="output datatype, must be one of %s" % list(DefaultNDVLookup.keys()), metavar="datatype")
     parser.add_option("--format", dest="format", help="GDAL format for output file", metavar="gdal_format")
     parser.add_option(
         "--creation-option", "--co", dest="creation_options", default=[], action="append",
@@ -464,8 +571,10 @@ def main():
                       help="overwrite output file if it already exists")
     parser.add_option("--debug", dest="debug", action="store_true", help="print debugging information")
     parser.add_option("--quiet", dest="quiet", action="store_true", help="suppress progress messages")
-    parser.add_option("--optfile", dest="optfile", metavar="optfile",
-                      help="Read the named file and substitute the contents into the command line options list.")
+    parser.add_option("--optfile", dest="optfile", metavar="optfile", help="Read the named file and substitute the contents into the command line options list.")
+    parser.add_option("--geotransforms", dest="geotransforms", type=str, help="how to treat different geotrasnforms [ignore|fail|union|intersect]")
+    parser.add_option("--projectionCheck", dest="projectionCheck", action="store_true", help="check that all rasters share the same projection", metavar="value")
+    # when geotransforms don't agree: 0=ignore(check only dims)/1=fail (gt must also agree)/2=union/3=intersection
 
     (opts, args) = parser.parse_args()
 
