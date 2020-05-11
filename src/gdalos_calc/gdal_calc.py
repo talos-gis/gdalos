@@ -241,6 +241,11 @@ def doit(opts, args):
         for i in range(1, allBandsCount + 1):
             myOutB = myOut.GetRasterBand(i)
             myOutB.SetNoDataValue(myOutNDV)
+            if opts.color_table:
+                # set color table and color interpretation
+                myOutB.SetRasterColorTable(opts.color_table)
+                myOutB.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
+
             # write to band
             myOutB = None
 
@@ -370,7 +375,7 @@ def doit(opts, args):
 
 
 def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_options=None, allBands='', overwrite=False,
-         debug=False, quiet=False, **input_files):
+         debug=False, quiet=False, color_table=None, extent=None, **input_files):
     """ Perform raster calculations with numpy syntax.
     Use any basic arithmetic supported by numpy arrays such as +-*\ along with logical
     operators such as >. Note that all files must have the same dimensions, but no projection checking is performed.
@@ -401,6 +406,12 @@ def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_optio
     opts.overwrite = overwrite
     opts.debug = debug
     opts.quiet = quiet
+    opts.color_table = color_table
+    opts.extent = extent
+    # extent=None - default - use the extent of the first file
+    # extent=False - Intersection
+    # extent=True - Union
+    # extent=given extent - use the given extent
 
     doit(opts, None)
 
