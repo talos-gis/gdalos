@@ -3,9 +3,10 @@ import glob
 import gdal
 import tempfile
 from pathlib import Path
-from gdalos import gdal_helper, get_extent, GeoRectangle
-from gdalos_calc.gdal_calc import Calc, AlphaList
-from gdalos_calc.gdalos_color import ColorPalette
+from gdalos import gdalos_util, gdalos_extent, GeoRectangle
+from gdalos.calc.gdal_calc import Calc, AlphaList
+from gdalos.gdalos_color import ColorPalette
+from gdalos.calc.gdalcompare import compare
 
 
 def do_comb(filenames, alpha_pattern, operand='+', **kwargs):
@@ -13,7 +14,6 @@ def do_comb(filenames, alpha_pattern, operand='+', **kwargs):
     for filename, alpha in zip(filenames, AlphaList):
         kwargs[alpha] = filename
         alpha1 = alpha_pattern.format(alpha)
-        # alpha1 = alpha
         if calc is None:
             calc = alpha1
         else:
@@ -24,19 +24,18 @@ def do_comb(filenames, alpha_pattern, operand='+', **kwargs):
 def make_verts(filenames, isUnion):
     # extents = []
     dss = []
-    c_extent = None
+    res_extent = None
     for filename in filenames:
-        ds = gdal_helper.open_ds(filename)
-        org_points_extent, _ = get_extent.get_points_extent_from_ds(ds)
-        extent = GeoRectangle.from_points(org_points_extent)
+        ds = gdalos_util.open_ds(filename)
+        extent = gdalos_extent.get_extent(ds)
 
         dss.append(ds)
         # extents.append(extent)
-        c_extent = extent if c_extent is None else c_extent.union(extent) if isUnion else c_extent.intersect(extent)
+        res_extent = extent if res_extent is None else res_extent.union(extent) if isUnion else res_extent.intersect(extent)
 
     suffix = '_u.vrt' if isUnion else '_i.vrt'
-    vrt_filenames = build_vrts(filenames, dss, c_extent, suffix)
-    return vrt_filenames, c_extent
+    vrt_filenames = build_vrts(filenames, dss, res_extent, suffix)
+    return vrt_filenames, res_extent
 
 
 # def combine(filenames, outpath, alpha_pattern, **kwargs):
@@ -45,9 +44,8 @@ def make_verts(filenames, isUnion):
 #     union_extent = None
 #     intersect_extent = None
 #     for filename in filenames:
-#         ds = gdal_helper.open_ds(filename)
-#         org_points_extent, _ = get_extent.get_points_extent_from_ds(ds)
-#         extent = GeoRectangle.from_points(org_points_extent)
+#         ds = gdalos_util.open_ds(filename)
+#         extent = gdalos_extent.get_extent(ds)
 #
 #         dss.append(ds)
 #         extents.append(extent)
@@ -76,17 +74,60 @@ def build_vrts(filenames, dss, extent: GeoRectangle, suffix):
         options = gdal.BuildVRTOptions(outputBounds=(extent.min_x, extent.min_y, extent.max_x, extent.max_y))
                                        # hideNodata=True,
                                        # separate=False)
-        out_vrt = filename + suffix
-        vrt_filenames.append(out_vrt)
-        out_ds = gdal.BuildVRT(out_vrt, ds, options=options)
-        if out_ds is None:
+        # vrt_filename = filename + suffix
+        vrt_filename = tempfile.mktemp(suffix='.vrt')
+        vrt_filenames.append(vrt_filename)
+        vrt_ds = gdal.BuildVRT(vrt_filename, ds, options=options)
+        if vrt_ds is None:
             return None
-        del out_ds
+        del vrt_ds
     return vrt_filenames
 
 
+def compare_rasters(pattern):
+    golden = None
+    total = 0
+    for filename in glob.glob(str(pattern)):
+        if golden is None:
+            golden = filename
+        else:
+            print('{} vs {}'.format(golden, filename))
+            res = compare(golden, filename)
+            print(res)
+            total += res
+    print('total: {}'.format(total))
+
+
+def combine_all(path, outpath):
+    pattern = Path('*.tif')
+    os.makedirs(str(outpath), exist_ok=True)
+    dirpath = path / pattern
+    filenames = list(glob.glob(str(dirpath)))
+    print(filenames)
+
+    custom_extent = GeoRectangle.from_lrud(698386, 700147, 3552332, 3550964)
+    for combine_type in [2, 3, 4]:
+        for method in [1, 2]:
+            isUnion = combine_type == 2
+            isIntersection = combine_type == 3
+            isCustom = combine_type == 4
+            outfile = tempfile.mktemp(suffix='_{}{}.tif'.format(
+                'u' if isUnion else 'i' if isIntersection else 'c', method), dir=str(outpath))
+            kwargs = dict()
+            if method == 1:
+                vrt_filenames, c_extent = make_verts(filenames, isUnion)
+                kwargs['filenames'] = vrt_filenames
+            else:
+                kwargs['filenames'] = filenames
+                kwargs['combine_type'] = combine_type
+                if isCustom:
+                    kwargs['extent'] = custom_extent
+
+            do_comb(alpha_pattern=alpha_pattern, outfile=outfile, color_table=color_table, hideNodata=True, **kwargs)
+
+
 if __name__ == '__main__':
-    path = Path(r'../../sample')
+    path = Path(r'sample')
     color_filename = path / Path(r'color_files/comb.qlr')
     pal = ColorPalette()
     pal.read(color_filename)
@@ -96,23 +137,7 @@ if __name__ == '__main__':
 
     path = Path('/home/idan/maps/comb/vs')
     outpath = path / 'comb'
-    pattern = Path('*.tif')
-    os.makedirs(str(outpath), exist_ok=True)
-    dirpath = path / pattern
-    filenames = list(glob.glob(str(dirpath)))
-    print(filenames)
 
-    for geotransforms in [2, 3]:
-        for method in [1, 2]:
-            isUnion = geotransforms == 2
-            outfile = tempfile.mktemp(suffix='_{}{}.tif'.format('u' if isUnion else 'i', method), dir=str(outpath))
-            kwargs = dict()
-            if method == 1:
-                vrt_filenames, c_extent = make_verts(filenames, isUnion)
-                kwargs['filenames'] = vrt_filenames
-            else:
-                kwargs['filenames'] = filenames
-                kwargs['geotransforms'] = geotransforms
-
-            do_comb(alpha_pattern=alpha_pattern, outfile=outfile, color_table=color_table, hideNodata=True, **kwargs)
-
+    combine_all(path, outpath)
+    compare_rasters(outpath / '*_u*')
+    compare_rasters(outpath / '*_i*')

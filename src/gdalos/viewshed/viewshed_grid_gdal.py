@@ -1,7 +1,7 @@
 from gdalos import gdalos_trans
 from gdalos import GeoRectangle
 from pathlib import Path
-from gdalos_calc import viewshed_params
+from gdalos.calc import viewshed_params
 
 
 def calc_extent(center, grid_range, interval, md, frame):
@@ -15,9 +15,9 @@ def calc_extent(center, grid_range, interval, md, frame):
 
 def viewshed_run(md, interval, grid_range, center, oz, tz, output_path, input_filename):
     import gdal
-    from gdalos import gdal_helper
+    from gdalos import gdalos_util
 
-    ds = gdal_helper.open_ds(input_filename)
+    ds = gdalos_util.open_ds(input_filename)
     band: gdal.Band = ds.GetRasterBand(1)
 
     if band is None:

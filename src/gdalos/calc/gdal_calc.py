@@ -53,7 +53,7 @@ import numpy
 
 from osgeo import gdal
 from osgeo import gdalnumeric
-from gdalos.geotransform_util import get_extent, get_offsets
+from gdalos import gdalos_extent
 
 # create alphabetic list for storing input layers
 AlphaList = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
@@ -153,6 +153,9 @@ def doit(opts, args):
     GeoTransforms = []
     GeoTransformDiffer = False
 
+    if opts.extent:
+        opts.combine_type = 4  # custom extent
+
     # loop through input files - checking dimensions
     for myI, myF in opts.input_files.items():
         if not myI.endswith("_band"):
@@ -179,7 +182,7 @@ def doit(opts, args):
             if DimensionsCheck:
                 if DimensionsCheck != myFileDimensions:
                     GeoTransformDiffer = True
-                    if opts.geotransforms <= 1:
+                    if opts.combine_type <= 1:
                         raise Exception("Error! Dimensions of file %s (%i, %i) are different from other files (%i, %i).  Cannot proceed" %
                                         (myF, myFileDimensions[0], myFileDimensions[1], DimensionsCheck[0], DimensionsCheck[1]))
             else:
@@ -197,13 +200,13 @@ def doit(opts, args):
 
             # check that the GeoTransforms of each layer are the same
             myFileGeoTransform = myFile.GetGeoTransform()
-            if opts.geotransforms:
+            if opts.combine_type:
                 Dimensions.append(myFileDimensions)
                 GeoTransforms.append(myFileGeoTransform)
                 if GeoTransformCheck:
                     if GeoTransformCheck != myFileGeoTransform:
                         GeoTransformDiffer = True
-                        if opts.geotransforms == 1:
+                        if opts.combine_type == 1:
                             raise Exception(
                                 "Error! GeoTransform of file %s %s are different from other files %s.  Cannot proceed" %
                                 (myF, myFileGeoTransform, GeoTransformCheck))
@@ -239,49 +242,21 @@ def doit(opts, args):
         if allBandsCount <= 1:
             allBandsIndex = None
 
-    if opts.geotransforms and GeoTransformDiffer:
-        GeoTransformCheck, DimensionsCheck = get_extent(GeoTransforms, Dimensions, opts.geotransforms == 2)
+    new_mode = True
+    if opts.combine_type and (GeoTransformDiffer or opts.extent):
+        GeoTransformCheck, DimensionsCheck, ExtentCheck = gdalos_extent.calc_geotransform_and_dimensions(
+            GeoTransforms, Dimensions, opts.combine_type == 2, opts.extent)
         if GeoTransformCheck is None:
             raise Exception("Error! The requested extent is empty. Cannot proceed")
-        for i, myFileName in enumerate(myFileNames):
-            myFile = myFiles[i]
-            drv = gdal.GetDriverByName("VRT")
-            dt = gdal.GetDataTypeByName(myDataType[i])
-            myOut = drv.Create(
-                myFileName+".vrt", DimensionsCheck[0], DimensionsCheck[1], allBandsCount, dt)
-            myOut.SetGeoTransform(GeoTransformCheck)
-            myOut.SetProjection(ProjectionCheck)
-
-            src_offset, dst_offset = get_offsets(GeoTransforms[i], Dimensions[i], GeoTransformCheck, DimensionsCheck)
-            if src_offset is None:
-                raise Exception("Error! The requested extent is empty. Cannot proceed")
-
-            source_size = Dimensions[i]
-
-            for j in range(1, allBandsCount + 1):
-                band = myOut.GetRasterBand(j)
-                inBand = myFile.GetRasterBand(j)
-                myBlockSize = inBand.GetBlockSize()
-
-                myOutNDV = inBand.GetNoDataValue()
-                if myOutNDV is not None:
-                    band.SetNoDataValue(myOutNDV)
-                ndv_out = '' if myOutNDV is None else '<NODATA>%i</NODATA>' % myOutNDV
-
-                source_xml = '<SourceFilename relativeToVRT="1">%s</SourceFilename>' % myFileName + \
-                                '<SourceBand>%i</SourceBand>' % j + \
-                                '<SourceProperties RasterXSize="%i" RasterYSize="%i" DataType=%s BlockXSize="%i" BlockYSize="%i"/>' % \
-                                (*source_size, dt, *myBlockSize) + \
-                                '<SrcRect xOff="%i" yOff="%i" xSize="%i" ySize="%i"/>' % \
-                                (*src_offset, *source_size) + \
-                                '<DstRect xOff="%i" yOff="%i" xSize="%i" ySize="%i"/>' % \
-                                (*dst_offset, *source_size) + \
-                                ndv_out
-                source = '<ComplexSource>'+source_xml+'</ComplexSource>'
-                band.SetMetadataItem("source_%i" % j, source, 'new_vrt_sources')
-                band = None
-            myFiles[i] = myOut
-            myFile = None
+        for i in range(len(myFileNames)):
+            if new_mode:
+                temp_vrt_filename, temp_vrt_ds = gdalos_extent.make_temp_vrt(myFiles[i], ExtentCheck)
+            else:
+                temp_vrt_filename, temp_vrt_ds = gdalos_extent.make_temp_vrt_old(
+                    myFileNames[i], myFiles[i], myDataType[i], ProjectionCheck, allBandsCount,
+                    GeoTransforms[i], Dimensions[i], GeoTransformCheck, DimensionsCheck)
+            myFiles[i] = None  # close original ds
+            myFiles[i] = temp_vrt_ds  # replace original ds with vrt_ds
 
 
     ################################################################
@@ -300,9 +275,9 @@ def doit(opts, args):
         if [myOut.RasterXSize, myOut.RasterYSize] != DimensionsCheck:
             error = 'size'
         elif ProjectionCheck and ProjectionCheck != myOut.GetProjection():
-            error = 'geotransform'
-        elif GeoTransformCheck and GeoTransformCheck != myOut.GetGeoTransform():
             error = 'projection'
+        elif GeoTransformCheck and GeoTransformCheck != myOut.GetGeoTransform():
+            error = 'geotransform'
         if error:
             raise Exception("Error! Output exists, but is the wrong %s.  Use the --overwrite option to automatically overwrite the existing file" % error)
 
@@ -484,7 +459,7 @@ def doit(opts, args):
 
 
 def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_options=None, allBands='', overwrite=False,
-         debug=False, quiet=False, hideNodata=False, projectionCheck=False, color_table=None, geotransforms=0,
+         debug=False, quiet=False, hideNodata=False, projectionCheck=False, color_table=None, combine_type=0,
          extent=None, **input_files):
     """ Perform raster calculations with numpy syntax.
     Use any basic arithmetic supported by numpy arrays such as +-*\ along with logical
@@ -520,7 +495,7 @@ def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_optio
     opts.hideNodata = hideNodata
     opts.projectionCheck = projectionCheck
     opts.color_table = color_table
-    opts.geotransforms = geotransforms
+    opts.combine_type = combine_type
     opts.extent = extent
     # extent=None - default - use the extent of the first file
     # extent=False - Intersection
@@ -582,11 +557,11 @@ def main():
     parser.add_option("--quiet", dest="quiet", action="store_true", help="suppress progress messages")
     parser.add_option("--optfile", dest="optfile", metavar="optfile",
                       help="Read the named file and substitute the contents into the command line options list.")
-    parser.add_option("--geotransforms", dest="geotransforms", type=str,
+    parser.add_option("--combine_type", dest="combine_type", type=str,
                       help="how to treat different geotrasnforms [ignore|fail|union|intersect]")
     parser.add_option("--projectionCheck", dest="projectionCheck", action="store_true",
                       help="check that all rasters share the same projection", metavar="value")
-    # when geotransforms don't agree: 0=ignore(check only dims)/1=fail (gt must also agree)/2=union/3=intersection
+    # when combine_type don't agree: 0=ignore(check only dims)/1=fail (gt must also agree)/2=union/3=intersection
 
     (opts, args) = parser.parse_args()
 

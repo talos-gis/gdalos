@@ -1,8 +1,13 @@
 class GeoRectangle:
-    def __init__(self, x, y, w, h):
-        if w <= 0 or h <= 0:
-            h = 0
+    def __init__(self, x, y, w, h, allow_neg_y=False):
+        if w <= 0:
             w = 0
+        if h <= 0:
+            if allow_neg_y:
+                y = y + h
+                h = -h
+            else:
+                h = 0
         self.x = x
         self.y = y
         self.w = w
@@ -78,8 +83,14 @@ class GeoRectangle:
 
     @classmethod
     # # same as min_max
-    def from_xwyh(cls, x, w, y, h):
-        ret = cls(x, y, w, h)
+    def from_xwyh(cls, x, w, y, h, allow_neg_y=False):
+        ret = cls(x, y, w, h, allow_neg_y)
+        return ret
+
+    @classmethod
+    # # same as cls
+    def from_xywh(cls, x, y, w, h, allow_neg_y=False):
+        ret = cls(x, y, w, h, allow_neg_y)
         return ret
 
     @classmethod
@@ -99,6 +110,23 @@ class GeoRectangle:
 
     @classmethod
     def from_geotransform_and_size(cls, gt, size):
+        if gt[2] or gt[4]:
+            return cls.from_points(get_points_extent(gt, *size))
+        else:
+            # faster method
+            origin = (gt[0], gt[3])
+            pixel_size = (gt[1], gt[5])
+            extent = cls.from_xywh(origin[0], origin[1], size[0] * pixel_size[0], size[1] * pixel_size[1], True)
+            # extent_b = cls.from_points(get_points_extent(gt, *size))
+            # assert extent == extent_b
+            return extent
+
+    def pix_to_extent(self, pixel_size):
+        return self.from_xwyh(self.x * pixel_size[0], self.w * pixel_size[0],
+                              self.y * pixel_size[1], self.h * pixel_size[1])
+
+    @classmethod
+    def from_geotransform_and_size_to_pix(cls, gt, size):
         origin = (gt[0], gt[3])
         pixel_size = (gt[1], gt[5])
         pix_origin = list(origin[i] / pixel_size[i] for i in (0, 1))
@@ -171,3 +199,19 @@ class GeoRectangle:
 
     def __repr__(self):
         return f"Rectangle({self.x}, {self.y}, {self.w}, {self.h})"
+
+
+def get_points_extent(gt, cols, rows):
+    """Return list of corner coordinates from a geotransform"""
+
+    def transform_point(px, py):
+        x = gt[0] + (px * gt[1]) + (py * gt[2])
+        y = gt[3] + (px * gt[4]) + (py * gt[5])
+        return x, y
+
+    return [
+        transform_point(0, 0),
+        transform_point(0, rows),
+        transform_point(cols, rows),
+        transform_point(cols, 0),
+    ]
