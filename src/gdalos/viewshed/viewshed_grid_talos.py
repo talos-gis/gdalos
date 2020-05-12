@@ -1,6 +1,6 @@
 from pathlib import Path
 import re
-from gdalos.calc import viewshed_params
+from gdalos.viewshed import viewshed_params
 import talos
 
 

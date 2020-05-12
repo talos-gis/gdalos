@@ -1,7 +1,7 @@
 from gdalos import gdalos_trans
 from gdalos import GeoRectangle
 from pathlib import Path
-from gdalos.calc import viewshed_params
+from gdalos.viewshed import viewshed_params
 
 
 def calc_extent(center, grid_range, interval, md, frame):

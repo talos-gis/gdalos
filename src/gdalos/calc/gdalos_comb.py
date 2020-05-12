@@ -96,6 +96,7 @@ def compare_rasters(pattern):
             print(res)
             total += res
     print('total: {}'.format(total))
+    return total
 
 
 def combine_all(path, outpath):
@@ -106,22 +107,21 @@ def combine_all(path, outpath):
     print(filenames)
 
     custom_extent = GeoRectangle.from_lrud(698386, 700147, 3552332, 3550964)
-    for combine_type in [2, 3, 4]:
+    for extent in [2, 3, custom_extent]:
         for method in [1, 2]:
-            isUnion = combine_type == 2
-            isIntersection = combine_type == 3
-            isCustom = combine_type == 4
+            isUnion = extent == 2
+            isIntersection = extent == 3
             outfile = tempfile.mktemp(suffix='_{}{}.tif'.format(
                 'u' if isUnion else 'i' if isIntersection else 'c', method), dir=str(outpath))
             kwargs = dict()
             if method == 1:
+                kwargs['filenames'] = filenames
+                kwargs['extent'] = extent
+            else:
+                if not isUnion and not isIntersection:
+                    continue
                 vrt_filenames, c_extent = make_verts(filenames, isUnion)
                 kwargs['filenames'] = vrt_filenames
-            else:
-                kwargs['filenames'] = filenames
-                kwargs['combine_type'] = combine_type
-                if isCustom:
-                    kwargs['extent'] = custom_extent
 
             do_comb(alpha_pattern=alpha_pattern, outfile=outfile, color_table=color_table, hideNodata=True, **kwargs)
 
@@ -139,5 +139,7 @@ if __name__ == '__main__':
     outpath = path / 'comb'
 
     combine_all(path, outpath)
-    compare_rasters(outpath / '*_u*')
-    compare_rasters(outpath / '*_i*')
+    total = compare_rasters(outpath / '*_u*') + \
+        compare_rasters(outpath / '*_i*') + \
+        compare_rasters(outpath / '*_c*')
+    print('grand total: {}'.format(total))

@@ -182,20 +182,21 @@ def calc_geo_offsets(src_gt, src_size, dst_gt, dst_size):
     return src_offset, dst_offset
 
 
-def calc_geotransform_and_dimensions(GeoTransforms, Dimensions, isUnion: bool, input_extent: GeoRectangle = None):
+def calc_geotransform_and_dimensions(geotransforms, dimensions, input_extent: GeoRectangle = None):
     # extents differ, but pixel size and rotation are the same.
     # we'll make a union or an intersection
-    if GeoTransforms is None or len(GeoTransforms) != len(Dimensions):
+    if geotransforms is None or len(geotransforms) != len(dimensions):
         raise Exception('Error! GeoTransforms and Dimensions have different lengths!')
-    out_extent: GeoRectangle = None
-    if input_extent:
-        gt = GeoTransforms[0]
+    if isinstance(input_extent, GeoRectangle):
+        gt = geotransforms[0]
         out_extent = input_extent.align(gt)
     else:
-        for gt, size in zip(GeoTransforms, Dimensions):
+        out_extent: GeoRectangle = None
+        is_union = input_extent == 2
+        for gt, size in zip(geotransforms, dimensions):
             extent = GeoRectangle.from_geotransform_and_size(gt, size)
             out_extent = extent if out_extent is None else \
-                out_extent.union(extent) if isUnion else out_extent.intersect(extent)
+                out_extent.union(extent) if is_union else out_extent.intersect(extent)
 
     if out_extent is None or out_extent.is_empty():
         return None, None, None
@@ -206,16 +207,6 @@ def calc_geotransform_and_dimensions(GeoTransforms, Dimensions, isUnion: bool, i
               out_extent.up,
               gt[4], gt[5])
     return gt, (math.ceil(out_extent.w / pixel_size[0]), math.ceil(abs(out_extent.h / pixel_size[1]))), out_extent
-
-
-def calc_extent(extents, isUnion) -> GeoRectangle:
-    out_extnet: GeoRectangle = None
-    for extent in extents:
-        # ds = gdalos_util.open_ds(filename)
-        # extent = gdalos_extent.get_extent(ds)
-        out_extnet = extent if out_extnet is None else out_extnet.union(extent) if isUnion else out_extnet.intersect(
-            extent)
-    return None if out_extnet.is_empty() else out_extnet
 
 
 def make_temp_vrt(ds, extent: GeoRectangle):

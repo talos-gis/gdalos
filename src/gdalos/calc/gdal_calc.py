@@ -153,9 +153,6 @@ def doit(opts, args):
     GeoTransforms = []
     GeoTransformDiffer = False
 
-    if opts.extent:
-        opts.combine_type = 4  # custom extent
-
     # loop through input files - checking dimensions
     for myI, myF in opts.input_files.items():
         if not myI.endswith("_band"):
@@ -182,7 +179,7 @@ def doit(opts, args):
             if DimensionsCheck:
                 if DimensionsCheck != myFileDimensions:
                     GeoTransformDiffer = True
-                    if opts.combine_type <= 1:
+                    if opts.extent in [0, 1]:
                         raise Exception("Error! Dimensions of file %s (%i, %i) are different from other files (%i, %i).  Cannot proceed" %
                                         (myF, myFileDimensions[0], myFileDimensions[1], DimensionsCheck[0], DimensionsCheck[1]))
             else:
@@ -200,13 +197,13 @@ def doit(opts, args):
 
             # check that the GeoTransforms of each layer are the same
             myFileGeoTransform = myFile.GetGeoTransform()
-            if opts.combine_type:
+            if opts.extent:
                 Dimensions.append(myFileDimensions)
                 GeoTransforms.append(myFileGeoTransform)
                 if GeoTransformCheck:
                     if GeoTransformCheck != myFileGeoTransform:
                         GeoTransformDiffer = True
-                        if opts.combine_type == 1:
+                        if opts.extent == 1:
                             raise Exception(
                                 "Error! GeoTransform of file %s %s are different from other files %s.  Cannot proceed" %
                                 (myF, myFileGeoTransform, GeoTransformCheck))
@@ -242,10 +239,10 @@ def doit(opts, args):
         if allBandsCount <= 1:
             allBandsIndex = None
 
-    new_mode = True
-    if opts.combine_type and (GeoTransformDiffer or opts.extent):
+    new_mode = False
+    if opts.extent and (GeoTransformDiffer or not isinstance(opts.extent, int)):
         GeoTransformCheck, DimensionsCheck, ExtentCheck = gdalos_extent.calc_geotransform_and_dimensions(
-            GeoTransforms, Dimensions, opts.combine_type == 2, opts.extent)
+            GeoTransforms, Dimensions, opts.extent)
         if GeoTransformCheck is None:
             raise Exception("Error! The requested extent is empty. Cannot proceed")
         for i in range(len(myFileNames)):
@@ -459,7 +456,7 @@ def doit(opts, args):
 
 
 def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_options=None, allBands='', overwrite=False,
-         debug=False, quiet=False, hideNodata=False, projectionCheck=False, color_table=None, combine_type=0,
+         debug=False, quiet=False, hideNodata=False, projectionCheck=False, color_table=None,
          extent=None, **input_files):
     """ Perform raster calculations with numpy syntax.
     Use any basic arithmetic supported by numpy arrays such as +-*\ along with logical
@@ -495,12 +492,7 @@ def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_optio
     opts.hideNodata = hideNodata
     opts.projectionCheck = projectionCheck
     opts.color_table = color_table
-    opts.combine_type = combine_type
     opts.extent = extent
-    # extent=None - default - use the extent of the first file
-    # extent=False - Intersection
-    # extent=True - Union
-    # extent=given extent - use the given extent
 
     doit(opts, None)
 
@@ -557,11 +549,11 @@ def main():
     parser.add_option("--quiet", dest="quiet", action="store_true", help="suppress progress messages")
     parser.add_option("--optfile", dest="optfile", metavar="optfile",
                       help="Read the named file and substitute the contents into the command line options list.")
-    parser.add_option("--combine_type", dest="combine_type", type=str,
+    parser.add_option("--extent", dest="extent", type=str,
                       help="how to treat different geotrasnforms [ignore|fail|union|intersect]")
     parser.add_option("--projectionCheck", dest="projectionCheck", action="store_true",
                       help="check that all rasters share the same projection", metavar="value")
-    # when combine_type don't agree: 0=ignore(check only dims)/1=fail (gt must also agree)/2=union/3=intersection
+    # when extent don't agree: 0=ignore(check only dims)/1=fail (gt must also agree)/2=union/3=intersection
 
     (opts, args) = parser.parse_args()
 
