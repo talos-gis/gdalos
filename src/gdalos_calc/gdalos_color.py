@@ -92,7 +92,7 @@ class ColorPalette:
             if str(color).startswith('#'):
                 color = int(color[1:], 16)
             alpha = int(palette_entry.getAttribute("alpha"))
-            color = color + alpha * 255**3
+            color = color + (alpha << 8*3)  # * 256**3
             key = int(palette_entry.getAttribute("value"))
             self.pal[key] = color
 
@@ -121,10 +121,10 @@ class ColorPalette:
         if color < 256:
             return color
         else:
-            b = byte(color, 1)
-            g = byte(color, 2)
-            r = byte(color, 3)
-            a = byte(color, 4)
+            b = byte(color, 0)
+            g = byte(color, 1)
+            r = byte(color, 2)
+            a = byte(color, 3)
 
             if a > 0:
                 return r, g, b, a

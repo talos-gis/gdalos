@@ -172,7 +172,7 @@ def doit(opts, args):
             myAlphaList.append(myI)
             myDataType.append(gdal.GetDataTypeName(myFile.GetRasterBand(myBand).DataType))
             myDataTypeNum.append(myFile.GetRasterBand(myBand).DataType)
-            myNDV.append(None if opts.ignoreNDV else myFile.GetRasterBand(myBand).GetNoDataValue())
+            myNDV.append(None if opts.hideNodata else myFile.GetRasterBand(myBand).GetNoDataValue())
 
             # check that the dimensions of each layer are the same
             myFileDimensions = [myFile.RasterXSize, myFile.RasterYSize]
@@ -240,10 +240,9 @@ def doit(opts, args):
             allBandsIndex = None
 
     if opts.geotransforms and GeoTransformDiffer:
-        extent = get_extent(GeoTransforms, Dimensions, opts.geotransforms == 2)
-        if extent is None:
+        GeoTransformCheck, DimensionsCheck = get_extent(GeoTransforms, Dimensions, opts.geotransforms == 2)
+        if GeoTransformCheck is None:
             raise Exception("Error! The requested extent is empty. Cannot proceed")
-        GeoTransformCheck, DimensionsCheck = extent
         for i, myFileName in enumerate(myFileNames):
             myFile = myFiles[i]
             drv = gdal.GetDriverByName("VRT")
@@ -253,10 +252,9 @@ def doit(opts, args):
             myOut.SetGeoTransform(GeoTransformCheck)
             myOut.SetProjection(ProjectionCheck)
 
-            offsets = get_offsets(GeoTransforms[i], Dimensions[i], GeoTransformCheck, DimensionsCheck)
-            if offsets is None:
+            src_offset, dst_offset = get_offsets(GeoTransforms[i], Dimensions[i], GeoTransformCheck, DimensionsCheck)
+            if src_offset is None:
                 raise Exception("Error! The requested extent is empty. Cannot proceed")
-            src_offset, dst_offset = offsets
 
             source_size = Dimensions[i]
 
@@ -349,6 +347,11 @@ def doit(opts, args):
         for i in range(1, allBandsCount + 1):
             myOutB = myOut.GetRasterBand(i)
             myOutB.SetNoDataValue(myOutNDV)
+            if opts.color_table:
+                # set color table and color interpretation
+                myOutB.SetRasterColorTable(opts.color_table)
+                myOutB.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
+
             # write to band
             myOutB = None
 
@@ -481,7 +484,7 @@ def doit(opts, args):
 
 
 def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_options=None, allBands='', overwrite=False,
-         debug=False, quiet=False, ignoreNoDataValue=False, projectionCheck=False, color_table=None, geotransforms=0,
+         debug=False, quiet=False, hideNodata=False, projectionCheck=False, color_table=None, geotransforms=0,
          extent=None, **input_files):
     """ Perform raster calculations with numpy syntax.
     Use any basic arithmetic supported by numpy arrays such as +-*\ along with logical
@@ -514,7 +517,7 @@ def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_optio
     opts.debug = debug
     opts.quiet = quiet
 
-    opts.ignoreNoDataValue = ignoreNoDataValue
+    opts.hideNodata = hideNodata
     opts.projectionCheck = projectionCheck
     opts.color_table = color_table
     opts.geotransforms = geotransforms
@@ -561,8 +564,8 @@ def main():
     parser.add_option("--outfile", dest="outF", help="output file to generate or fill", metavar="filename")
     parser.add_option("--NoDataValue", dest="NoDataValue", type=float,
                       help="output nodata value (default datatype specific value)", metavar="value")
-    parser.add_option("--ignoreNoDataValue", dest="ignoreNDV", action="store_true",
-                      help="ignores the NoDataValues of the rasters", metavar="value")
+    parser.add_option("--hideNodata", dest="hideNodata", action="store_true",
+                      help="ignores the NoDataValues of the input rasters", metavar="value")
     parser.add_option("--type", dest="type", help="output datatype, must be one of %s" % list(DefaultNDVLookup.keys()),
                       metavar="datatype")
     parser.add_option("--format", dest="format", help="GDAL format for output file", metavar="gdal_format")
