@@ -1,9 +1,13 @@
 class GeoRectangle:
-    def __init__(self, x, y, w, h, allow_neg_y=False):
+    def __init__(self, x, y, w, h, allow_negative_size=False):
         if w <= 0:
-            w = 0
+            if allow_negative_size:
+                x = x + w
+                w = -w
+            else:
+                w = 0
         if h <= 0:
-            if allow_neg_y:
+            if allow_negative_size:
                 y = y + h
                 h = -h
             else:
@@ -83,14 +87,20 @@ class GeoRectangle:
 
     @classmethod
     # # same as min_max
-    def from_xwyh(cls, x, w, y, h, allow_neg_y=False):
-        ret = cls(x, y, w, h, allow_neg_y)
+    def from_xwyh(cls, x, w, y, h, allow_negative_size=False):
+        ret = cls(x, y, w, h, allow_negative_size)
         return ret
 
     @classmethod
     # # same as cls
-    def from_xywh(cls, x, y, w, h, allow_neg_y=False):
-        ret = cls(x, y, w, h, allow_neg_y)
+    def from_xywh(cls, x, y, w, h, allow_negative_size=False):
+        ret = cls(x, y, w, h, allow_negative_size)
+        return ret
+
+    @classmethod
+    # # same as cls
+    def from_xywhps(cls, x, y, w, h, px, py):
+        ret = cls(x, y, w*px, h*py, True)
         return ret
 
     @classmethod
@@ -116,14 +126,14 @@ class GeoRectangle:
             # faster method
             origin = (gt[0], gt[3])
             pixel_size = (gt[1], gt[5])
-            extent = cls.from_xywh(origin[0], origin[1], size[0] * pixel_size[0], size[1] * pixel_size[1], True)
+            extent = cls.from_xywhps(*origin, *size, *pixel_size)
             # extent_b = cls.from_points(get_points_extent(gt, *size))
             # assert extent == extent_b
             return extent
 
-    def pix_to_extent(self, pixel_size):
-        return self.from_xwyh(self.x * pixel_size[0], self.w * pixel_size[0],
-                              self.y * pixel_size[1], self.h * pixel_size[1])
+    def to_pixels(self, pixel_size):
+        return self.from_xwyh(self.x / pixel_size[0], self.w / pixel_size[0],
+                              self.y / pixel_size[1], self.h / pixel_size[1], True)
 
     @classmethod
     def from_geotransform_and_size_to_pix(cls, gt, size):

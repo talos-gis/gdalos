@@ -152,6 +152,7 @@ def doit(opts, args):
     GeoTransformCheck = None
     GeoTransforms = []
     GeoTransformDiffer = False
+    myTempFileNames = []
 
     # loop through input files - checking dimensions
     for myI, myF in opts.input_files.items():
@@ -239,7 +240,7 @@ def doit(opts, args):
         if allBandsCount <= 1:
             allBandsIndex = None
 
-    new_mode = False
+    new_mode = True
     if opts.extent and (GeoTransformDiffer or not isinstance(opts.extent, int)):
         GeoTransformCheck, DimensionsCheck, ExtentCheck = gdalos_extent.calc_geotransform_and_dimensions(
             GeoTransforms, Dimensions, opts.extent)
@@ -252,8 +253,10 @@ def doit(opts, args):
                 temp_vrt_filename, temp_vrt_ds = gdalos_extent.make_temp_vrt_old(
                     myFileNames[i], myFiles[i], myDataType[i], ProjectionCheck, allBandsCount,
                     GeoTransforms[i], Dimensions[i], GeoTransformCheck, DimensionsCheck)
+            myTempFileNames.append(temp_vrt_filename)
             myFiles[i] = None  # close original ds
             myFiles[i] = temp_vrt_ds  # replace original ds with vrt_ds
+        temp_vrt_ds = None
 
 
     ################################################################
@@ -449,6 +452,9 @@ def doit(opts, args):
                 myOutB = myOut.GetRasterBand(bandNo)
                 gdalnumeric.BandWriteArray(myOutB, myResult, xoff=myX, yoff=myY)
 
+    for idx, tempFile in enumerate(myTempFileNames):
+        myFiles[idx] = None
+        os.remove(tempFile)
     if not opts.quiet:
         print("100 - Done")
 

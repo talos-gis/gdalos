@@ -202,11 +202,12 @@ def calc_geotransform_and_dimensions(geotransforms, dimensions, input_extent: Ge
         return None, None, None
     else:
         pixel_size = (gt[1], gt[5])
+        pix_extent = out_extent.to_pixels(pixel_size)
         gt = (out_extent.left,
               gt[1], gt[2],
               out_extent.up,
               gt[4], gt[5])
-    return gt, (math.ceil(out_extent.w / pixel_size[0]), math.ceil(abs(out_extent.h / pixel_size[1]))), out_extent
+    return gt, (math.ceil(pix_extent.w), math.ceil(pix_extent.h)), out_extent
 
 
 def make_temp_vrt(ds, extent: GeoRectangle):
