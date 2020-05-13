@@ -4,21 +4,14 @@ import gdal
 import tempfile
 from pathlib import Path
 from gdalos import gdalos_util, gdalos_extent, GeoRectangle
-from gdalos.calc.gdal_calc import Calc, AlphaList
+from gdalos.calc import gdal_calc
 from gdalos.gdalos_color import ColorPalette
 from gdalos.calc.gdalcompare import compare
 
 
 def do_comb(filenames, alpha_pattern, operand='+', **kwargs):
-    calc = None
-    for filename, alpha in zip(filenames, AlphaList):
-        kwargs[alpha] = filename
-        alpha1 = alpha_pattern.format(alpha)
-        if calc is None:
-            calc = alpha1
-        else:
-            calc = '{}{}{}'.format(calc, operand, alpha1)
-    Calc(calc, **kwargs)
+    calc, kwargs = gdal_calc.make_calc(filenames, alpha_pattern, operand, **kwargs)
+    gdal_calc.Calc(calc, **kwargs)
 
 
 def make_verts(filenames, isUnion):

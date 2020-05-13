@@ -4,6 +4,8 @@ from xml.dom import minidom
 from collections import OrderedDict
 from pathlib import Path
 import glob
+import tempfile
+from typing import Sequence
 
 
 def to_number(s):
@@ -161,9 +163,23 @@ def qlr_to_color_file(qlr_filename: Path) -> Path:
     return color_filename
 
 
+def save_palette(color_palette):
+    temp_color_filename = None
+    if isinstance(color_palette, str):
+        color_filename = color_palette
+    elif isinstance(color_palette, Sequence):
+        temp_color_filename = tempfile.mktemp(suffix='.txt')
+        color_filename = temp_color_filename
+        with open(temp_color_filename, 'w') as f:
+            for item in color_palette:
+                f.write(item+'\n')
+    else:
+        raise Exception('Unknown color palette type {}'.format(color_palette))
+    return color_filename, temp_color_filename
+
+
 if __name__ == "__main__":
     cp = ColorPalette()
     dir_path = Path('/home/idan/maps/comb')
     for filename in glob.glob(str(dir_path / '*.qlr')):
         qlr_to_color_file(filename)
-

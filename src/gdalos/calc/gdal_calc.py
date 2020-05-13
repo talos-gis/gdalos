@@ -163,7 +163,11 @@ def doit(opts, args):
             else:
                 myBand = 1
 
-            myFile = gdal.Open(myF, gdal.GA_ReadOnly)
+            if isinstance(myF, gdal.Dataset):
+                myFile = myF
+                myF = None
+            else:
+                myFile = gdal.Open(myF, gdal.GA_ReadOnly)
             if not myFile:
                 raise IOError("No such file or directory: '%s'" % myF)
 
@@ -459,6 +463,18 @@ def doit(opts, args):
         print("100 - Done")
 
 ################################################################
+
+
+def make_calc(filenames, alpha_pattern, operand, **kwargs):
+    calc = None
+    for filename, alpha in zip(filenames, AlphaList):
+        kwargs[alpha] = filename
+        alpha1 = alpha_pattern.format(alpha)
+        if calc is None:
+            calc = alpha1
+        else:
+            calc = '{}{}{}'.format(calc, operand, alpha1)
+    return calc, kwargs
 
 
 def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_options=None, allBands='', overwrite=False,
