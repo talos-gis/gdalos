@@ -133,7 +133,7 @@ def gdalos_trans(
     out_path_with_src_folders: str = True,
     skip_if_exists=True,
     create_info=True,
-    cog=True,
+    cog=...,
     multi_file_as_vrt=False,
     of: MaybeSequence[str] = "GTiff",
     outext: str = "tif",
@@ -209,9 +209,7 @@ def gdalos_trans(
     ]
     for key in key_list_arguments:
         val = all_args[key]
-        val = gdalos_util.flatten_and_expand_file_list(
-            val, do_expand_glob=key == "filename"
-        )
+        val = gdalos_util.flatten_and_expand_file_list(val, do_expand_glob=key == "filename")
         if key == "filename":
             if gdalos_util.is_list_like(val) and multi_file_as_vrt:
                 vrt_path = gdalos_vrt(
@@ -269,11 +267,19 @@ def gdalos_trans(
         logger.info(all_args)
     # endregion
 
-    filename = Path(filename.strip())
-    if os.path.isdir(filename):
-        raise Exception('input is a dir, not a file: "{}"'.format(filename))
-    if not os.path.isfile(filename):
-        raise OSError('file not found: "{}"'.format(filename))
+    filename_is_ds = not isinstance(filename, (str, Path))
+    if filename_is_ds:
+        input_ext = None
+        create_info = False
+    else:
+        filename = Path(filename.strip())
+        if os.path.isdir(filename):
+            raise Exception('input is a dir, not a file: "{}"'.format(filename))
+        if not os.path.isfile(filename):
+            raise OSError('file not found: "{}"'.format(filename))
+        input_ext = os.path.splitext(filename)[1].lower()
+    if cog is ...:
+        cog = not filename_is_ds
 
     if extent is None:
         extent_in_4326 = True
@@ -287,12 +293,9 @@ def gdalos_trans(
 
     extent_was_cropped = False
     extent_aligned = True
-    input_ext = os.path.splitext(filename)[1].lower()
     input_is_vrt = input_ext == ".vrt"
 
-    ds = gdalos_util.open_ds(
-        filename, src_ovr=src_ovr, open_options=open_options, logger=logger
-    )
+    ds = gdalos_util.open_ds(filename, src_ovr=src_ovr, open_options=open_options, logger=logger)
 
     # region decide which overviews to make
     if src_ovr is None:
@@ -312,15 +315,6 @@ def gdalos_trans(
                     filename, src_ovr=src_ovr, open_options=open_options, logger=logger
                 )
     # endregion
-
-    # In case of north up images,
-    # GT(2) and GT(4) coefficients are zero,
-    # GT(1) is pixel width,
-    # GT(5) is pixel height.
-    # (GT(0),GT(3)) position is the top left corner of the top left pixel of the raster.
-    # Note that the pixel/line coordinates in the above are from (0.0,0.0) at the top left corner of the top left pixel
-    # to (width_in_pixels,height_in_pixels) at the bottom right corner of the bottom right pixel.
-    # The pixel/line location of the center of the top left pixel would therefore be (0.5,0.5).
 
     geo_transform = ds.GetGeoTransform()
     input_res = (geo_transform[1], geo_transform[5])
@@ -540,7 +534,7 @@ def gdalos_trans(
     # endregion
 
     # region make out_filename
-    auto_out_filename = out_filename is None
+    auto_out_filename = out_filename is None and of != 'MEM'
     if auto_out_filename:
         if (
             cog_2_steps
@@ -581,8 +575,10 @@ def gdalos_trans(
                 out_filename = gdalos_util.concat_paths(
                     out_filename, ".ovr" * (src_ovr + 1)
                 )
-    else:
+    elif out_filename:
         out_filename = Path(out_filename)
+    else:
+        out_filename = ''
 
     if out_path is not None:
         if out_path_with_src_folders:
@@ -591,7 +587,7 @@ def gdalos_trans(
             out_src_path = [out_filename.parts[-1]]
         out_filename = Path(out_path).joinpath(*out_src_path)
 
-    if not os.path.exists(os.path.dirname(out_filename)):
+    if out_filename and not os.path.exists(os.path.dirname(out_filename)):
         os.makedirs(os.path.dirname(out_filename), exist_ok=True)
 
     if cog:
@@ -618,7 +614,7 @@ def gdalos_trans(
     if cog_ready or ovr_type == OvrType.existing_reuse or (filename == out_filename):
         skipped = True
     else:
-        skipped = do_skip_if_exists(out_filename, skip_if_exists, logger)
+        skipped = False if filename_is_ds else do_skip_if_exists(out_filename, skip_if_exists, logger)
 
     if not cog_ready and write_spec:
         spec_filename = gdalos_util.concat_paths(cog_filename, ".spec")
@@ -638,10 +634,11 @@ def gdalos_trans(
         no_yes = ("NO", "YES")
         if not isinstance(tiled, str):
             tiled = no_yes[tiled]
-        creation_options["TILED"] = tiled
-        creation_options["BIGTIFF"] = big_tiff
-        creation_options["COMPRESS"] = comp
         common_options["format"] = of
+        if of == 'GTiff':
+            creation_options["TILED"] = tiled
+            creation_options["BIGTIFF"] = big_tiff
+            creation_options["COMPRESS"] = comp
         if cog and not cog_2_steps:
             creation_options["COPY_SRC_OVERVIEWS"] = "YES"
 
@@ -678,19 +675,15 @@ def gdalos_trans(
             if do_warp:
                 if verbose and warp_options:
                     logger.info("wrap options: " + str(warp_options))
-                ret_code = (
-                    gdal.Warp(str(out_filename), ds, **common_options, **warp_options)
-                    is not None
-                )
+                out_ds = gdal.Warp(str(out_filename), ds, **common_options, **warp_options)
+                ret_code = out_ds is not None
             else:
                 if verbose and translate_options:
                     logger.info("translate options: " + str(translate_options))
-                ret_code = (
-                    gdal.Translate(
-                        str(out_filename), ds, **common_options, **translate_options
-                    )
-                    is not None
-                )
+                out_ds = gdal.Translate(str(out_filename), ds, **common_options, **translate_options)
+                ret_code = out_ds is not None
+            if out_filename:
+                out_ds = None  # close output ds
             if ret_code:
                 final_files_for_step_1.append(out_filename)
         except Exception as e:
@@ -709,13 +702,13 @@ def gdalos_trans(
 
     if verbose:
         logger.debug('closing file: "{}"'.format(filename))
-    del ds
+    ds = None  # close input ds if filename was input
     # end region
 
     # region create overviews, cog, info
     if not cog_ready and (ret_code or skipped):
         if not skipped and hide_nodatavalue:
-            gdalos_util.unset_nodatavalue(str(out_filename))
+            gdalos_util.unset_nodatavalue(out_ds or str(out_filename))
 
         if ovr_type == OvrType.existing_reuse:
             # overviews are numbered as follows (i.e. for dst_ovr_count=3, meaning create base+3 ovrs=4 files):
@@ -777,7 +770,7 @@ def gdalos_trans(
                         )
                 aux_files.extend(all_args_new["aux_files"])
             create_info = create_info and cog
-        elif ovr_type not in [None, OvrType.existing_reuse, OvrType.existing_auto]:
+        elif not filename_is_ds and ovr_type not in [None, OvrType.existing_reuse, OvrType.existing_auto]:
             # create overviews from dataset (internal or external)
             ret_code = gdalos_ovr(
                 out_filename,
@@ -890,7 +883,7 @@ def gdalos_trans(
             logger.removeHandler(handler)
         logger.debug("logging handlers removed")  # this shouldn't log anything
     # end region
-    return ret_code
+    return out_ds or ret_code
 
 
 def add_ovr(
@@ -1036,15 +1029,15 @@ def gdalos_ovr(
     return ret_code
 
 
-def gdalos_info(filename, skip_if_exists=False, logger=None):
-    filename = Path(filename)
-    if os.path.isdir(filename):
-        raise Exception(f"input is a dir, not a file: {filename}")
-    if not os.path.isfile(filename):
-        raise Exception("file not found: {}".format(filename))
-    out_filename = gdalos_util.concat_paths(filename, ".info")
+def gdalos_info(filename_or_ds, skip_if_exists=False, logger=None):
+    filename_or_ds = Path(filename_or_ds)
+    if os.path.isdir(filename_or_ds):
+        raise Exception(f"input is a dir, not a file: {filename_or_ds}")
+    if not os.path.isfile(filename_or_ds):
+        raise Exception("file not found: {}".format(filename_or_ds))
+    out_filename = gdalos_util.concat_paths(filename_or_ds, ".info")
     if not do_skip_if_exists(out_filename, skip_if_exists=skip_if_exists):
-        with gdalos_util.OpenDS(filename, logger=logger) as ds:
+        with gdalos_util.OpenDS(filename_or_ds, logger=logger) as ds:
             gdal_info = gdal.Info(ds)
         with open(out_filename, "w") as w:
             w.write(gdal_info)

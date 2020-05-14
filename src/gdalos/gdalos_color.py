@@ -98,23 +98,24 @@ class ColorPalette:
             key = int(palette_entry.getAttribute("value"))
             self.pal[key] = color
 
-    def get_color_table(self):
+    def get_color_table(self, min_val=0, max_val=256, fill_missing_colors=True):
         # create color table
         color_table = gdal.ColorTable()
         for key, col in self.pal.items():
             color_table.SetColorEntry(key, self.color_to_cc(col))  # set color for each key
 
-        # fill palette below min and above max
-        keys = list(self.pal.keys())
-        colors = list(self.pal.values())
-        min_key = keys[0]
-        min_col = self.color_to_cc(colors[0])
-        for i in range(0, min_key):
-            color_table.SetColorEntry(i, min_col)
-        max_key = keys[-1]
-        max_col = self.color_to_cc(colors[-1])
-        for i in range(max_key+1, 256):
-            color_table.SetColorEntry(i, max_col)
+        if fill_missing_colors:
+            # fill palette below min and above max
+            keys = list(self.pal.keys())
+            colors = list(self.pal.values())
+            first_key = keys[0]
+            first_col = self.color_to_cc(colors[0])
+            for i in range(min_val, first_key):
+                color_table.SetColorEntry(i, first_col)
+            last_key = keys[-1]
+            last_col = self.color_to_cc(colors[-1])
+            for i in range(last_key+1, max_val):
+                color_table.SetColorEntry(i, last_col)
 
         return color_table
 
@@ -128,7 +129,7 @@ class ColorPalette:
             r = byte(color, 2)
             a = byte(color, 3)
 
-            if a > 0:
+            if a < 255:
                 return r, g, b, a
             else:
                 return r, g, b
@@ -145,7 +146,7 @@ class ColorPalette:
             if len(cc) == 1:
                 return int(cc[0])
             elif len(cc) == 3:
-                return (((int(cc[0]) << 8) + int(cc[1])) << 8) + int(cc[2])
+                return (((((255 << 8) + int(cc[0])) << 8) + int(cc[1])) << 8) + int(cc[2])
             elif len(cc) == 4:
                 return (((((int(cc[3]) << 8) + int(cc[0])) << 8) + int(cc[1])) << 8) + int(cc[2])
             else:

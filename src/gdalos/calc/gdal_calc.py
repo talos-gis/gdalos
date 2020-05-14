@@ -129,7 +129,10 @@ def doit(opts, args):
     if not opts.calc:
         raise Exception("No calculation provided.")
     elif not opts.outF:
-        raise Exception("No output file provided.")
+        if not opts.return_ds:
+            raise Exception("No output file provided.")
+        else:
+            os.format = 'MEM'
 
     if opts.format is None:
         opts.format = GetOutputDriverFor(opts.outF)
@@ -163,7 +166,9 @@ def doit(opts, args):
             else:
                 myBand = 1
 
-            if isinstance(myF, gdal.Dataset):
+            myF_is_ds = not isinstance(myF, str) #  and not not isinstance(myF, Path)
+            # myF_is_ds = isinstance(myF, gdal.Dataset)
+            if myF_is_ds:
                 myFile = myF
                 myF = None
             else:
@@ -268,7 +273,7 @@ def doit(opts, args):
     ################################################################
 
     # open output file exists
-    if os.path.isfile(opts.outF) and not opts.overwrite:
+    if opts.outF and os.path.isfile(opts.outF) and not opts.overwrite:
         if allBandsIndex is not None:
             raise Exception("Error! allBands option was given but Output file exists, must use --overwrite option!")
         if opts.debug:
@@ -291,11 +296,14 @@ def doit(opts, args):
 
     else:
         # remove existing file and regenerate
-        if os.path.isfile(opts.outF):
-            os.remove(opts.outF)
-        # create a new file
-        if opts.debug:
-            print("Generating output file %s" % (opts.outF))
+        if opts.outF:
+            if os.path.isfile(opts.outF):
+                os.remove(opts.outF)
+            # create a new file
+            if opts.debug:
+                print("Generating output file %s" % (opts.outF))
+        else:
+            opts.outF = ''
 
         # find data type to use
         if not opts.type:
@@ -461,6 +469,9 @@ def doit(opts, args):
         os.remove(tempFile)
     if not opts.quiet:
         print("100 - Done")
+    if not opts.return_ds:
+        myOut = None  # delete ds if outfile is given. otherwise return ds
+    return myOut
 
 ################################################################
 
@@ -479,7 +490,7 @@ def make_calc(filenames, alpha_pattern, operand, **kwargs):
 
 def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_options=None, allBands='', overwrite=False,
          debug=False, quiet=False, hideNodata=False, projectionCheck=False, color_table=None,
-         extent=None, **input_files):
+         extent=None, return_ds=False, **input_files):
     """ Perform raster calculations with numpy syntax.
     Use any basic arithmetic supported by numpy arrays such as +-*\ along with logical
     operators such as >. Note that all files must have the same dimensions, but no projection checking is performed.
@@ -511,12 +522,13 @@ def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_optio
     opts.debug = debug
     opts.quiet = quiet
 
+    opts.return_ds = return_ds
     opts.hideNodata = hideNodata
     opts.projectionCheck = projectionCheck
     opts.color_table = color_table
     opts.extent = extent
 
-    doit(opts, None)
+    return doit(opts, None)
 
 
 def store_input_file(option, opt_str, value, parser):
