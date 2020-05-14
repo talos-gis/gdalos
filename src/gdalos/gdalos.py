@@ -635,7 +635,7 @@ def gdalos_trans(
         if not isinstance(tiled, str):
             tiled = no_yes[tiled]
         common_options["format"] = of
-        if of == 'GTiff':
+        if of.upper() == 'GTIFF':
             creation_options["TILED"] = tiled
             creation_options["BIGTIFF"] = big_tiff
             creation_options["COMPRESS"] = comp
