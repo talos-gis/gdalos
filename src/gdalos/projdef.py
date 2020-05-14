@@ -98,6 +98,13 @@ def get_srs_pj_from_ds(ds):
     return srs_pj4
 
 
+def get_srs_pj_from_epsg(epsg=4326):
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(epsg)
+    srs_pj4 = srs.ExportToProj4()
+    return srs_pj4
+
+
 def proj_is_equivalent(pj1, pj2):
     srs1 = osr.SpatialReference()
     srs1.ImportFromProj4(pj1)
