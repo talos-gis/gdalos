@@ -328,16 +328,7 @@ def gdalos_trans(
     pjstr_tgt_srs = None
     tgt_zone = None
     if warp_CRS is not None:
-        if isinstance(warp_CRS, str) and warp_CRS.startswith("+"):
-            pjstr_tgt_srs = warp_CRS  # ProjString
-        else:
-            tgt_zone = projdef.get_number(warp_CRS)
-            if tgt_zone is None:
-                tgt_zone = projdef.get_zone_from_name(warp_CRS)
-            else:
-                warp_CRS = f"w84u{warp_CRS}"
-            # "short ProjString"
-            pjstr_tgt_srs = projdef.get_proj4_string(warp_CRS[0], tgt_zone)
+        pjstr_tgt_srs, tgt_zone = projdef.parse_proj4_string_and_zone(warp_CRS)
         if projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs):
             warp_CRS = None  # no warp is really needed here
 
@@ -415,13 +406,13 @@ def gdalos_trans(
     if extent is not None or partition is not None:
         pjstr_4326 = projdef.get_proj4_string("w")  # 'EPSG:4326'
         if extent is None:
-            transform = gdalos_extent.get_transform(pjstr_src_srs, pjstr_4326)
+            transform = projdef.get_transform(pjstr_src_srs, pjstr_4326)
             extent = gdalos_extent.translate_extent(org_extent_in_src_srs, transform)
         if pjstr_tgt_srs is None:
             pjstr_tgt_srs = pjstr_src_srs
             transform = None
         else:
-            transform = gdalos_extent.get_transform(pjstr_src_srs, pjstr_tgt_srs)
+            transform = projdef.get_transform(pjstr_src_srs, pjstr_tgt_srs)
 
         org_extent_in_tgt_srs = gdalos_extent.translate_extent(
             org_extent_in_src_srs, transform
@@ -430,7 +421,7 @@ def gdalos_trans(
             raise Exception(f"no input extent: {filename} [{org_extent_in_tgt_srs}]")
 
         if extent_in_4326:
-            transform = gdalos_extent.get_transform(pjstr_4326, pjstr_tgt_srs)
+            transform = projdef.get_transform(pjstr_4326, pjstr_tgt_srs)
             out_extent_in_tgt_srs = gdalos_extent.translate_extent(extent, transform)
         else:
             out_extent_in_tgt_srs = extent
@@ -438,7 +429,7 @@ def gdalos_trans(
 
         if out_extent_in_tgt_srs != org_extent_in_tgt_srs:
             extent_was_cropped = True
-            transform = gdalos_extent.get_transform(pjstr_tgt_srs, pjstr_4326)
+            transform = projdef.get_transform(pjstr_tgt_srs, pjstr_4326)
             extent = gdalos_extent.translate_extent(out_extent_in_tgt_srs, transform)
 
         if out_extent_in_tgt_srs.is_empty():
@@ -457,7 +448,7 @@ def gdalos_trans(
         # -te minx miny maxx maxy
         warp_options["outputBounds"] = out_extent_in_tgt_srs_part.ldru
 
-        transform = gdalos_extent.get_transform(pjstr_4326, pjstr_src_srs)
+        transform = projdef.get_transform(pjstr_4326, pjstr_src_srs)
         out_extent_in_src_srs = gdalos_extent.translate_extent(extent, transform)
         out_extent_in_src_srs = out_extent_in_src_srs.intersect(org_extent_in_src_srs)
         if out_extent_in_src_srs.is_empty():
@@ -471,7 +462,7 @@ def gdalos_trans(
         if not isinstance(out_res, Sequence):
             out_res = [out_res, -out_res]
     elif warp_CRS is not None:
-        transform_src_tgt = gdalos_extent.get_transform(pjstr_src_srs, pjstr_tgt_srs)
+        transform_src_tgt = projdef.get_transform(pjstr_src_srs, pjstr_tgt_srs)
         if transform_src_tgt is not None:
             out_res = gdalos_extent.transform_resolution(
                 transform_src_tgt, input_res, out_extent_in_src_srs
@@ -547,7 +538,7 @@ def gdalos_trans(
         else:
             out_extent_in_4326 = extent
             if extent_was_cropped and (out_extent_in_src_srs is not None):
-                transform = gdalos_extent.get_transform(pjstr_src_srs, pjstr_4326)
+                transform = projdef.get_transform(pjstr_src_srs, pjstr_4326)
                 out_extent_in_4326 = gdalos_extent.translate_extent(
                     out_extent_in_src_srs, transform
                 )

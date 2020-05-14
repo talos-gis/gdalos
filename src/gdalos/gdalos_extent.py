@@ -25,32 +25,6 @@ from gdalos.rectangle import GeoRectangle, get_points_extent
 # The pixel/line location of the center of the top left pixel would therefore be (0.5,0.5).
 
 
-def _srs(srs):
-    if isinstance(srs, str):
-        srs_ = osr.SpatialReference()
-        if srs_.ImportFromProj4(srs) != ogr.OGRERR_NONE:
-            raise Exception("ogr error when parsing srs")
-        srs = srs_
-    return srs
-
-
-def reproject_coordinates(coords, src_srs, tgt_srs):
-    src_srs = _srs(src_srs)
-    tgt_srs = _srs(tgt_srs)
-
-    transform = osr.CoordinateTransformation(src_srs, tgt_srs)
-    return [transform.TransformPoint(src_x, src_y)[:2] for src_x, src_y in coords]
-
-
-def get_transform(src_srs, tgt_srs):
-    src_srs = _srs(src_srs)
-    tgt_srs = _srs(tgt_srs)
-    if src_srs.IsSame(tgt_srs):
-        return None
-    else:
-        return osr.CoordinateTransformation(src_srs, tgt_srs)
-
-
 def calc_dx_dy(extent: GeoRectangle, sample_count: int):
     (min_x, max_x, min_y, max_y) = extent.min_max
     w = max_x - min_x

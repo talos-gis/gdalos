@@ -1,6 +1,6 @@
 from numbers import Real
 
-from osgeo import osr
+from osgeo import osr, ogr
 
 
 def get_floats(s):
@@ -113,6 +113,47 @@ def proj_is_equivalent(pj1, pj2):
     srs2.ImportFromProj4(pj2)
 
     return srs1.IsSame(srs2)
+
+
+def _srs(srs):
+    if isinstance(srs, str):
+        srs_ = osr.SpatialReference()
+        if srs_.ImportFromProj4(srs) != ogr.OGRERR_NONE:
+            raise Exception("ogr error when parsing srs")
+        srs = srs_
+    return srs
+
+
+def reproject_coordinates(coords, src_srs, tgt_srs):
+    src_srs = _srs(src_srs)
+    tgt_srs = _srs(tgt_srs)
+
+    transform = osr.CoordinateTransformation(src_srs, tgt_srs)
+    return [transform.TransformPoint(src_x, src_y)[:2] for src_x, src_y in coords]
+
+
+def get_transform(src_srs, tgt_srs):
+    src_srs = _srs(src_srs)
+    tgt_srs = _srs(tgt_srs)
+    if src_srs.IsSame(tgt_srs):
+        return None
+    else:
+        return osr.CoordinateTransformation(src_srs, tgt_srs)
+
+
+def parse_proj4_string_and_zone(warp_CRS):
+    zone = None
+    if isinstance(warp_CRS, str) and warp_CRS.startswith("+"):
+        pj_string = warp_CRS  # ProjString
+    else:
+        zone = get_number(warp_CRS)
+        if zone is None:
+            zone = get_zone_from_name(warp_CRS)
+        else:
+            warp_CRS = f"w84u{warp_CRS}"
+        # "short ProjString"
+        pj_string = get_proj4_string(warp_CRS[0], zone)
+    return pj_string, zone
 
 
 ED50_towgs84 = "-87,-98,-121"
