@@ -188,3 +188,9 @@ def wkt_write_ogr(path, wkt_list, of='ESRI Shapefile', epsg=4326):
     # Destroy the data source to free resources
     ds.Destroy()
 
+
+def get_ext_by_of(of: str):
+    ext = of.lower()
+    if ext == 'gtiff':
+        ext = 'tif'
+    return '.'+ext

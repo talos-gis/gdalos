@@ -1,3 +1,4 @@
+import os
 import re
 import gdal
 from xml.dom import minidom
@@ -177,6 +178,18 @@ def save_palette(color_palette):
     else:
         raise Exception('Unknown color palette type {}'.format(color_palette))
     return color_filename, temp_color_filename
+
+
+def get_color_table(color_palette):
+    if color_palette is None:
+        return None
+    color_filename, temp_color_filename = save_palette(color_palette)
+    pal = ColorPalette()
+    pal.read(color_filename)
+    color_table = pal.get_color_table()
+    if temp_color_filename:
+        os.remove(temp_color_filename)
+    return color_table
 
 
 if __name__ == "__main__":
