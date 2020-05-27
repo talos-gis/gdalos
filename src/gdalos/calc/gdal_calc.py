@@ -344,8 +344,7 @@ def doit(opts, args):
             #                    output_format=output_format_crop, extent=extent, cutline=cutline,
             #                    common_options=common_options)
 
-            # write to band
-            myOutB = None
+            myOutB = None  # write to band
 
     if opts.debug:
         print("output file: %s, dimensions: %s, %s, type: %s" % (
@@ -468,6 +467,7 @@ def doit(opts, args):
                 # write data block to the output file
                 myOutB = myOut.GetRasterBand(bandNo)
                 gdalnumeric.BandWriteArray(myOutB, myResult, xoff=myX, yoff=myY)
+                myOutB = None  # write to band
 
     for idx, tempFile in enumerate(myTempFileNames):
         myFiles[idx] = None
