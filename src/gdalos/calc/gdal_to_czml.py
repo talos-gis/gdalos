@@ -15,7 +15,7 @@ def gdal_to_czml(ds, name=None, out_filename=None, description=None):
     pjstr_src_srs = projdef.get_srs_pj_from_ds(ds)
     pjstr_tgt_srs = projdef.get_srs_pj_from_epsg()
     if not projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs):
-        ds = gdalos_trans(ds, warp_CRS=pjstr_tgt_srs, of='MEM', ovr_type=None)
+        ds = gdalos_trans(ds, warp_CRS=pjstr_tgt_srs, of='MEM', ovr_type=None, write_spec=False)
 
     # calculate the extent
     ulx, xres, xskew, uly, yskew, yres = ds.GetGeoTransform()

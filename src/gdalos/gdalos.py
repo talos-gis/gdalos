@@ -373,7 +373,7 @@ def gdalos_trans(
     src_is_lossy = (org_comp is not None) and ("JPEG" in org_comp)
     if lossy in [None, ...]:
         lossy = src_is_lossy or resample_is_needed
-    if lossy and (kind == RasterKind.dtm):
+    if lossy and (kind != RasterKind.photo):
         lossy = False
     if not lossy:
         comp = "DEFLATE"
