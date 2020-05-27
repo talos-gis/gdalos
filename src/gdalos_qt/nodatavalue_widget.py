@@ -1,12 +1,13 @@
-from typing import Union
+from typing import Union, Optional
 
 from fidget.backend.QtWidgets import QHBoxLayout
 from fidget.widgets import FidgetConst, FidgetInt, FidgetStacked
 
 
-class NodatavalueWidget(FidgetStacked[Union[float, type(...)]]):
+class NodatavalueWidget(FidgetStacked[Optional[Union[float, type(...)]]]):
     INNER_TEMPLATES = [
         FidgetConst.template("auto", option=("auto", ...)),
+        FidgetConst.template("None", option=("None", None)),
         FidgetInt.template("number"),
     ]
     SELECTOR_CLS = "radio"

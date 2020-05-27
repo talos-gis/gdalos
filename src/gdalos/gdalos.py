@@ -131,11 +131,11 @@ def gdalos_trans(
     filename: MaybeSequence[str],
     out_filename: str = None,
     out_path: str = None,
-    return_ds: bool = ...,
+    return_ds: Union[type(...), bool] = ...,
     out_path_with_src_folders: str = True,
     skip_if_exists=True,
     create_info=True,
-    cog=...,
+    cog: Union[type(...), bool] = ...,
     multi_file_as_vrt=False,
     of: MaybeSequence[str] = "GTiff",
     outext: str = "tif",
@@ -155,8 +155,8 @@ def gdalos_trans(
     src_ovr: Optional[int] = None,
     keep_src_ovr_suffixes: bool = True,
     dst_ovr_count: Optional[int] = None,
-    src_nodatavalue: Real = ...,
-    dst_nodatavalue: Real = ...,
+    dst_nodatavalue: Optional[Union[type(...), Real]] = ...,  # None -> don't process; ... -> process only for DTM
+    src_nodatavalue: Optional[Union[type(...), Real]] = ...,  # None -> use minimum; ... -> use original
     hide_nodatavalue: bool = False,
     kind: RasterKind = None,
     resampling_alg=None,
@@ -393,7 +393,7 @@ def gdalos_trans(
         if kind == RasterKind.dtm:
             dst_nodatavalue = default_multi_byte_nodata_value
         else:
-            dst_nodatavalue = None
+            dst_nodatavalue = None  # don't process no_data
     if dst_nodatavalue is not None:
         src_nodatavalue_org = gdalos_util.get_nodatavalue(ds)
         if src_nodatavalue is ...:

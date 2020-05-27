@@ -176,11 +176,15 @@ class GdalosWidget(FidgetConverter):
                     ),
                     (
                         "dst_nodatavalue",
-                        NodatavalueWidget.template("destination nodatavalue"),
+                        # FidgetOptional.template(
+                            NodatavalueWidget.template("destination nodatavalue"),
+                        # ),
                     ),
                     (
                         "src_nodatavalue",
-                        NodatavalueWidget.template("source nodatavalue"),
+                        # FidgetOptional.template(
+                            NodatavalueWidget.template("source nodatavalue"),
+                        # ),
                     ),
                     FidgetCheckBox.template("hide nodatavalue", initial_value=False),
                 ],
