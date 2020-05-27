@@ -49,6 +49,6 @@ if __name__ == "__main__":
     from fidget.backend import prefer
 
     # the prefer command must be called before importing fidget.backend.QtWidgets
-    prefer("PyQt5")
+    prefer("PyQt5", True)
 
     gdalos_qt_main()
