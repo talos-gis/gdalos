@@ -54,6 +54,7 @@ import numpy
 from osgeo import gdal
 from osgeo import gdalnumeric
 from gdalos import gdalos_extent
+from gdalos.calc.gdal_dem_color_cutline import gdal_crop
 
 # create alphabetic list for storing input layers
 AlphaList = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
@@ -338,6 +339,10 @@ def doit(opts, args):
                 # set color table and color interpretation
                 myOutB.SetRasterColorTable(opts.color_table)
                 myOutB.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
+            # if opts.cutline:
+            #     myOut = gdal_crop(myOut, out_filename,
+            #                    output_format=output_format_crop, extent=extent, cutline=cutline,
+            #                    common_options=common_options)
 
             # write to band
             myOutB = None
@@ -490,7 +495,7 @@ def make_calc(filenames, alpha_pattern, operand, **kwargs):
 
 def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_options=None, allBands='', overwrite=False,
          debug=False, quiet=False, hideNodata=False, projectionCheck=False, color_table=None,
-         extent=None, return_ds=False, **input_files):
+         extent=None, cutline=None, return_ds=False, **input_files):
     """ Perform raster calculations with numpy syntax.
     Use any basic arithmetic supported by numpy arrays such as +-*\ along with logical
     operators such as >. Note that all files must have the same dimensions, but no projection checking is performed.
@@ -527,6 +532,7 @@ def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_optio
     opts.projectionCheck = projectionCheck
     opts.color_table = color_table
     opts.extent = extent
+    opts.cutline = cutline
 
     return doit(opts, None)
 
@@ -585,6 +591,8 @@ def main():
                       help="Read the named file and substitute the contents into the command line options list.")
     parser.add_option("--extent", dest="extent", type=str,
                       help="how to treat different geotrasnforms [ignore|fail|union|intersect]")
+    parser.add_option("--cutline", dest="cutline", type=str,
+                      help="input cutline polygon(s)")
     parser.add_option("--projectionCheck", dest="projectionCheck", action="store_true",
                       help="check that all rasters share the same projection", metavar="value")
     # when extent don't agree: 0=ignore(check only dims)/1=fail (gt must also agree)/2=union/3=intersection

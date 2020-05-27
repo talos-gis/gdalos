@@ -32,9 +32,9 @@ def viewshed_run(md, interval, grid_range, center, oz, tz, output_path, input_fi
     
     vv = st_seen
     iv = st_hidden
-    ndv = -1
-    cc = 0
-    ov = 0
+    ndv = st_nodtm
+    ov = st_nodata
+    cc = 0.85714
     for i in grid_range:
         for j in grid_range:
             ox = center[0] + i * interval
@@ -43,7 +43,7 @@ def viewshed_run(md, interval, grid_range, center, oz, tz, output_path, input_fi
             name = '{}_{}'.format(i, j)
             filename = output_path / (name + '.tif')
 
-            dest = gdal.ViewshedGenerate(band, 'GTIFF', filename, None,
+            dest = gdal.ViewshedGenerate(band, 'GTiff', str(filename), None,
                                          ox, oy, oz, tz, vv, iv, ov, ndv, cc,
                                          mode=2,
                                          maxDistance=md)

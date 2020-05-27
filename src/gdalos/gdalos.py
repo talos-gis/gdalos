@@ -2,6 +2,7 @@ import datetime
 import logging
 import os
 import time
+import tempfile
 from enum import Enum, auto
 from numbers import Real
 from pathlib import Path
@@ -130,6 +131,7 @@ def gdalos_trans(
     filename: MaybeSequence[str],
     out_filename: str = None,
     out_path: str = None,
+    return_ds: bool = ...,
     out_path_with_src_folders: str = True,
     skip_if_exists=True,
     create_info=True,
@@ -147,6 +149,7 @@ def gdalos_trans(
     extent_in_4326: bool = True,
     src_win=None,
     warp_CRS: MaybeSequence[Warp_crs_base] = None,
+    cutline: Optional[Union[str, List[str]]] = None,
     out_res: Tuple[Real, Real] = None,
     ovr_type: Optional[OvrType] = OvrType.auto_select,
     src_ovr: Optional[int] = None,
@@ -203,6 +206,7 @@ def gdalos_trans(
         "filename",
         "extent",
         "warp_CRS",
+        # "cutline"
         "of",
         "expand_rgb",
         "partition",
@@ -268,6 +272,8 @@ def gdalos_trans(
     # endregion
 
     filename_is_ds = not isinstance(filename, (str, Path))
+    if return_ds is ...:
+        return_ds = of == 'MEM'
     if filename_is_ds:
         input_ext = None
         create_info = False
@@ -328,11 +334,11 @@ def gdalos_trans(
     pjstr_tgt_srs = None
     tgt_zone = None
     if warp_CRS is not None:
-        pjstr_tgt_srs, tgt_zone = projdef.parse_proj4_string_and_zone(warp_CRS)
+        pjstr_tgt_srs, tgt_zone = projdef.parse_proj_string_and_zone(warp_CRS)
         if projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs):
             warp_CRS = None  # no warp is really needed here
 
-    do_warp = warp_CRS is not None
+    do_warp = warp_CRS is not None or cutline is not None
     if warp_CRS is not None:
         extent_aligned = False
         if tgt_zone is not None and extent_in_4326:
@@ -351,6 +357,15 @@ def gdalos_trans(
             common_options["outputType"] = gdal.GDT_Float32  # 'Float32'
         warp_options["dstSRS"] = pjstr_tgt_srs
     # endregion
+
+    if cutline:
+        if isinstance(cutline, str):
+            cutline_filename = cutline
+        elif isinstance(cutline, Sequence):
+            cutline_filename = tempfile.mktemp(suffix='.gpkg')
+            temp_files.append(cutline_filename)
+            gdalos_util.wkt_write_ogr(cutline_filename, cutline, of='GPKG')
+        warp_options['cutlineDSName'] = cutline_filename
 
     # region compression
     resample_is_needed = warp_CRS is not None or (out_res is not None)
@@ -404,7 +419,7 @@ def gdalos_trans(
         raise Exception(f"no input extent: {filename} [{org_extent_in_src_srs}]")
     out_extent_in_src_srs = org_extent_in_src_srs
     if extent is not None or partition is not None:
-        pjstr_4326 = projdef.get_proj4_string("w")  # 'EPSG:4326'
+        pjstr_4326 = projdef.get_proj_string("w")  # 'EPSG:4326'
         if extent is None:
             transform = projdef.get_transform(pjstr_src_srs, pjstr_4326)
             extent = gdalos_extent.translate_extent(org_extent_in_src_srs, transform)
@@ -621,6 +636,7 @@ def gdalos_trans(
 
     # region create base raster
     ret_code = None
+    out_ds = None
     if not skipped:
         no_yes = ("NO", "YES")
         if not isinstance(tiled, str):
@@ -673,7 +689,7 @@ def gdalos_trans(
                     logger.info("translate options: " + str(translate_options))
                 out_ds = gdal.Translate(str(out_filename), ds, **common_options, **translate_options)
                 ret_code = out_ds is not None
-            if out_filename:
+            if not return_ds:
                 out_ds = None  # close output ds
             if ret_code:
                 final_files_for_step_1.append(out_filename)

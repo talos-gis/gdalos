@@ -11,6 +11,6 @@ def get_test_viewshed_params() -> ViewshedGridParams:
     res.grid_range = range(-j, j + 1)
     res.center = (700_000, 3550_000)
     res.oz = 10
-    res.tz = 100
+    res.tz = 10
     return res
 

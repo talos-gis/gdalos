@@ -180,7 +180,7 @@ def save_palette(color_palette):
 
 
 if __name__ == "__main__":
-    cp = ColorPalette()
-    dir_path = Path('/home/idan/maps/comb')
+    # dir_path = Path('/home/idan/maps/comb')
+    dir_path = Path(r'sample/color_files')
     for filename in glob.glob(str(dir_path / '*.qlr')):
         qlr_to_color_file(filename)

@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from typing import Iterator, Sequence
 
-import gdal
+import gdal, ogr, osr
 
 
 def open_ds(filename_or_ds, **kwargs):
@@ -170,3 +170,21 @@ def is_list_like(lst):
 
 def concat_paths(*argv):
     return Path("".join([str(p) for p in argv]))
+
+
+def wkt_write_ogr(path, wkt_list, of='ESRI Shapefile', epsg=4326):
+    driver = ogr.GetDriverByName(of)
+    ds = driver.CreateDataSource(path)
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(epsg)
+
+    layer = ds.CreateLayer('', srs, ogr.wkbUnknown)
+    for wkt in wkt_list:
+        feature = ogr.Feature(layer.GetLayerDefn())
+        geom = ogr.CreateGeometryFromWkt(wkt)
+        feature.SetGeometry(geom)  # Set the feature geometry
+        layer.CreateFeature(feature)  # Create the feature in the layer
+        feature.Destroy()  # Destroy the feature to free resources
+    # Destroy the data source to free resources
+    ds.Destroy()
+
