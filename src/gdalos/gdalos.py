@@ -134,12 +134,13 @@ def gdalos_trans(
     return_ds: Union[type(...), bool] = ...,
     out_path_with_src_folders: str = True,
     skip_if_exists=True,
-    create_info=True,
     cog: Union[type(...), bool] = ...,
-    multi_file_as_vrt=False,
+    write_info: bool = False,
+    write_spec: bool = False,
+    multi_file_as_vrt: bool = False,
     of: MaybeSequence[str] = "GTiff",
     outext: str = "tif",
-    tiled=True,
+    tiled: bool = True,
     big_tiff: str = "IF_SAFER",
     config_options: dict = None,
     open_options: dict = None,
@@ -155,7 +156,7 @@ def gdalos_trans(
     src_ovr: Optional[int] = None,
     keep_src_ovr_suffixes: bool = True,
     dst_ovr_count: Optional[int] = None,
-    dst_nodatavalue: Optional[Union[type(...), Real]] = ...,  # None -> don't process; ... -> process only for DTM
+    dst_nodatavalue: Optional[Union[type(...), Real]] = None,  # None -> don't change; ... -> change only for DTM
     src_nodatavalue: Optional[Union[type(...), Real]] = ...,  # None -> use minimum; ... -> use original
     hide_nodatavalue: bool = False,
     kind: RasterKind = None,
@@ -172,7 +173,6 @@ def gdalos_trans(
     partition=None,
     print_progress=...,
     logger=...,
-    write_spec=True,
     *,
     all_args: dict = None,
 ):
@@ -276,7 +276,7 @@ def gdalos_trans(
         return_ds = of == 'MEM'
     if filename_is_ds:
         input_ext = None
-        create_info = False
+        write_info = False
     else:
         filename = Path(filename.strip())
         if os.path.isdir(filename):
@@ -393,15 +393,18 @@ def gdalos_trans(
         if kind == RasterKind.dtm:
             dst_nodatavalue = default_multi_byte_nodata_value
         else:
-            dst_nodatavalue = None  # don't process no_data
+            dst_nodatavalue = None  # don't change no_data
     if dst_nodatavalue is not None:
         src_nodatavalue_org = gdalos_util.get_nodatavalue(ds)
         if src_nodatavalue is ...:
             src_nodatavalue = src_nodatavalue_org
-        if src_nodatavalue is None:
+        elif src_nodatavalue is None:
             # assume raster minimum is nodata if nodata isn't set
+            logger.debug('finding raster minimum, this might take some time...')
             src_min_value = gdalos_util.get_raster_minimum(ds)
-            if abs(src_min_value - default_multi_byte_nodata_value) < 100:
+            # if abs(src_min_value - default_multi_byte_nodata_value) < 100:
+            # assuming that the raster minimum is indeed a nodatavalue if it's very low
+            if True:
                 src_nodatavalue = src_min_value
         if src_nodatavalue is not None:
             if src_nodatavalue != dst_nodatavalue:
@@ -750,8 +753,8 @@ def gdalos_trans(
                 if out_res is not None:
                     res_factor = 2 ** (ovr_index + 1)
                     all_args_new["out_res"] = [r * res_factor for r in out_res]
-                all_args_new["create_info"] = (
-                    create_info and (ovr_index == src_ovr) and not cog
+                all_args_new["write_info"] = (
+                        write_info and (ovr_index == src_ovr) and not cog
                 )
                 ret_code = gdalos_trans(**all_args_new)
                 if not ret_code:
@@ -779,7 +782,7 @@ def gdalos_trans(
                             )
                         )
                 aux_files.extend(all_args_new["aux_files"])
-            create_info = create_info and cog
+            write_info = write_info and cog
         elif not filename_is_ds and ovr_type not in [None, OvrType.existing_reuse, OvrType.existing_auto]:
             # create overviews from dataset (internal or external)
             ret_code = gdalos_ovr(
@@ -817,7 +820,7 @@ def gdalos_trans(
                 delete_temp_files=False,
                 logger=logger,
                 skip_if_exists=skip_if_exists,
-                create_info=create_info,
+                write_info=write_info,
                 write_spec=False,
             )
             if ret_code and verbose:
@@ -835,10 +838,10 @@ def gdalos_trans(
                     )
             final_files.extend(cog_final_files)
             aux_files.extend(cog_aux_files)
-            create_info = (
+            write_info = (
                 False  # we don't need an info for the temp file from first step
             )
-        if create_info:
+        if write_info:
             info = gdalos_info(
                 out_filename, skip_if_exists=skip_if_exists, logger=logger
             )

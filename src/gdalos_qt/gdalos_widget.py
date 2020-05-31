@@ -19,7 +19,7 @@ from fidget.widgets import (
 )
 from gdalos import GeoRectangle, OvrType, RasterKind
 from gdalos_qt.crs_widget import CrsWidget
-from gdalos_qt.nodatavalue_widget import NodatavalueWidget
+from gdalos_qt.nodatavalue_widget import NodatavalueWidgetSrc, NodatavalueWidgetDst
 
 raster_fidget = FidgetFilePath.template(
     dialog={
@@ -57,8 +57,8 @@ class GdalosWidget(FidgetConverter):
                             "treat multi file as vrt", initial_value=False
                         ),
                     ),
-                    FidgetCheckBox.template("create info", initial_value=True),
-                    FidgetCheckBox.template("write spec", initial_value=True),
+                    FidgetCheckBox.template("write_info", initial_value=True),
+                    FidgetCheckBox.template("write_spec", initial_value=True),
                 ],
                 make_plaintext=False,
             ),
@@ -174,19 +174,6 @@ class GdalosWidget(FidgetConverter):
                             make_plaintext=True,
                         ),
                     ),
-                    (
-                        "dst_nodatavalue",
-                        # FidgetOptional.template(
-                            NodatavalueWidget.template("destination nodatavalue"),
-                        # ),
-                    ),
-                    (
-                        "src_nodatavalue",
-                        # FidgetOptional.template(
-                            NodatavalueWidget.template("source nodatavalue"),
-                        # ),
-                    ),
-                    FidgetCheckBox.template("hide nodatavalue", initial_value=False),
                 ],
                 make_plaintext=False,
             ),
@@ -241,6 +228,21 @@ class GdalosWidget(FidgetConverter):
                     FidgetOptional.template(
                         FidgetInt.template("partition", placeholder=False),
                         make_title=True,
+                    ),
+                ],
+                make_plaintext=False,
+            ),
+            FidgetDict.template(
+                'NoData value',
+                [
+                    FidgetCheckBox.template("hide nodatavalue", initial_value=False),
+                    (
+                        "dst_nodatavalue",
+                        NodatavalueWidgetDst.template("destination nodatavalue"),
+                    ),
+                    (
+                        "src_nodatavalue",
+                        NodatavalueWidgetSrc.template("source nodatavalue"),
                     ),
                 ],
                 make_plaintext=False,
