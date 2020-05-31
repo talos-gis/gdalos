@@ -121,6 +121,14 @@ class ColorPalette:
         return color_table
 
     @staticmethod
+    def format_number(num):
+        return num if isinstance(num, str) else '{:.2f}'.format(num)
+
+    @staticmethod
+    def format_color(col):
+        return col if isinstance(col, str) else '#{:06X}'.format(col)
+
+    @staticmethod
     def color_to_cc(color):
         if color < 256:
             return color

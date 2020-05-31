@@ -208,7 +208,7 @@ class GeoRectangle:
         return self.min_x, self.max_x, self.min_y, self.max_y
 
     def __repr__(self):
-        return f"Rectangle({self.x}, {self.y}, {self.w}, {self.h})"
+        return f"Rectangle({self.min_x}, {self.max_x}, {self.min_y}, {self.max_y}) wh({self.w}, {self.h}))"
 
 
 def get_points_extent(gt, cols, rows):

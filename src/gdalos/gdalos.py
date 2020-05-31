@@ -352,7 +352,7 @@ def gdalos_trans(
                 else:
                     extent = zone_extent.intersect(extent)
                 extent_was_cropped = True
-            out_suffixes.append(projdef.get_canonic_name(warp_CRS[0], tgt_zone))
+            out_suffixes.append(projdef.get_canonic_name(warp_CRS, tgt_zone))
         if kind == RasterKind.dtm:
             common_options["outputType"] = gdal.GDT_Float32  # 'Float32'
         warp_options["dstSRS"] = pjstr_tgt_srs
@@ -420,8 +420,9 @@ def gdalos_trans(
     out_extent_in_src_srs = org_extent_in_src_srs
     if extent is not None or partition is not None:
         pjstr_4326 = projdef.get_proj_string("w")  # 'EPSG:4326'
+        transform = projdef.get_transform(pjstr_src_srs, pjstr_4326)
+        src_srs_is_4326 = transform is None
         if extent is None:
-            transform = projdef.get_transform(pjstr_src_srs, pjstr_4326)
             extent = gdalos_extent.translate_extent(org_extent_in_src_srs, transform)
         if pjstr_tgt_srs is None:
             pjstr_tgt_srs = pjstr_src_srs
@@ -429,13 +430,15 @@ def gdalos_trans(
         else:
             transform = projdef.get_transform(pjstr_src_srs, pjstr_tgt_srs)
 
-        org_extent_in_tgt_srs = gdalos_extent.translate_extent(
-            org_extent_in_src_srs, transform
-        )
+        org_extent_in_tgt_srs = gdalos_extent.translate_extent(org_extent_in_src_srs, transform)
         if org_extent_in_tgt_srs.is_empty():
             raise Exception(f"no input extent: {filename} [{org_extent_in_tgt_srs}]")
 
         if extent_in_4326:
+            if src_srs_is_4326:
+                # we better intersect in 4326 then in a projected srs
+                # because the projected srs bounds might be wider then the 'valid' zone bounds
+                extent = extent.intersect(org_extent_in_src_srs)
             transform = projdef.get_transform(pjstr_4326, pjstr_tgt_srs)
             out_extent_in_tgt_srs = gdalos_extent.translate_extent(extent, transform)
         else:

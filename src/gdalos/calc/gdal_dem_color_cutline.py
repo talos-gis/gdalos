@@ -4,7 +4,7 @@ from typing import Optional, Sequence, List, Union
 from osgeo import gdal, ogr, osr
 from gdalos.rectangle import GeoRectangle
 from gdalos.calc import gdal_to_czml
-from gdalos import gdalos_color
+from gdalos.gdalos_color import ColorPalette, save_palette 
 from gdalos import gdalos_util
 
 # def get_named_temporary_filenme(suffix='', dir_name=''):
@@ -59,12 +59,14 @@ def gdal_crop(ds: gdal.Dataset, out_filename: str, output_format: str = 'MEM',
     return ds
 
 
-def make_czml_description(pal:gdalos_color.ColorPalette, process_palette):
+def make_czml_description(pal:ColorPalette, process_palette):
     if pal:
         if process_palette >= 2:
-            return ' '.join(['{:.2f}:#{:06X}'.format(x, c) for x, c in pal.pal.items()])
+            return ' '.join(['{}:{}'.format(
+                ColorPalette.format_number(x),
+                ColorPalette.format_color(c)) for x, c in pal.pal.items()])
         else:
-            return ' '.join(['{:.2f}'.format(x) for x in pal.pal.keys()])
+            return ' '.join([ColorPalette.format_number(x) for x in pal.pal.keys()])
     else:
         return None
 
@@ -110,11 +112,11 @@ def gdaldem_crop_and_color(ds: gdal.Dataset,
         max_val = bnd.GetMaximum()
 
     if do_color:
-        color_filename, temp_color_filename = gdalos_color.save_palette(color_palette)
+        color_filename, temp_color_filename = save_palette(color_palette)
         if not process_palette:
             pal = None
         else:
-            pal = gdalos_color.ColorPalette()
+            pal = ColorPalette()
             pal.read(color_filename)
             pal.apply_percent(min_val, max_val)
             # color_palette_stats(color_filename, min_val, max_val, process_palette)

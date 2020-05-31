@@ -67,10 +67,10 @@ def get_zone_center(float_zone):
 
 
 def get_canonic_name(datum, zone):
-    if datum[0].lower() != "e":
-        res = "w84"
-    else:
+    if isinstance(datum, str) and datum[0].lower() == "e":
         res = "e50"
+    else:
+        res = "w84"
     if zone != 0:
         res = res + "u" + str(zone)
     else:
