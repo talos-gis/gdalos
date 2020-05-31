@@ -67,9 +67,13 @@ class ColorPalette:
         with open(str(color_filename)) as fp:
             for line in fp:
                 split_line = line.strip().split(' ', maxsplit=1)
-                color = self.pal_color_to_rgb(split_line[1])
-
-                key = split_line[0].strip()
+                if len(split_line) < 2:
+                    continue
+                try:
+                    color = self.pal_color_to_rgb(split_line[1])
+                    key = split_line[0].strip()
+                except:
+                    raise Exception('Error reading palette line: {}'.format(line))
                 try:
                     key = to_number(key)
                 except ValueError:
@@ -173,7 +177,7 @@ def qlr_to_color_file(qlr_filename: Path) -> Path:
     return color_filename
 
 
-def save_palette(color_palette):
+def get_file_from_strings(color_palette):
     temp_color_filename = None
     if isinstance(color_palette, str):
         color_filename = color_palette
@@ -191,7 +195,7 @@ def save_palette(color_palette):
 def get_color_table(color_palette):
     if color_palette is None:
         return None
-    color_filename, temp_color_filename = save_palette(color_palette)
+    color_filename, temp_color_filename = get_file_from_strings(color_palette)
     pal = ColorPalette()
     pal.read(color_filename)
     color_table = pal.get_color_table()

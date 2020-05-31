@@ -1,6 +1,7 @@
 import gdal, osr
 import glob
 import tempfile
+import os
 from pathlib import Path
 from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans
 from gdalos.calc import gdal_calc, gdal_to_czml, dict_util
@@ -27,6 +28,7 @@ def viewshed_calc(input_ds,
         steps += 1
     if is_czml:
         steps += 1
+    temp_files = []
 
     post_process_needed = False
     if input_ds is None:
@@ -87,7 +89,9 @@ def viewshed_calc(input_ds,
 
             if operation:
                 if use_temp_tif:
+                    temp_files.append(d_path)
                     files.append(d_path)
+                    ds = None
                 else:
                     files.append(ds)
             else:
@@ -95,8 +99,6 @@ def viewshed_calc(input_ds,
                     src_band.SetRasterColorTable(color_table)
                     src_band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
             src_band = None
-            if use_temp_tif:
-                ds = None
 
         input_ds = None
         input_band = None
@@ -157,6 +159,11 @@ def viewshed_calc(input_ds,
         gdal_to_czml.gdal_to_czml(ds, name=output_filename, out_filename=output_filename)
 
     ds = None  # close ds
+
+    if temp_files:
+        for f in temp_files:
+            os.remove(f)
+
     return True
 
 

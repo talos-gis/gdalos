@@ -4,7 +4,7 @@ from typing import Optional, Sequence, List, Union
 from osgeo import gdal, ogr, osr
 from gdalos.rectangle import GeoRectangle
 from gdalos.calc import gdal_to_czml
-from gdalos.gdalos_color import ColorPalette, save_palette 
+from gdalos.gdalos_color import ColorPalette, get_file_from_strings
 from gdalos import gdalos_util
 
 # def get_named_temporary_filenme(suffix='', dir_name=''):
@@ -112,7 +112,7 @@ def gdaldem_crop_and_color(ds: gdal.Dataset,
         max_val = bnd.GetMaximum()
 
     if do_color:
-        color_filename, temp_color_filename = save_palette(color_palette)
+        color_filename, temp_color_filename = get_file_from_strings(color_palette)
         if not process_palette:
             pal = None
         else:
