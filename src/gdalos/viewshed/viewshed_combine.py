@@ -4,6 +4,7 @@ import tempfile
 import os
 import numpy as np
 from pathlib import Path
+from enum import Enum, auto
 from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans
 from gdalos.calc import gdal_calc, gdal_to_czml, dict_util
 from gdalos.viewshed import viewshed_consts, viewshed_params
@@ -22,9 +23,16 @@ def unique(arrs, multiple_nz=254, all_zero=255):
     return ret
 
 
+class CalcOperation(Enum):
+    viewshed = 0
+    sum = 1
+    unique = 2
+    sumz = 3
+
+
 def viewshed_calc(input_ds,
                   output_filename,
-                  arrays_dict, extent=2, cutline=None, operation=1,
+                  arrays_dict, extent=2, cutline=None, operation: CalcOperation = CalcOperation.sum,
                   in_coords_crs_pj=None, out_crs=None,
                   color_palette=None,
                   bi=1, co=None, of='GTiff',
@@ -38,6 +46,8 @@ def viewshed_calc(input_ds,
     # 3. post process
     # 4. czml
     steps = 1
+    if operation == CalcOperation.viewshed:
+        operation = None
     if operation:
         steps += 1
     if is_czml:
@@ -45,6 +55,12 @@ def viewshed_calc(input_ds,
     temp_files = []
 
     post_process_needed = False
+
+    if not files:
+        files = []
+    else:
+        files = files.copy()
+
     if input_ds is None:
         if not files:
             raise Exception('ds is None')
@@ -84,7 +100,7 @@ def viewshed_calc(input_ds,
         else:
             arrays_dict = arrays_dict[0:1]
 
-        max_rasters_count = 1000 if operation == 1 else 254 if operation == 2 else 1
+        max_rasters_count = 1 if operation is None else 254 if operation == CalcOperation.unique else 1000
         if len(arrays_dict) > max_rasters_count:
             arrays_dict = arrays_dict[0:max_rasters_count]
 
@@ -135,14 +151,17 @@ def viewshed_calc(input_ds,
     if operation:
         cutoff_value = viewshed_defaults['iv']
         alpha_pattern = '1*({{}}>{})'.format(cutoff_value)
-        if operation == 1:
+        # alpha_pattern = 'np.multiply({{}}>{}, dtype=np.uint8)'.format(cutoff_value)
+        if operation == CalcOperation.sum:
             old_sum = False
             if old_sum:
                 calc, kwargs = gdal_calc.make_calc_with_operand(files, alpha_pattern, '+')
             else:
                 calc, kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'sum')
-        elif operation == 2:
+        elif operation == CalcOperation.unique:
             calc, kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=unique)
+        elif operation == CalcOperation.sumz:
+            calc, kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=sum)
         else:
             raise Exception('Unknown operation: {}'.format(operation))
 
@@ -208,7 +227,6 @@ if __name__ == "__main__":
     dir_path = Path('/home/idan/maps')
     output_path = dir_path / Path('comb')
     raster_filename = Path(output_path) / Path('srtm1_36_sample.tif')
-    color_palette = './sample/color_files/comb.txt'
     input_ds = ds = gdalos_util.open_ds(raster_filename)
 
     vp = viewshed_params.get_test_viewshed_params()
@@ -239,8 +257,9 @@ if __name__ == "__main__":
 
     use_input_files = False
     run_single = False
-    run_comb = False
-    run_comb_with_post = True
+    run_comb = True
+    run_unique = False
+    run_comb_with_post = False
 
     if use_input_files:
         files_path = Path('/home/idan/maps/grid_comb/viewshed')
@@ -248,21 +267,13 @@ if __name__ == "__main__":
     else:
         files = []
 
-    if run_single:
-        output_filename = output_path / 'single.tif'
+    for calc in CalcOperation:
+        output_filename = output_path / Path(calc.name + '.tif')
+        color_palette = './sample/color_files/viewshed/{}.txt'.format(calc.name)
         viewshed_calc(input_ds,
                       output_filename,
                       inputs,
-                      operation=0,
-                      color_palette=color_palette,
-                      files=files)
-
-    if run_comb:
-        output_filename = output_path / 'combine.tif'
-        viewshed_calc(input_ds,
-                      output_filename,
-                      inputs,
-                      operation=1,
+                      operation=calc,
                       color_palette=color_palette,
                       files=files)
 
@@ -272,7 +283,7 @@ if __name__ == "__main__":
         viewshed_calc(input_ds,
                       output_filename,
                       inputs,
-                      operation=1,
+                      operation=CalcOperation.sum,
                       color_palette=color_palette,
                       cutline=cutline,
                       out_crs=0,

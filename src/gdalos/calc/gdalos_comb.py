@@ -121,7 +121,7 @@ def combine_all(path, outpath):
 
 if __name__ == '__main__':
     path = Path(r'sample')
-    color_filename = path / Path(r'color_files/comb.qlr')
+    color_filename = path / Path(r'color_files/viewshed/sum.qlr')
     pal = ColorPalette()
     pal.read(color_filename)
     pal.write_color_file(color_filename.with_suffix('.txt'))
