@@ -106,21 +106,17 @@ class ColorPalette:
     def get_color_table(self, min_val=0, max_val=256, fill_missing_colors=True):
         # create color table
         color_table = gdal.ColorTable()
-        for key, col in self.pal.items():
-            color_table.SetColorEntry(key, self.color_to_cc(col))  # set color for each key
-
         if fill_missing_colors:
-            # fill palette below min and above max
             keys = list(self.pal.keys())
-            colors = list(self.pal.values())
-            first_key = keys[0]
-            first_col = self.color_to_cc(colors[0])
-            for i in range(min_val, first_key):
-                color_table.SetColorEntry(i, first_col)
-            last_key = keys[-1]
-            last_col = self.color_to_cc(colors[-1])
-            for i in range(last_key+1, max_val):
-                color_table.SetColorEntry(i, last_col)
+            vals = list(self.pal.values())
+            c = self.color_to_cc(vals[0])
+            for key in range(min_val, max_val):
+                if key in keys:
+                    c = self.color_to_cc(self.pal[key])
+                color_table.SetColorEntry(key, c)
+        else:
+            for key, col in self.pal.items():
+                color_table.SetColorEntry(key, self.color_to_cc(col))  # set color for each key
 
         return color_table
 
@@ -134,9 +130,9 @@ class ColorPalette:
 
     @staticmethod
     def color_to_cc(color):
-        if color < 256:
-            return color
-        else:
+        # if color < 256:
+        #     return color
+        # else:
             b = byte(color, 0)
             g = byte(color, 1)
             r = byte(color, 2)

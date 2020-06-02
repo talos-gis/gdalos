@@ -24,14 +24,15 @@ def fill_arrays_dict(d: dict):
     return result
 
 
-def make_dicts_list_from_lists_dict(d: dict, new_keys):
+def make_dicts_list_from_lists_dict(d: dict, key_map):
     max_len = max(len(v) for v in d.values())
     result = []
     new_d = dict()
-    new_keys = new_keys or d.keys()
     for i in range(max_len):
         new_d = new_d.copy()
-        for k, v in zip(new_keys, d.values()):
+        for k, v in d.items():  # zip(new_keys, d.values()):
+            if key_map:
+                k = key_map[k]
             len_v = len(v)
             if i < len_v:
                 new_d[k] = v[i]
@@ -39,13 +40,20 @@ def make_dicts_list_from_lists_dict(d: dict, new_keys):
     return result
 
 
-def replace_keys(lst: list, new_keys):
-    if not new_keys:
-        return lst
+def replace_keys(dicts, key_map):
+    if not key_map:
+        return dicts
     result = []
-    for d in lst:
-        new_d = new_d.copy()
-        for k, v in zip(new_keys, d.values()):
+    single = isinstance(dicts, dict)
+    if single:
+        dicts = [dicts]
+    for d in dicts:
+        new_d = dict()
+        for k, v in d.items():
+            if key_map:
+                k = key_map[k]
             new_d[k] = v
         result.append(new_d)
+    if single:
+        result = result[0]
     return result

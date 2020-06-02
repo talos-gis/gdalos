@@ -48,13 +48,13 @@ import os
 import os.path
 import sys
 import shlex
+from collections import defaultdict
 
 import numpy
 
 from osgeo import gdal
 from osgeo import gdalnumeric
 from gdalos import gdalos_extent
-from gdalos.calc.gdal_dem_color_cutline import gdal_crop
 
 # create alphabetic list for storing input layers
 AlphaList = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
@@ -157,86 +157,99 @@ def doit(opts, args):
     GeoTransforms = []
     GeoTransformDiffer = False
     myTempFileNames = []
+    myFileLists = []
 
     # loop through input files - checking dimensions
-    for myI, myF in opts.input_files.items():
-        if not myI.endswith("_band"):
-            # check if we have asked for a specific band...
-            if "%s_band" % myI in opts.input_files:
-                myBand = opts.input_files["%s_band" % myI]
-            else:
-                myBand = 1
+    for myIs, myFs in opts.input_files.items():
+        if isinstance(myFs, str):
+            # myI is a single file
+            myFs = [myFs]
+            myIs = [myIs]
+        elif isinstance(myFs, (list, tuple)):
+            # myI is a list of files
+            myFileLists.append(myIs)
+        else:
+            # myI is a function
+            global_namespace[myIs] = myFs
+            continue
+        for myI, myF in zip(myIs*len(myFs), myFs):
+            if not myI.endswith("_band"):
+                # check if we have asked for a specific band...
+                if "%s_band" % myI in opts.input_files:
+                    myBand = opts.input_files["%s_band" % myI]
+                else:
+                    myBand = 1
 
-            myF_is_ds = not isinstance(myF, str) #  and not not isinstance(myF, Path)
-            # myF_is_ds = isinstance(myF, gdal.Dataset)
-            if myF_is_ds:
-                myFile = myF
-                myF = None
-            else:
-                myFile = gdal.Open(myF, gdal.GA_ReadOnly)
-            if not myFile:
-                raise IOError("No such file or directory: '%s'" % myF)
+                myF_is_ds = not isinstance(myF, str) #  and not not isinstance(myF, Path)
+                # myF_is_ds = isinstance(myF, gdal.Dataset)
+                if myF_is_ds:
+                    myFile = myF
+                    myF = None
+                else:
+                    myFile = gdal.Open(myF, gdal.GA_ReadOnly)
+                if not myFile:
+                    raise IOError("No such file or directory: '%s'" % myF)
 
-            myFileNames.append(myF)
-            myFiles.append(myFile)
-            myBands.append(myBand)
-            myAlphaList.append(myI)
-            myDataType.append(gdal.GetDataTypeName(myFile.GetRasterBand(myBand).DataType))
-            myDataTypeNum.append(myFile.GetRasterBand(myBand).DataType)
-            myNDV.append(None if opts.hideNodata else myFile.GetRasterBand(myBand).GetNoDataValue())
+                myFileNames.append(myF)
+                myFiles.append(myFile)
+                myBands.append(myBand)
+                myAlphaList.append(myI)
+                myDataType.append(gdal.GetDataTypeName(myFile.GetRasterBand(myBand).DataType))
+                myDataTypeNum.append(myFile.GetRasterBand(myBand).DataType)
+                myNDV.append(None if opts.hideNodata else myFile.GetRasterBand(myBand).GetNoDataValue())
 
-            # check that the dimensions of each layer are the same
-            myFileDimensions = [myFile.RasterXSize, myFile.RasterYSize]
-            if DimensionsCheck:
-                if DimensionsCheck != myFileDimensions:
-                    GeoTransformDiffer = True
-                    if opts.extent in [0, 1]:
-                        raise Exception("Error! Dimensions of file %s (%i, %i) are different from other files (%i, %i).  Cannot proceed" %
-                                        (myF, myFileDimensions[0], myFileDimensions[1], DimensionsCheck[0], DimensionsCheck[1]))
-            else:
-                DimensionsCheck = myFileDimensions
-
-            # check that the Projection of each layer are the same
-            myProjection = myFile.GetProjection()
-            if ProjectionCheck:
-                if opts.projectionCheck and ProjectionCheck != myProjection:
-                    raise Exception(
-                        "Error! Projection of file %s %s are different from other files %s.  Cannot proceed" %
-                        (myF, myProjection, ProjectionCheck))
-            else:
-                ProjectionCheck = myProjection
-
-            # check that the GeoTransforms of each layer are the same
-            myFileGeoTransform = myFile.GetGeoTransform()
-            if opts.extent:
-                Dimensions.append(myFileDimensions)
-                GeoTransforms.append(myFileGeoTransform)
-                if GeoTransformCheck:
-                    if GeoTransformCheck != myFileGeoTransform:
+                # check that the dimensions of each layer are the same
+                myFileDimensions = [myFile.RasterXSize, myFile.RasterYSize]
+                if DimensionsCheck:
+                    if DimensionsCheck != myFileDimensions:
                         GeoTransformDiffer = True
-                        if opts.extent == 1:
-                            raise Exception(
-                                "Error! GeoTransform of file %s %s are different from other files %s.  Cannot proceed" %
-                                (myF, myFileGeoTransform, GeoTransformCheck))
-                        else:
-                            for i in (1, 5):
-                                if GeoTransformCheck[i] != myFileGeoTransform[i]:
-                                    raise Exception(
-                                        "Error! Pixel size file %s %s are different from other files %s.  Cannot proceed" %
-                                        (myF, myFileGeoTransform, GeoTransformCheck))
-                            for i in (2, 4):
-                                if GeoTransformCheck[i] != myFileGeoTransform[i]:
-                                    raise Exception(
-                                        "Error! The rotation of file %s is %s, only 0 is accepted.  Cannot proceed" %
-                                        (myF, (myFileGeoTransform[2], myFileGeoTransform[4]), GeoTransformCheck))
+                        if opts.extent in [0, 1]:
+                            raise Exception("Error! Dimensions of file %s (%i, %i) are different from other files (%i, %i).  Cannot proceed" %
+                                            (myF, myFileDimensions[0], myFileDimensions[1], DimensionsCheck[0], DimensionsCheck[1]))
+                else:
+                    DimensionsCheck = myFileDimensions
+
+                # check that the Projection of each layer are the same
+                myProjection = myFile.GetProjection()
+                if ProjectionCheck:
+                    if opts.projectionCheck and ProjectionCheck != myProjection:
+                        raise Exception(
+                            "Error! Projection of file %s %s are different from other files %s.  Cannot proceed" %
+                            (myF, myProjection, ProjectionCheck))
+                else:
+                    ProjectionCheck = myProjection
+
+                # check that the GeoTransforms of each layer are the same
+                myFileGeoTransform = myFile.GetGeoTransform()
+                if opts.extent:
+                    Dimensions.append(myFileDimensions)
+                    GeoTransforms.append(myFileGeoTransform)
+                    if GeoTransformCheck:
+                        if GeoTransformCheck != myFileGeoTransform:
+                            GeoTransformDiffer = True
+                            if opts.extent == 1:
+                                raise Exception(
+                                    "Error! GeoTransform of file %s %s are different from other files %s.  Cannot proceed" %
+                                    (myF, myFileGeoTransform, GeoTransformCheck))
+                            else:
+                                for i in (1, 5):
+                                    if GeoTransformCheck[i] != myFileGeoTransform[i]:
+                                        raise Exception(
+                                            "Error! Pixel size file %s %s are different from other files %s.  Cannot proceed" %
+                                            (myF, myFileGeoTransform, GeoTransformCheck))
+                                for i in (2, 4):
+                                    if GeoTransformCheck[i] != myFileGeoTransform[i]:
+                                        raise Exception(
+                                            "Error! The rotation of file %s is %s, only 0 is accepted.  Cannot proceed" %
+                                            (myF, (myFileGeoTransform[2], myFileGeoTransform[4]), GeoTransformCheck))
+                    else:
+                        GeoTransformCheck = myFileGeoTransform
                 else:
                     GeoTransformCheck = myFileGeoTransform
-            else:
-                GeoTransformCheck = myFileGeoTransform
 
-            if opts.debug:
-                print("file %s: %s, dimensions: %s, %s, type: %s" % (
-                myI, myF, DimensionsCheck[0], DimensionsCheck[1], myDataType[-1]))
+                if opts.debug:
+                    print("file %s: %s, dimensions: %s, %s, type: %s" % (
+                    myI, myF, DimensionsCheck[0], DimensionsCheck[1], myDataType[-1]))
 
     # process allBands option
     allBandsIndex = None
@@ -339,10 +352,6 @@ def doit(opts, args):
                 # set color table and color interpretation
                 myOutB.SetRasterColorTable(opts.color_table)
                 myOutB.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
-            # if opts.cutline:
-            #     myOut = gdal_crop(myOut, out_filename,
-            #                    output_format=output_format_crop, extent=extent, cutline=cutline,
-            #                    common_options=common_options)
 
             myOutB = None  # write to band
 
@@ -422,7 +431,7 @@ def doit(opts, args):
 
                 # make local namespace for calculation
                 local_namespace = {}
-
+                val_lists = defaultdict(list)
                 # fetch data for each input layer
                 for i, Alpha in enumerate(myAlphaList):
 
@@ -447,9 +456,14 @@ def doit(opts, args):
                         myNDVs = 1 * numpy.logical_or(myNDVs == 1, myval == myNDV[i])
 
                     # add an array of values for this block to the eval namespace
-                    local_namespace[Alpha] = myval
+                    if Alpha in myFileLists:
+                        val_lists[Alpha].append(myval)
+                    else:
+                        local_namespace[Alpha] = myval
                     myval = None
 
+                for lst in myFileLists:
+                    local_namespace[lst] = val_lists[lst]
                 # try the calculation on the array blocks
                 try:
                     myResult = eval(opts.calc, global_namespace, local_namespace)
@@ -481,7 +495,7 @@ def doit(opts, args):
 ################################################################
 
 
-def make_calc(filenames, alpha_pattern, operand, **kwargs):
+def make_calc_with_operand(filenames, alpha_pattern, operand, **kwargs):
     calc = None
     for filename, alpha in zip(filenames, AlphaList):
         kwargs[alpha] = filename
@@ -493,9 +507,17 @@ def make_calc(filenames, alpha_pattern, operand, **kwargs):
     return calc, kwargs
 
 
+def make_calc_with_func(filenames, alpha_pattern, func_name, **kwargs):
+    all_vals = 'a'
+    alpha1 = alpha_pattern.format('x')
+    calc = '{}({} for x in a)'.format(func_name, alpha1)
+    kwargs[all_vals] = filenames
+    return calc, kwargs
+
+
 def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_options=None, allBands='', overwrite=False,
          debug=False, quiet=False, hideNodata=False, projectionCheck=False, color_table=None,
-         extent=None, cutline=None, return_ds=False, **input_files):
+         extent=None, return_ds=False, **input_files):
     """ Perform raster calculations with numpy syntax.
     Use any basic arithmetic supported by numpy arrays such as +-*\ along with logical
     operators such as >. Note that all files must have the same dimensions, but no projection checking is performed.
@@ -532,7 +554,6 @@ def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_optio
     opts.projectionCheck = projectionCheck
     opts.color_table = color_table
     opts.extent = extent
-    opts.cutline = cutline
 
     return doit(opts, None)
 
@@ -591,11 +612,9 @@ def main():
                       help="Read the named file and substitute the contents into the command line options list.")
     parser.add_option("--extent", dest="extent", type=str,
                       help="how to treat different geotrasnforms [ignore|fail|union|intersect]")
-    parser.add_option("--cutline", dest="cutline", type=str,
-                      help="input cutline polygon(s)")
+    # when extent don't agree: 0=ignore(check only dims)/1=fail (gt must also agree)/2=union/3=intersection
     parser.add_option("--projectionCheck", dest="projectionCheck", action="store_true",
                       help="check that all rasters share the same projection", metavar="value")
-    # when extent don't agree: 0=ignore(check only dims)/1=fail (gt must also agree)/2=union/3=intersection
 
     (opts, args) = parser.parse_args()
 

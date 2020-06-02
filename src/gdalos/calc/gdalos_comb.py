@@ -10,7 +10,7 @@ from gdalos.calc.gdalcompare import compare
 
 
 def do_comb(filenames, alpha_pattern, operand='+', **kwargs):
-    calc, kwargs = gdal_calc.make_calc(filenames, alpha_pattern, operand, **kwargs)
+    calc, kwargs = gdal_calc.make_calc_with_operand(filenames, alpha_pattern, operand, **kwargs)
     gdal_calc.Calc(calc, **kwargs)
 
 
