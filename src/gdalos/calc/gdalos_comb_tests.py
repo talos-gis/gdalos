@@ -7,10 +7,11 @@ from gdalos import gdalos_util, gdalos_extent, GeoRectangle
 from gdalos.calc import gdal_calc
 from gdalos.gdalos_color import ColorPalette
 from gdalos.calc.gdalcompare import compare
+from gdalos.calc import gdalos_combine
 
 
 def do_comb(filenames, alpha_pattern, operand='+', **kwargs):
-    calc, kwargs = gdal_calc.make_calc_with_operand(filenames, alpha_pattern, operand, **kwargs)
+    calc, kwargs = gdalos_combine.make_calc_with_operand(filenames, alpha_pattern, operand, **kwargs)
     gdal_calc.Calc(calc, **kwargs)
 
 

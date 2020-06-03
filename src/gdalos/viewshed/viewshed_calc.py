@@ -2,40 +2,30 @@ import gdal, osr
 import glob
 import tempfile
 import os
-import numpy as np
+import time
 from pathlib import Path
-from enum import Enum, auto
+from enum import Enum
 from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans
-from gdalos.calc import gdal_calc, gdal_to_czml, dict_util
+from gdalos.calc import gdal_calc, gdal_to_czml, dict_util, gdalos_combine
 from gdalos.viewshed import viewshed_consts, viewshed_params
-from gdalos.viewshed.viewshed_consts import viewshed_defaults
-
-
-def unique(arrs, multiple_nz=254, all_zero=255):
-    arrs = [np.array(a) for a in arrs]
-    concatenate = np.stack(arrs)
-    nz_count = np.count_nonzero(concatenate, 0)
-    ret = np.full_like(arrs[0], all_zero)
-    ret[nz_count > 1] = multiple_nz
-    singular = nz_count == 1
-    for i, arr in enumerate(arrs):
-        ret[(arr != 0) & singular] = i
-    return ret
+from gdalos.viewshed.viewshed_consts import viewshed_defaults, viewshed_ndv, viewshed_comb_ndv
 
 
 class CalcOperation(Enum):
     viewshed = 0
-    sum = 1
-    unique = 2
-    sumz = 3
+    max = 1
+    count = 2
+    count_z = 3
+    unique = 4
 
 
 def viewshed_calc(input_ds,
                   output_filename,
-                  arrays_dict, extent=2, cutline=None, operation: CalcOperation = CalcOperation.sum,
+                  arrays_dict, extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
                   in_coords_crs_pj=None, out_crs=None,
                   color_palette=None,
                   bi=1, co=None, of='GTiff',
+                  input_slice_from=None, input_slice_to=None,
                   files=[]):
     ext = gdalos_util.get_ext_by_of(of)
     is_czml = ext == '.czml'
@@ -92,6 +82,8 @@ def viewshed_calc(input_ds,
             'dfCurvCoeff', 'mode'
         key_map = dict(zip(params, new_keys))
         arrays_dict = dict_util.make_dicts_list_from_lists_dict(arrays_dict, key_map)
+        arrays_dict = arrays_dict[input_slice_from:input_slice_to]
+
         if operation:
             # restore viewshed consts default values
             my_viewshed_defaults = dict_util.replace_keys(viewshed_defaults, key_map)
@@ -149,21 +141,34 @@ def viewshed_calc(input_ds,
 
     steps -= 1
     if operation:
-        cutoff_value = viewshed_defaults['iv']
-        alpha_pattern = '1*({{}}>{})'.format(cutoff_value)
-        # alpha_pattern = 'np.multiply({{}}>{}, dtype=np.uint8)'.format(cutoff_value)
-        if operation == CalcOperation.sum:
-            old_sum = False
-            if old_sum:
-                calc, kwargs = gdal_calc.make_calc_with_operand(files, alpha_pattern, '+')
-            else:
-                calc, kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'sum')
+        # alpha_pattern = '1*({{}}>{})'.format(viewshed_thresh)
+        # alpha_pattern = 'np.multiply({{}}>{}, dtype=np.uint8)'.format(viewshed_thresh)
+        if operation == CalcOperation.viewshed:
+            no_data_value = viewshed_ndv
+            f = gdalos_combine.get_by_index
+            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=sum)
+        elif operation == CalcOperation.max:
+            no_data_value = viewshed_ndv
+            f = gdalos_combine.vs_max
+            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=sum)
+        elif operation == CalcOperation.count:
+            no_data_value = viewshed_ndv
+            f = gdalos_combine.vs_count
+            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_operand(files, alpha_pattern, '+')
+            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'sum')
+        elif operation == CalcOperation.count_z:
+            no_data_value = viewshed_comb_ndv
+            f = gdalos_combine.vs_count_z
+            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=sum)
         elif operation == CalcOperation.unique:
-            calc, kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=unique)
-        elif operation == CalcOperation.sumz:
-            calc, kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=sum)
+            no_data_value = viewshed_comb_ndv
+            f = gdalos_combine.vs_unique
+            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=unique)
         else:
             raise Exception('Unknown operation: {}'.format(operation))
+
+        calc_expr = 'f(x)'
+        calc_kwargs = dict(x=files, f=f)
 
         hide_nodata = True
         use_temp_tif = False
@@ -179,10 +184,17 @@ def viewshed_calc(input_ds,
             suffix='.tif') if (use_temp_tif and steps > 1) else output_filename if gdal_out_format != 'MEM' else ''
 
         # return_ds = gdal_out_format == 'MEM'
+        debug_time = 1
+        t = time.time()
         return_ds = True
-        ds = gdal_calc.Calc(
-            calc, outfile=str(d_path), extent=extent, cutline=cutline, format=gdal_out_format,
-            color_table=color_table, hideNodata=hide_nodata, return_ds=return_ds, overwrite=True, **kwargs)
+        for i in range(debug_time):
+            ds = gdal_calc.Calc(
+                calc_expr, outfile=str(d_path), extent=extent, cutline=cutline, format=gdal_out_format,
+                color_table=color_table, hideNodata=hide_nodata, return_ds=return_ds, overwrite=True,
+                NoDataValue=no_data_value, **calc_kwargs)
+        t = time.time() - t
+        print('time for calc: {:.3f} seconds'.format(t))
+
         if return_ds:
             if not ds:
                 raise Exception('error occurred')
@@ -248,11 +260,11 @@ if __name__ == "__main__":
     inputs['oy'] = oys
     inputs['oz'] = [vp.oz]
     inputs['tz'] = [vp.tz]
-    inputs['vv'] = [viewshed_consts.st_seen]
-    inputs['iv'] = [viewshed_consts.st_hidden]
-    inputs['ov'] = [viewshed_consts.st_nodata]
-    inputs['ndv'] = [viewshed_consts.st_nodtm]
-    inputs['cc'] = [viewshed_consts.cc_atmospheric_refraction]
+    inputs['vv'] = [viewshed_defaults['vv']]
+    inputs['iv'] = [viewshed_defaults['iv']]
+    inputs['ov'] = [viewshed_defaults['ov']]
+    inputs['ndv'] = [viewshed_defaults['ndv']]
+    inputs['cc'] = [viewshed_consts.viewshed_atmospheric_refraction]
     inputs['mode'] = [2]
 
     use_input_files = False
@@ -266,16 +278,32 @@ if __name__ == "__main__":
         files = glob.glob(str(files_path / '*.tif'))
     else:
         files = []
-
     for calc in CalcOperation:
-        output_filename = output_path / Path(calc.name + '.tif')
+        # if calc != CalcOperation.viewshed:
+        #     continue
         color_palette = './sample/color_files/viewshed/{}.txt'.format(calc.name)
-        viewshed_calc(input_ds,
-                      output_filename,
-                      inputs,
-                      operation=calc,
-                      color_palette=color_palette,
-                      files=files)
+        if calc == CalcOperation.viewshed:
+            input_size = max(len(x) for x in inputs.values())
+            for i in range(input_size):
+                output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
+                viewshed_calc(input_ds,
+                              output_filename,
+                              inputs,
+                              operation=calc,
+                              color_palette=color_palette,
+                              files=files,
+                              input_slice_from=i, input_slice_to=i+1
+                              )
+        else:
+            output_filename = output_path / Path('{}.tif'.format(calc.name))
+            viewshed_calc(input_ds,
+                          output_filename,
+                          inputs,
+                          operation=calc,
+                          color_palette=color_palette,
+                          files=files,
+                          # input_slice_from=0, input_slice_to=2
+                          )
 
     if run_comb_with_post:
         output_filename = output_path / 'combine_post.tif'
@@ -283,7 +311,7 @@ if __name__ == "__main__":
         viewshed_calc(input_ds,
                       output_filename,
                       inputs,
-                      operation=CalcOperation.sum,
+                      operation=CalcOperation.count,
                       color_palette=color_palette,
                       cutline=cutline,
                       out_crs=0,

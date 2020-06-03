@@ -1,7 +1,7 @@
 from gdalos import gdalos_trans
 from gdalos import GeoRectangle
 from pathlib import Path
-from gdalos.viewshed import viewshed_params
+from gdalos.viewshed import viewshed_params, viewshed_consts
 
 
 def calc_extent(center, grid_range, interval, md, frame):
@@ -23,18 +23,9 @@ def viewshed_run(md, interval, grid_range, center, oz, tz, output_path, input_fi
     if band is None:
         raise Exception('band number out of range')
 
-    st_seen     = 5
-    st_seenbut  = 4
-    st_hidbut   = 3
-    st_hidden   = 2
-    st_nodtm    = 1
-    st_nodata   = 0
-    
-    vv = st_seen
-    iv = st_hidden
-    ndv = st_nodtm
-    ov = st_nodata
-    cc = 0.85714
+    vals = viewshed_consts.viewshed_defaults
+
+    cc = viewshed_consts.viewshed_atmospheric_refraction
     for i in grid_range:
         for j in grid_range:
             ox = center[0] + i * interval
@@ -44,7 +35,7 @@ def viewshed_run(md, interval, grid_range, center, oz, tz, output_path, input_fi
             filename = output_path / (name + '.tif')
 
             dest = gdal.ViewshedGenerate(band, 'GTiff', str(filename), None,
-                                         ox, oy, oz, tz, vv, iv, ov, ndv, cc,
+                                         ox, oy, oz, tz, **vals, cc,
                                          mode=2,
                                          maxDistance=md)
 

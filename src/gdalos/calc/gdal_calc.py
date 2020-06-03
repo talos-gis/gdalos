@@ -495,26 +495,6 @@ def doit(opts, args):
 ################################################################
 
 
-def make_calc_with_operand(filenames, alpha_pattern, operand, **kwargs):
-    calc = None
-    for filename, alpha in zip(filenames, AlphaList):
-        kwargs[alpha] = filename
-        alpha1 = alpha_pattern.format(alpha)
-        if calc is None:
-            calc = alpha1
-        else:
-            calc = '{}{}{}'.format(calc, operand, alpha1)
-    return calc, kwargs
-
-
-def make_calc_with_func(filenames, alpha_pattern, func_name, **kwargs):
-    all_vals = 'a'
-    alpha1 = alpha_pattern.format('x')
-    calc = '{}({} for x in a)'.format(func_name, alpha1)
-    kwargs[all_vals] = filenames
-    return calc, kwargs
-
-
 def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_options=None, allBands='', overwrite=False,
          debug=False, quiet=False, hideNodata=False, projectionCheck=False, color_table=None,
          extent=None, return_ds=False, **input_files):
