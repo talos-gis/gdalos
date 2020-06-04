@@ -2,15 +2,16 @@ import datetime
 import logging
 import os
 import time
+import tempfile
 from enum import Enum, auto
 from numbers import Real
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, TypeVar, Union
 
 import gdal
-from gdalos import gdal_helper, gdalos_logger, get_extent, projdef
+from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef
 from gdalos.__util__ import with_param_dict
-from gdalos.gdal_helper import concat_paths
+from gdalos.gdalos_util import concat_paths
 from gdalos.rectangle import GeoRectangle
 from gdalos_data.__data__ import __version__
 
@@ -46,7 +47,7 @@ class RasterKind(Enum):
         if isinstance(band_types_or_filename_or_ds, list):
             band_types = band_types_or_filename_or_ds
         else:
-            band_types = gdal_helper.get_band_types(band_types_or_filename_or_ds)
+            band_types = gdalos_util.get_band_types(band_types_or_filename_or_ds)
         if len(band_types) == 0:
             raise Exception("no bands in raster")
 
@@ -130,14 +131,16 @@ def gdalos_trans(
     filename: MaybeSequence[str],
     out_filename: str = None,
     out_path: str = None,
+    return_ds: Union[type(...), bool] = ...,
     out_path_with_src_folders: str = True,
     skip_if_exists=True,
-    create_info=True,
-    cog=True,
-    multi_file_as_vrt=False,
+    cog: Union[type(...), bool] = ...,
+    write_info: bool = False,
+    write_spec: bool = False,
+    multi_file_as_vrt: bool = False,
     of: MaybeSequence[str] = "GTiff",
     outext: str = "tif",
-    tiled=True,
+    tiled: bool = True,
     big_tiff: str = "IF_SAFER",
     config_options: dict = None,
     open_options: dict = None,
@@ -147,13 +150,14 @@ def gdalos_trans(
     extent_in_4326: bool = True,
     src_win=None,
     warp_CRS: MaybeSequence[Warp_crs_base] = None,
+    cutline: Optional[Union[str, List[str]]] = None,
     out_res: Tuple[Real, Real] = None,
     ovr_type: Optional[OvrType] = OvrType.auto_select,
     src_ovr: Optional[int] = None,
     keep_src_ovr_suffixes: bool = True,
     dst_ovr_count: Optional[int] = None,
-    src_nodatavalue: Real = ...,
-    dst_nodatavalue: Real = ...,
+    dst_nodatavalue: Optional[Union[type(...), Real]] = None,  # None -> don't change; ... -> change only for DTM
+    src_nodatavalue: Optional[Union[type(...), Real]] = ...,  # None -> use minimum; ... -> use original
     hide_nodatavalue: bool = False,
     kind: RasterKind = None,
     resampling_alg=None,
@@ -169,7 +173,6 @@ def gdalos_trans(
     partition=None,
     print_progress=...,
     logger=...,
-    write_spec=True,
     *,
     all_args: dict = None,
 ):
@@ -203,17 +206,16 @@ def gdalos_trans(
         "filename",
         "extent",
         "warp_CRS",
+        # "cutline"
         "of",
         "expand_rgb",
         "partition",
     ]
     for key in key_list_arguments:
         val = all_args[key]
-        val = gdal_helper.flatten_and_expand_file_list(
-            val, do_expand_glob=key == "filename"
-        )
+        val = gdalos_util.flatten_and_expand_file_list(val, do_expand_glob=key == "filename")
         if key == "filename":
-            if gdal_helper.is_list_like(val) and multi_file_as_vrt:
+            if gdalos_util.is_list_like(val) and multi_file_as_vrt:
                 vrt_path = gdalos_vrt(
                     val,
                     resampling_alg=resampling_alg,
@@ -229,7 +231,7 @@ def gdalos_trans(
                 val = vrt_path
             filename = val
 
-        if gdal_helper.is_list_like(val):
+        if gdalos_util.is_list_like(val):
             # input argument is a list, recurse over its values
             all_args_new = all_args.copy()
             ret_code = None
@@ -269,11 +271,21 @@ def gdalos_trans(
         logger.info(all_args)
     # endregion
 
-    filename = Path(filename.strip())
-    if os.path.isdir(filename):
-        raise Exception('input is a dir, not a file: "{}"'.format(filename))
-    if not os.path.isfile(filename):
-        raise OSError('file not found: "{}"'.format(filename))
+    filename_is_ds = not isinstance(filename, (str, Path))
+    if return_ds is ...:
+        return_ds = of == 'MEM'
+    if filename_is_ds:
+        input_ext = None
+        write_info = False
+    else:
+        filename = Path(filename.strip())
+        if os.path.isdir(filename):
+            raise Exception('input is a dir, not a file: "{}"'.format(filename))
+        if not os.path.isfile(filename):
+            raise OSError('file not found: "{}"'.format(filename))
+        input_ext = os.path.splitext(filename)[1].lower()
+    if cog is ...:
+        cog = not filename_is_ds
 
     if extent is None:
         extent_in_4326 = True
@@ -287,17 +299,14 @@ def gdalos_trans(
 
     extent_was_cropped = False
     extent_aligned = True
-    input_ext = os.path.splitext(filename)[1].lower()
     input_is_vrt = input_ext == ".vrt"
 
-    ds = gdal_helper.open_ds(
-        filename, src_ovr=src_ovr, open_options=open_options, logger=logger
-    )
+    ds = gdalos_util.open_ds(filename, src_ovr=src_ovr, open_options=open_options, logger=logger)
 
     # region decide which overviews to make
     if src_ovr is None:
         src_ovr = -1  # base raster
-    overview_count = gdal_helper.get_ovr_count(ds)
+    overview_count = gdalos_util.get_ovr_count(ds)
     src_ovr_last = overview_count - 1
     if dst_ovr_count is not None:
         if dst_ovr_count >= 0:
@@ -308,24 +317,15 @@ def gdalos_trans(
             if new_src_ovr != src_ovr:
                 src_ovr = new_src_ovr
                 del ds
-                ds = gdal_helper.open_ds(
+                ds = gdalos_util.open_ds(
                     filename, src_ovr=src_ovr, open_options=open_options, logger=logger
                 )
     # endregion
 
-    # In case of north up images,
-    # GT(2) and GT(4) coefficients are zero,
-    # GT(1) is pixel width,
-    # GT(5) is pixel height.
-    # (GT(0),GT(3)) position is the top left corner of the top left pixel of the raster.
-    # Note that the pixel/line coordinates in the above are from (0.0,0.0) at the top left corner of the top left pixel
-    # to (width_in_pixels,height_in_pixels) at the bottom right corner of the bottom right pixel.
-    # The pixel/line location of the center of the top left pixel would therefore be (0.5,0.5).
-
     geo_transform = ds.GetGeoTransform()
     input_res = (geo_transform[1], geo_transform[5])
 
-    band_types = gdal_helper.get_band_types(ds)
+    band_types = gdalos_util.get_band_types(ds)
     if kind in [None, ...]:
         kind = RasterKind.guess(band_types)
 
@@ -334,20 +334,11 @@ def gdalos_trans(
     pjstr_tgt_srs = None
     tgt_zone = None
     if warp_CRS is not None:
-        if isinstance(warp_CRS, str) and warp_CRS.startswith("+"):
-            pjstr_tgt_srs = warp_CRS  # ProjString
-        else:
-            tgt_zone = projdef.get_number(warp_CRS)
-            if tgt_zone is None:
-                tgt_zone = projdef.get_zone_from_name(warp_CRS)
-            else:
-                warp_CRS = f"w84u{warp_CRS}"
-            # "short ProjString"
-            pjstr_tgt_srs = projdef.get_proj4_string(warp_CRS[0], tgt_zone)
+        pjstr_tgt_srs, tgt_zone = projdef.parse_proj_string_and_zone(warp_CRS)
         if projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs):
             warp_CRS = None  # no warp is really needed here
 
-    do_warp = warp_CRS is not None
+    do_warp = warp_CRS is not None or cutline is not None
     if warp_CRS is not None:
         extent_aligned = False
         if tgt_zone is not None and extent_in_4326:
@@ -361,19 +352,28 @@ def gdalos_trans(
                 else:
                     extent = zone_extent.intersect(extent)
                 extent_was_cropped = True
-            out_suffixes.append(projdef.get_canonic_name(warp_CRS[0], tgt_zone))
+            out_suffixes.append(projdef.get_canonic_name(warp_CRS, tgt_zone))
         if kind == RasterKind.dtm:
             common_options["outputType"] = gdal.GDT_Float32  # 'Float32'
         warp_options["dstSRS"] = pjstr_tgt_srs
     # endregion
 
+    if cutline:
+        if isinstance(cutline, str):
+            cutline_filename = cutline
+        elif isinstance(cutline, Sequence):
+            cutline_filename = tempfile.mktemp(suffix='.gpkg')
+            temp_files.append(cutline_filename)
+            gdalos_util.wkt_write_ogr(cutline_filename, cutline, of='GPKG')
+        warp_options['cutlineDSName'] = cutline_filename
+
     # region compression
     resample_is_needed = warp_CRS is not None or (out_res is not None)
-    org_comp = gdal_helper.get_image_structure_metadata(ds, "COMPRESSION")
+    org_comp = gdalos_util.get_image_structure_metadata(ds, "COMPRESSION")
     src_is_lossy = (org_comp is not None) and ("JPEG" in org_comp)
     if lossy in [None, ...]:
         lossy = src_is_lossy or resample_is_needed
-    if lossy and (kind == RasterKind.dtm):
+    if lossy and (kind != RasterKind.photo):
         lossy = False
     if not lossy:
         comp = "DEFLATE"
@@ -393,15 +393,18 @@ def gdalos_trans(
         if kind == RasterKind.dtm:
             dst_nodatavalue = default_multi_byte_nodata_value
         else:
-            dst_nodatavalue = None
+            dst_nodatavalue = None  # don't change no_data
     if dst_nodatavalue is not None:
-        src_nodatavalue_org = gdal_helper.get_nodatavalue(ds)
+        src_nodatavalue_org = gdalos_util.get_nodatavalue(ds)
         if src_nodatavalue is ...:
             src_nodatavalue = src_nodatavalue_org
-        if src_nodatavalue is None:
+        elif src_nodatavalue is None:
             # assume raster minimum is nodata if nodata isn't set
-            src_min_value = gdal_helper.get_raster_minimum(ds)
-            if abs(src_min_value - default_multi_byte_nodata_value) < 100:
+            logger.debug('finding raster minimum, this might take some time...')
+            src_min_value = gdalos_util.get_raster_minimum(ds)
+            # if abs(src_min_value - default_multi_byte_nodata_value) < 100:
+            # assuming that the raster minimum is indeed a nodatavalue if it's very low
+            if True:
                 src_nodatavalue = src_min_value
         if src_nodatavalue is not None:
             if src_nodatavalue != dst_nodatavalue:
@@ -414,39 +417,41 @@ def gdalos_trans(
     # endregion
 
     # region extent
-    org_points_extent, _ = get_extent.get_points_extent_from_ds(ds)
-    org_extent_in_src_srs = GeoRectangle.from_points(org_points_extent)
+    org_extent_in_src_srs = gdalos_extent.get_extent(ds)
     if org_extent_in_src_srs.is_empty():
         raise Exception(f"no input extent: {filename} [{org_extent_in_src_srs}]")
     out_extent_in_src_srs = org_extent_in_src_srs
     if extent is not None or partition is not None:
-        pjstr_4326 = projdef.get_proj4_string("w")  # 'EPSG:4326'
+        pjstr_4326 = projdef.get_proj_string("w")  # 'EPSG:4326'
+        transform = projdef.get_transform(pjstr_src_srs, pjstr_4326)
+        src_srs_is_4326 = transform is None
         if extent is None:
-            transform = get_extent.get_transform(pjstr_src_srs, pjstr_4326)
-            extent = get_extent.translate_extent(org_extent_in_src_srs, transform)
+            extent = gdalos_extent.translate_extent(org_extent_in_src_srs, transform)
         if pjstr_tgt_srs is None:
             pjstr_tgt_srs = pjstr_src_srs
             transform = None
         else:
-            transform = get_extent.get_transform(pjstr_src_srs, pjstr_tgt_srs)
+            transform = projdef.get_transform(pjstr_src_srs, pjstr_tgt_srs)
 
-        org_extent_in_tgt_srs = get_extent.translate_extent(
-            org_extent_in_src_srs, transform
-        )
+        org_extent_in_tgt_srs = gdalos_extent.translate_extent(org_extent_in_src_srs, transform)
         if org_extent_in_tgt_srs.is_empty():
             raise Exception(f"no input extent: {filename} [{org_extent_in_tgt_srs}]")
 
         if extent_in_4326:
-            transform = get_extent.get_transform(pjstr_4326, pjstr_tgt_srs)
-            out_extent_in_tgt_srs = get_extent.translate_extent(extent, transform)
+            if src_srs_is_4326:
+                # we better intersect in 4326 then in a projected srs
+                # because the projected srs bounds might be wider then the 'valid' zone bounds
+                extent = extent.intersect(org_extent_in_src_srs)
+            transform = projdef.get_transform(pjstr_4326, pjstr_tgt_srs)
+            out_extent_in_tgt_srs = gdalos_extent.translate_extent(extent, transform)
         else:
             out_extent_in_tgt_srs = extent
         out_extent_in_tgt_srs = out_extent_in_tgt_srs.intersect(org_extent_in_tgt_srs)
 
         if out_extent_in_tgt_srs != org_extent_in_tgt_srs:
             extent_was_cropped = True
-            transform = get_extent.get_transform(pjstr_tgt_srs, pjstr_4326)
-            extent = get_extent.translate_extent(out_extent_in_tgt_srs, transform)
+            transform = projdef.get_transform(pjstr_tgt_srs, pjstr_4326)
+            extent = gdalos_extent.translate_extent(out_extent_in_tgt_srs, transform)
 
         if out_extent_in_tgt_srs.is_empty():
             raise Exception(f"no output extent: {filename} [{out_extent_in_tgt_srs}]")
@@ -464,8 +469,8 @@ def gdalos_trans(
         # -te minx miny maxx maxy
         warp_options["outputBounds"] = out_extent_in_tgt_srs_part.ldru
 
-        transform = get_extent.get_transform(pjstr_4326, pjstr_src_srs)
-        out_extent_in_src_srs = get_extent.translate_extent(extent, transform)
+        transform = projdef.get_transform(pjstr_4326, pjstr_src_srs)
+        out_extent_in_src_srs = gdalos_extent.translate_extent(extent, transform)
         out_extent_in_src_srs = out_extent_in_src_srs.intersect(org_extent_in_src_srs)
         if out_extent_in_src_srs.is_empty():
             raise Exception
@@ -478,9 +483,9 @@ def gdalos_trans(
         if not isinstance(out_res, Sequence):
             out_res = [out_res, -out_res]
     elif warp_CRS is not None:
-        transform_src_tgt = get_extent.get_transform(pjstr_src_srs, pjstr_tgt_srs)
+        transform_src_tgt = projdef.get_transform(pjstr_src_srs, pjstr_tgt_srs)
         if transform_src_tgt is not None:
-            out_res = get_extent.transform_resolution(
+            out_res = gdalos_extent.transform_resolution(
                 transform_src_tgt, input_res, out_extent_in_src_srs
             )
     if out_res is not None:
@@ -541,7 +546,7 @@ def gdalos_trans(
     # endregion
 
     # region make out_filename
-    auto_out_filename = out_filename is None
+    auto_out_filename = out_filename is None and of != 'MEM'
     if auto_out_filename:
         if (
             cog_2_steps
@@ -554,8 +559,8 @@ def gdalos_trans(
         else:
             out_extent_in_4326 = extent
             if extent_was_cropped and (out_extent_in_src_srs is not None):
-                transform = get_extent.get_transform(pjstr_src_srs, pjstr_4326)
-                out_extent_in_4326 = get_extent.translate_extent(
+                transform = projdef.get_transform(pjstr_src_srs, pjstr_4326)
+                out_extent_in_4326 = gdalos_extent.translate_extent(
                     out_extent_in_src_srs, transform
                 )
             if out_extent_in_4326 is not None:
@@ -575,15 +580,17 @@ def gdalos_trans(
                 out_suffixes = "." + ".".join(out_suffixes)
             else:
                 out_suffixes = ""
-            out_filename = gdal_helper.concat_paths(
+            out_filename = gdalos_util.concat_paths(
                 filename, out_suffixes + "." + outext
             )
             if keep_src_ovr_suffixes:
-                out_filename = gdal_helper.concat_paths(
+                out_filename = gdalos_util.concat_paths(
                     out_filename, ".ovr" * (src_ovr + 1)
                 )
-    else:
+    elif out_filename:
         out_filename = Path(out_filename)
+    else:
+        out_filename = ''
 
     if out_path is not None:
         if out_path_with_src_folders:
@@ -592,7 +599,7 @@ def gdalos_trans(
             out_src_path = [out_filename.parts[-1]]
         out_filename = Path(out_path).joinpath(*out_src_path)
 
-    if not os.path.exists(os.path.dirname(out_filename)):
+    if out_filename and not os.path.exists(os.path.dirname(out_filename)):
         os.makedirs(os.path.dirname(out_filename), exist_ok=True)
 
     if cog:
@@ -619,10 +626,10 @@ def gdalos_trans(
     if cog_ready or ovr_type == OvrType.existing_reuse or (filename == out_filename):
         skipped = True
     else:
-        skipped = do_skip_if_exists(out_filename, skip_if_exists, logger)
+        skipped = False if filename_is_ds else do_skip_if_exists(out_filename, skip_if_exists, logger)
 
     if not cog_ready and write_spec:
-        spec_filename = gdal_helper.concat_paths(cog_filename, ".spec")
+        spec_filename = gdalos_util.concat_paths(cog_filename, ".spec")
         logger_handlers.append(gdalos_logger.set_file_logger(logger, spec_filename))
         logger.debug('spec file handler added: "{}"'.format(spec_filename))
         logger.debug("gdalos versoin: {}".format(__version__))
@@ -635,14 +642,16 @@ def gdalos_trans(
 
     # region create base raster
     ret_code = None
+    out_ds = None
     if not skipped:
         no_yes = ("NO", "YES")
         if not isinstance(tiled, str):
             tiled = no_yes[tiled]
-        creation_options["TILED"] = tiled
-        creation_options["BIGTIFF"] = big_tiff
-        creation_options["COMPRESS"] = comp
         common_options["format"] = of
+        if of.upper() == 'GTIFF':
+            creation_options["TILED"] = tiled
+            creation_options["BIGTIFF"] = big_tiff
+            creation_options["COMPRESS"] = comp
         if cog and not cog_2_steps:
             creation_options["COPY_SRC_OVERVIEWS"] = "YES"
 
@@ -679,19 +688,15 @@ def gdalos_trans(
             if do_warp:
                 if verbose and warp_options:
                     logger.info("wrap options: " + str(warp_options))
-                ret_code = (
-                    gdal.Warp(str(out_filename), ds, **common_options, **warp_options)
-                    is not None
-                )
+                out_ds = gdal.Warp(str(out_filename), ds, **common_options, **warp_options)
+                ret_code = out_ds is not None
             else:
                 if verbose and translate_options:
                     logger.info("translate options: " + str(translate_options))
-                ret_code = (
-                    gdal.Translate(
-                        str(out_filename), ds, **common_options, **translate_options
-                    )
-                    is not None
-                )
+                out_ds = gdal.Translate(str(out_filename), ds, **common_options, **translate_options)
+                ret_code = out_ds is not None
+            if not return_ds:
+                out_ds = None  # close output ds
             if ret_code:
                 final_files_for_step_1.append(out_filename)
         except Exception as e:
@@ -710,13 +715,13 @@ def gdalos_trans(
 
     if verbose:
         logger.debug('closing file: "{}"'.format(filename))
-    del ds
+    ds = None  # close input ds if filename was input
     # end region
 
     # region create overviews, cog, info
     if not cog_ready and (ret_code or skipped):
         if not skipped and hide_nodatavalue:
-            gdal_helper.unset_nodatavalue(str(out_filename))
+            gdalos_util.unset_nodatavalue(out_ds or str(out_filename))
 
         if ovr_type == OvrType.existing_reuse:
             # overviews are numbered as follows (i.e. for dst_ovr_count=3, meaning create base+3 ovrs=4 files):
@@ -748,8 +753,8 @@ def gdalos_trans(
                 if out_res is not None:
                     res_factor = 2 ** (ovr_index + 1)
                     all_args_new["out_res"] = [r * res_factor for r in out_res]
-                all_args_new["create_info"] = (
-                    create_info and (ovr_index == src_ovr) and not cog
+                all_args_new["write_info"] = (
+                        write_info and (ovr_index == src_ovr) and not cog
                 )
                 ret_code = gdalos_trans(**all_args_new)
                 if not ret_code:
@@ -777,8 +782,8 @@ def gdalos_trans(
                             )
                         )
                 aux_files.extend(all_args_new["aux_files"])
-            create_info = create_info and cog
-        elif ovr_type not in [None, OvrType.existing_reuse, OvrType.existing_auto]:
+            write_info = write_info and cog
+        elif not filename_is_ds and ovr_type not in [None, OvrType.existing_reuse, OvrType.existing_auto]:
             # create overviews from dataset (internal or external)
             ret_code = gdalos_ovr(
                 out_filename,
@@ -815,7 +820,7 @@ def gdalos_trans(
                 delete_temp_files=False,
                 logger=logger,
                 skip_if_exists=skip_if_exists,
-                create_info=create_info,
+                write_info=write_info,
                 write_spec=False,
             )
             if ret_code and verbose:
@@ -833,10 +838,10 @@ def gdalos_trans(
                     )
             final_files.extend(cog_final_files)
             aux_files.extend(cog_aux_files)
-            create_info = (
+            write_info = (
                 False  # we don't need an info for the temp file from first step
             )
-        if create_info:
+        if write_info:
             info = gdalos_info(
                 out_filename, skip_if_exists=skip_if_exists, logger=logger
             )
@@ -891,7 +896,7 @@ def gdalos_trans(
             logger.removeHandler(handler)
         logger.debug("logging handlers removed")  # this shouldn't log anything
     # end region
-    return ret_code
+    return out_ds or ret_code
 
 
 def add_ovr(
@@ -904,7 +909,7 @@ def add_ovr(
 ):
     verbose = logger is not None and logger is not ...
     filename = Path(filename)
-    out_filename = gdal_helper.concat_paths(filename, ".ovr")
+    out_filename = gdalos_util.concat_paths(filename, ".ovr")
     if not do_skip_if_exists(out_filename, skip_if_exists, logger):
         if verbose:
             logger.info(
@@ -912,7 +917,7 @@ def add_ovr(
                     out_filename, options, access_mode
                 )
             )
-        with gdal_helper.OpenDS(filename, access_mode=access_mode, logger=logger) as ds:
+        with gdalos_util.OpenDS(filename, access_mode=access_mode, logger=logger) as ds:
             ret_code = ds.BuildOverviews(**options) == 0
             if ret_code and ovr_files is not None:
                 ovr_files.append(out_filename)
@@ -980,7 +985,7 @@ def gdalos_ovr(
         ovr_options["callback"] = print_progress_callback(print_progress)
 
     if comp is None:
-        comp = gdal_helper.get_image_structure_metadata(filename, "COMPRESSION")
+        comp = gdalos_util.get_image_structure_metadata(filename, "COMPRESSION")
     if comp == "YCbCr JPEG":
         config_options["COMPRESS_OVERVIEW"] = "JPEG"
         config_options["PHOTOMETRIC_OVERVIEW"] = "YCBCR"
@@ -1028,7 +1033,7 @@ def gdalos_ovr(
                 )
                 if not ret_code:
                     break
-                filename = gdal_helper.concat_paths(filename, ".ovr")
+                filename = gdalos_util.concat_paths(filename, ".ovr")
         else:
             raise Exception("invalid ovr type")
     finally:
@@ -1037,15 +1042,15 @@ def gdalos_ovr(
     return ret_code
 
 
-def gdalos_info(filename, skip_if_exists=False, logger=None):
-    filename = Path(filename)
-    if os.path.isdir(filename):
-        raise Exception(f"input is a dir, not a file: {filename}")
-    if not os.path.isfile(filename):
-        raise Exception("file not found: {}".format(filename))
-    out_filename = gdal_helper.concat_paths(filename, ".info")
+def gdalos_info(filename_or_ds, skip_if_exists=False, logger=None):
+    filename_or_ds = Path(filename_or_ds)
+    if os.path.isdir(filename_or_ds):
+        raise Exception(f"input is a dir, not a file: {filename_or_ds}")
+    if not os.path.isfile(filename_or_ds):
+        raise Exception("file not found: {}".format(filename_or_ds))
+    out_filename = gdalos_util.concat_paths(filename_or_ds, ".info")
     if not do_skip_if_exists(out_filename, skip_if_exists=skip_if_exists):
-        with gdal_helper.OpenDS(filename, logger=logger) as ds:
+        with gdalos_util.OpenDS(filename_or_ds, logger=logger) as ds:
             gdal_info = gdal.Info(ds)
         with open(out_filename, "w") as w:
             w.write(gdal_info)
@@ -1062,8 +1067,8 @@ def gdalos_vrt(
     skip_if_exists=True,
     logger=None,
 ):
-    if gdal_helper.is_list_like(filenames):
-        flatten_filenames = gdal_helper.flatten_and_expand_file_list(filenames)
+    if gdalos_util.is_list_like(filenames):
+        flatten_filenames = gdalos_util.flatten_and_expand_file_list(filenames)
     else:
         flatten_filenames = [filenames]
     flatten_filenames = [str(f) for f in flatten_filenames]

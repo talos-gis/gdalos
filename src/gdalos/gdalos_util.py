@@ -3,31 +3,12 @@ import os
 from pathlib import Path
 from typing import Iterator, Sequence
 
-import gdal
+import gdal, ogr, osr
 
 
-def open_ds(
-    filename,
-    access_mode=gdal.GA_ReadOnly,
-    src_ovr: int = None,
-    open_options: dict = None,
-    logger=None,
-):
-    open_options = dict(open_options or dict())
-    if src_ovr is not None and src_ovr >= 0:
-        open_options["OVERVIEW_LEVEL"] = src_ovr
-    if logger is not None:
-        s = 'openning file: "{}"'.format(filename)
-        if open_options:
-            s = s + " with options: {}".format(str(open_options))
-        logger.debug(s)
-    if open_options:
-        open_options = ["{}={}".format(k, v) for k, v in open_options.items()]
-
-    if open_options:
-        return gdal.OpenEx(str(filename), open_options=open_options)
-    else:
-        return gdal.Open(str(filename), access_mode)
+def open_ds(filename_or_ds, **kwargs):
+    ods = OpenDS(filename_or_ds, **kwargs)
+    return ods.__enter__()
 
 
 class OpenDS:
@@ -43,7 +24,7 @@ class OpenDS:
 
     def __enter__(self) -> gdal.Dataset:
         if self.ds is None:
-            self.ds = open_ds(self.filename, **self.kwargs)
+            self.ds = self._open_ds(self.filename, **self.kwargs)
             if self.ds is None:
                 raise IOError('could not open file "{}"'.format(self.filename))
             self.own = True
@@ -52,6 +33,31 @@ class OpenDS:
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.own:
             self.ds = None
+
+    @staticmethod
+    def _open_ds(
+            filename,
+            access_mode=gdal.GA_ReadOnly,
+            src_ovr: int = None,
+            open_options: dict = None,
+            logger=None,
+    ):
+        open_options = dict(open_options or dict())
+        if src_ovr is not None and src_ovr >= 0:
+            open_options["OVERVIEW_LEVEL"] = src_ovr
+        if logger is not None:
+            s = 'openning file: "{}"'.format(filename)
+            if open_options:
+                s = s + " with options: {}".format(str(open_options))
+            logger.debug(s)
+        if open_options:
+            open_options = ["{}={}".format(k, v) for k, v in open_options.items()]
+
+        if open_options:
+            return gdal.OpenEx(str(filename), open_options=open_options)
+        else:
+            return gdal.Open(str(filename), access_mode)
+
 
 
 def _get_bands(ds: gdal.Dataset) -> Iterator[gdal.Band]:
@@ -164,3 +170,27 @@ def is_list_like(lst):
 
 def concat_paths(*argv):
     return Path("".join([str(p) for p in argv]))
+
+
+def wkt_write_ogr(path, wkt_list, of='ESRI Shapefile', epsg=4326):
+    driver = ogr.GetDriverByName(of)
+    ds = driver.CreateDataSource(path)
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(epsg)
+
+    layer = ds.CreateLayer('', srs, ogr.wkbUnknown)
+    for wkt in wkt_list:
+        feature = ogr.Feature(layer.GetLayerDefn())
+        geom = ogr.CreateGeometryFromWkt(wkt)
+        feature.SetGeometry(geom)  # Set the feature geometry
+        layer.CreateFeature(feature)  # Create the feature in the layer
+        feature.Destroy()  # Destroy the feature to free resources
+    # Destroy the data source to free resources
+    ds.Destroy()
+
+
+def get_ext_by_of(of: str):
+    ext = of.lower()
+    if ext == 'gtiff':
+        ext = 'tif'
+    return '.'+ext

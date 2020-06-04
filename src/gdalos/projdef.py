@@ -1,6 +1,6 @@
 from numbers import Real
 
-from osgeo import osr
+from osgeo import osr, ogr
 
 
 def get_floats(s):
@@ -67,10 +67,10 @@ def get_zone_center(float_zone):
 
 
 def get_canonic_name(datum, zone):
-    if datum[0].lower() != "e":
-        res = "w84"
-    else:
+    if isinstance(datum, str) and datum[0].lower() == "e":
         res = "e50"
+    else:
+        res = "w84"
     if zone != 0:
         res = res + "u" + str(zone)
     else:
@@ -98,7 +98,16 @@ def get_srs_pj_from_ds(ds):
     return srs_pj4
 
 
+def get_srs_pj_from_epsg(epsg=4326):
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(epsg)
+    srs_pj4 = srs.ExportToProj4()
+    return srs_pj4
+
+
 def proj_is_equivalent(pj1, pj2):
+    if pj1 == pj2:
+        return True
     srs1 = osr.SpatialReference()
     srs1.ImportFromProj4(pj1)
 
@@ -108,10 +117,38 @@ def proj_is_equivalent(pj1, pj2):
     return srs1.IsSame(srs2)
 
 
-ED50_towgs84 = "-87,-98,-121"
+def _srs(srs):
+    if isinstance(srs, str):
+        srs_ = osr.SpatialReference()
+        if srs_.ImportFromProj4(srs) != ogr.OGRERR_NONE:
+            raise Exception("ogr error when parsing srs")
+        srs = srs_
+    return srs
 
 
-def get_proj4_string(datum, zone=None):
+def reproject_coordinates(coords, src_srs, tgt_srs):
+    src_srs = _srs(src_srs)
+    tgt_srs = _srs(tgt_srs)
+
+    transform = osr.CoordinateTransformation(src_srs, tgt_srs)
+    return [transform.TransformPoint(src_x, src_y)[:2] for src_x, src_y in coords]
+
+
+def get_transform(src_srs, tgt_srs):
+    src_srs = _srs(src_srs)
+    tgt_srs = _srs(tgt_srs)
+    if src_srs.IsSame(tgt_srs):
+        return None
+    else:
+        return osr.CoordinateTransformation(src_srs, tgt_srs)
+
+
+def get_proj_string(talos_pj, zone=None, **kwargs):
+    pj_string, _ = parse_proj_string_and_zone(talos_pj, zone, **kwargs)
+    return pj_string
+
+
+def parse_proj_string_and_zone(talos_pj, zone=None, ED50_towgs84="-87,-98,-121"):
     # r'+proj=tmerc +k=0.9996 +lon_0={} +x_0=500000 +datum=WGS84 +units=m +no_defs'
     # r'+proj=tmerc +k=0.9996 +lon_0={} +x_0=500000 +ellps=intl +towgs84=x,y,z +units=m +no_defs'
     #
@@ -121,20 +158,39 @@ def get_proj4_string(datum, zone=None):
     # r'+proj=latlong +datum=WGS84 +no_defs'
     # r'+proj=latlong +ellps=intl +towgs84=x,y,z +no_defs'
 
-    isGeo = zone is None or (zone <= 0)
-    if isGeo:
-        result = r"+proj=latlong"
-    elif float(zone).is_integer():
-        result = r"+proj=utm +zone={}".format(zone)
-    else:
-        result = r"+proj=tmerc +k=0.9996 +lon_0={} +x_0=500000".format(
-            get_zone_center(zone)
-        )
-    if datum[0].lower() != "e":
-        result = result + " +datum=WGS84"
-    else:
-        result = result + " +ellps=intl +towgs84=" + ED50_towgs84
-    if not isGeo:
-        result = result + " +units=m"
-    result = result + " +no_defs"
-    return result
+    pj_string = None
+    if zone is None:
+        number = get_number(talos_pj)
+        if number is not None:
+            if isinstance(number, int) and number > 100:
+                pj_string = '+init=epsg:{}'.format(number)
+            else:
+                zone = number
+        else:
+            zone = get_zone_from_name(talos_pj)
+
+    if not pj_string:
+        if isinstance(talos_pj, str):
+            if talos_pj.startswith("+"):
+                pj_string = talos_pj
+            elif talos_pj.lower().startswith("epsg"):
+                pj_string = '+init=' + talos_pj
+
+    if not pj_string:
+        isGeo = zone is None or (zone <= 0)
+        if isGeo:
+            pj_string = r"+proj=latlong"
+        elif float(zone).is_integer():
+            pj_string = r"+proj=utm +zone={}".format(zone)
+        else:
+            pj_string = r"+proj=tmerc +k=0.9996 +lon_0={} +x_0=500000".format(get_zone_center(zone))
+        if isinstance(talos_pj, str) and talos_pj[0].lower() == "e":
+            pj_string = pj_string + " +ellps=intl +towgs84=" + ED50_towgs84
+        else:
+            pj_string = pj_string + " +datum=WGS84"
+        if not isGeo:
+            pj_string = pj_string + " +units=m"
+        pj_string = pj_string + " +no_defs"
+
+    return pj_string, zone
+

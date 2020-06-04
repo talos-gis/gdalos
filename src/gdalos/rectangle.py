@@ -1,8 +1,17 @@
 class GeoRectangle:
-    def __init__(self, x, y, w, h):
-        if w <= 0 or h <= 0:
-            h = 0
-            w = 0
+    def __init__(self, x, y, w, h, allow_negative_size=False):
+        if w <= 0:
+            if allow_negative_size:
+                x = x + w
+                w = -w
+            else:
+                w = 0
+        if h <= 0:
+            if allow_negative_size:
+                y = y + h
+                h = -h
+            else:
+                h = 0
         self.x = x
         self.y = y
         self.w = w
@@ -78,8 +87,20 @@ class GeoRectangle:
 
     @classmethod
     # # same as min_max
-    def from_xwyh(cls, x, w, y, h):
-        ret = cls(x, y, w, h)
+    def from_xwyh(cls, x, w, y, h, allow_negative_size=False):
+        ret = cls(x, y, w, h, allow_negative_size)
+        return ret
+
+    @classmethod
+    # # same as cls
+    def from_xywh(cls, x, y, w, h, allow_negative_size=False):
+        ret = cls(x, y, w, h, allow_negative_size)
+        return ret
+
+    @classmethod
+    # # same as cls
+    def from_xywhps(cls, x, y, w, h, px, py):
+        ret = cls(x, y, w*px, h*py, True)
         return ret
 
     @classmethod
@@ -96,6 +117,35 @@ class GeoRectangle:
             min(p[1] for p in points),
             max(p[1] for p in points),
         )
+
+    @classmethod
+    def from_geotransform_and_size(cls, gt, size):
+        if gt[2] or gt[4]:
+            return cls.from_points(get_points_extent(gt, *size))
+        else:
+            # faster method
+            origin = (gt[0], gt[3])
+            pixel_size = (gt[1], gt[5])
+            extent = cls.from_xywhps(*origin, *size, *pixel_size)
+            # extent_b = cls.from_points(get_points_extent(gt, *size))
+            # assert extent == extent_b
+            return extent
+
+    def to_pixels(self, pixel_size):
+        return self.from_xwyh(self.x / pixel_size[0], self.w / pixel_size[0],
+                              self.y / pixel_size[1], self.h / pixel_size[1], True)
+
+    @classmethod
+    def from_geotransform_and_size_to_pix(cls, gt, size):
+        origin = (gt[0], gt[3])
+        pixel_size = (gt[1], gt[5])
+        pix_origin = list(origin[i] / pixel_size[i] for i in (0, 1))
+        # pix_bounds = list(origin[i] / pixel_size[i] + size[i] for i in (0, 1))
+        return cls.from_xwyh(pix_origin[0], size[0], pix_origin[1], size[1])
+
+    @property
+    def size(self):
+        return self.w, self.h
 
     @property
     def left(self):
@@ -158,4 +208,20 @@ class GeoRectangle:
         return self.min_x, self.max_x, self.min_y, self.max_y
 
     def __repr__(self):
-        return f"Rectangle({self.x}, {self.y}, {self.w}, {self.h})"
+        return f"Rectangle({self.min_x}, {self.max_x}, {self.min_y}, {self.max_y}) wh({self.w}, {self.h}))"
+
+
+def get_points_extent(gt, cols, rows):
+    """Return list of corner coordinates from a geotransform"""
+
+    def transform_point(px, py):
+        x = gt[0] + (px * gt[1]) + (py * gt[2])
+        y = gt[3] + (px * gt[4]) + (py * gt[5])
+        return x, y
+
+    return [
+        transform_point(0, 0),
+        transform_point(0, rows),
+        transform_point(cols, rows),
+        transform_point(cols, 0),
+    ]
