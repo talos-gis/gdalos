@@ -8,7 +8,6 @@ from enum import Enum
 from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans
 from gdalos.calc import gdal_calc, gdal_to_czml, dict_util, gdalos_combine
 from gdalos.viewshed import viewshed_consts, viewshed_params
-from gdalos.viewshed.viewshed_consts import viewshed_defaults, viewshed_ndv, viewshed_comb_ndv
 
 
 class CalcOperation(Enum):
@@ -72,21 +71,12 @@ def viewshed_calc(input_ds,
         # gdal_out_format = 'GTiff' if use_temp_tif or (output_tif and not operation) else 'MEM'
         # gdal_out_format = 'GTiff' if steps == 1 else 'MEM'
 
-        params = 'md', 'ox', 'oy', 'oz', 'tz', \
-                 'vv', 'iv', 'ov', 'ndv', \
-                 'cc', 'mode'
-
-        new_keys = \
-            'maxDistance', 'observerX', 'observerY', 'observerHeight', 'targetHeight', \
-            'visibleVal', 'invisibleVal', 'outOfRangeVal', 'noDataVal', \
-            'dfCurvCoeff', 'mode'
-        key_map = dict(zip(params, new_keys))
-        arrays_dict = dict_util.make_dicts_list_from_lists_dict(arrays_dict, key_map)
+        arrays_dict = dict_util.make_dicts_list_from_lists_dict(arrays_dict, viewshed_consts.gdal_viewshed_keymap)
         arrays_dict = arrays_dict[input_slice_from:input_slice_to]
 
         if operation:
             # restore viewshed consts default values
-            my_viewshed_defaults = dict_util.replace_keys(viewshed_defaults, key_map)
+            my_viewshed_defaults = viewshed_consts.gdal_viewshed_defaults.copy()
             for a in arrays_dict:
                 a.update(my_viewshed_defaults)
         else:
@@ -144,31 +134,32 @@ def viewshed_calc(input_ds,
         # alpha_pattern = '1*({{}}>{})'.format(viewshed_thresh)
         # alpha_pattern = 'np.multiply({{}}>{}, dtype=np.uint8)'.format(viewshed_thresh)
         if operation == CalcOperation.viewshed:
-            no_data_value = viewshed_ndv
+            no_data_value = viewshed_consts.viewshed_ndv
             f = gdalos_combine.get_by_index
-            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=sum)
+            # calc_expr, calc_kwargs, f = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f'), sum
         elif operation == CalcOperation.max:
-            no_data_value = viewshed_ndv
+            no_data_value = viewshed_consts.viewshed_ndv
             f = gdalos_combine.vs_max
-            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=sum)
+            # calc_expr, calc_kwargs, f = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f'), sum
         elif operation == CalcOperation.count:
-            no_data_value = viewshed_ndv
+            no_data_value = viewshed_consts.viewshed_ndv
             f = gdalos_combine.vs_count
             # calc_expr, calc_kwargs = gdal_calc.make_calc_with_operand(files, alpha_pattern, '+')
-            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'sum')
+            # calc_expr, calc_kwargs, f = gdal_calc.make_calc_with_func(files, alpha_pattern), sum
         elif operation == CalcOperation.count_z:
-            no_data_value = viewshed_comb_ndv
+            no_data_value = viewshed_consts.viewshed_comb_ndv
             f = gdalos_combine.vs_count_z
-            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=sum)
+            # calc_expr, calc_kwargs f, = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f'), sum
         elif operation == CalcOperation.unique:
-            no_data_value = viewshed_comb_ndv
+            no_data_value = viewshed_consts.viewshed_comb_ndv
             f = gdalos_combine.vs_unique
-            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=unique)
+            # calc_expr, calc_kwargs, f = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f'), unique
         else:
             raise Exception('Unknown operation: {}'.format(operation))
 
         calc_expr = 'f(x)'
-        calc_kwargs = dict(x=files, f=f)
+        calc_kwargs = dict(x=files)
+        user_namespace = dict(f=f)
 
         hide_nodata = True
         use_temp_tif = False
@@ -191,7 +182,7 @@ def viewshed_calc(input_ds,
             ds = gdal_calc.Calc(
                 calc_expr, outfile=str(d_path), extent=extent, cutline=cutline, format=gdal_out_format,
                 color_table=color_table, hideNodata=hide_nodata, return_ds=return_ds, overwrite=True,
-                NoDataValue=no_data_value, **calc_kwargs)
+                NoDataValue=no_data_value, user_namespace=user_namespace, **calc_kwargs)
         t = time.time() - t
         print('time for calc: {:.3f} seconds'.format(t))
 
@@ -254,16 +245,12 @@ if __name__ == "__main__":
             oxs.append(ox)
             oys.append(oy)
 
-    inputs = dict()
+    inputs = viewshed_consts.viewshed_defaults.copy()
     inputs['md'] = [vp.md]
     inputs['ox'] = oxs
     inputs['oy'] = oys
     inputs['oz'] = [vp.oz]
     inputs['tz'] = [vp.tz]
-    inputs['vv'] = [viewshed_defaults['vv']]
-    inputs['iv'] = [viewshed_defaults['iv']]
-    inputs['ov'] = [viewshed_defaults['ov']]
-    inputs['ndv'] = [viewshed_defaults['ndv']]
     inputs['cc'] = [viewshed_consts.viewshed_atmospheric_refraction]
     inputs['mode'] = [2]
 

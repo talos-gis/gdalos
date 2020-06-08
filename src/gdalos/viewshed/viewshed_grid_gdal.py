@@ -23,7 +23,7 @@ def viewshed_run(md, interval, grid_range, center, oz, tz, output_path, input_fi
     if band is None:
         raise Exception('band number out of range')
 
-    vals = viewshed_consts.viewshed_defaults
+    vals = viewshed_consts.gdal_viewshed_defaults
 
     cc = viewshed_consts.viewshed_atmospheric_refraction
     for i in grid_range:
@@ -35,9 +35,8 @@ def viewshed_run(md, interval, grid_range, center, oz, tz, output_path, input_fi
             filename = output_path / (name + '.tif')
 
             dest = gdal.ViewshedGenerate(band, 'GTiff', str(filename), None,
-                                         ox, oy, oz, tz, **vals, cc,
-                                         mode=2,
-                                         maxDistance=md)
+                                         ox, oy, oz, tz, **vals,
+                                         dfCurvCoeff=cc, mode=2, maxDistance=md)
 
             if dest is None:
                 raise Exception('error occurred')
