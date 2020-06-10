@@ -27,16 +27,16 @@ def fill_arrays_dict(d: dict):
 def make_dicts_list_from_lists_dict(d: dict, key_map):
     max_len = max(len(v) for v in d.values())
     result = []
-    new_d = dict()
+    d1 = dict()
     for i in range(max_len):
-        new_d = new_d.copy()
+        d1 = d1.copy()
         for k, v in d.items():  # zip(new_keys, d.values()):
             if key_map:
                 k = key_map[k]
             len_v = len(v)
             if i < len_v:
-                new_d[k] = v[i]
-        result.append(new_d)
+                d1[k] = v[i]
+        result.append(d1)
     return result
 
 
