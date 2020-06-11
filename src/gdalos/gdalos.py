@@ -8,7 +8,7 @@ from numbers import Real
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, TypeVar, Union
 
-import gdal
+from osgeo import gdal
 from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef
 from gdalos.__util__ import with_param_dict
 from gdalos.gdalos_util import concat_paths
@@ -78,17 +78,17 @@ def resampling_alg_by_kind(kind, expand_rgb=False):
         return "cubic"
 
 
-def do_skip_if_exists(out_filename, skip_if_exists, logger=None):
+def do_skip_if_exists(out_filename, overwrite, logger=None):
     verbose = logger is not None and logger is not ...
     skip = False
     if os.path.isfile(out_filename):
-        if skip_if_exists:
+        if not overwrite:
             skip = True
             if verbose:
                 logger.warning('file "{}" exists, skip!'.format(out_filename))
         else:
             if verbose:
-                logger.warning('file "{}" exists, removing...!'.format(out_filename))
+                logger.warning('file "{}" exists, deleting...!'.format(out_filename))
             os.remove(out_filename)
     return skip
 
@@ -133,7 +133,7 @@ def gdalos_trans(
     out_path: str = None,
     return_ds: Union[type(...), bool] = ...,
     out_path_with_src_folders: str = True,
-    skip_if_exists=True,
+    overwrite=False,
     cog: Union[type(...), bool] = ...,
     write_info: bool = False,
     write_spec: bool = False,
@@ -220,7 +220,7 @@ def gdalos_trans(
                     val,
                     resampling_alg=resampling_alg,
                     kind=kind,
-                    skip_if_exists=skip_if_exists,
+                    overwrite=overwrite,
                     logger=logger,
                 )
                 if vrt_path is None:
@@ -268,6 +268,7 @@ def gdalos_trans(
     all_args["logger"] = logger
     verbose = logger is not None and logger is not ...
     if verbose:
+        logger.info(f'gdal version: {gdal.__version__}')
         logger.info(all_args)
     # endregion
 
@@ -622,11 +623,11 @@ def gdalos_trans(
         final_files_for_step_1 = final_files
         ovr_files_for_step_1 = ovr_files
 
-    cog_ready = cog and do_skip_if_exists(cog_filename, skip_if_exists, logger)
+    cog_ready = cog and do_skip_if_exists(cog_filename, overwrite, logger)
     if cog_ready or ovr_type == OvrType.existing_reuse or (filename == out_filename):
         skipped = True
     else:
-        skipped = False if filename_is_ds else do_skip_if_exists(out_filename, skip_if_exists, logger)
+        skipped = False if filename_is_ds else do_skip_if_exists(out_filename, overwrite, logger)
 
     if not cog_ready and write_spec:
         spec_filename = gdalos_util.concat_paths(cog_filename, ".spec")
@@ -787,7 +788,7 @@ def gdalos_trans(
             # create overviews from dataset (internal or external)
             ret_code = gdalos_ovr(
                 out_filename,
-                skip_if_exists=skip_if_exists,
+                overwrite=overwrite,
                 ovr_type=ovr_type,
                 dst_ovr_count=dst_ovr_count,
                 kind=kind,
@@ -819,7 +820,7 @@ def gdalos_trans(
                 temp_files=cog_temp_files,
                 delete_temp_files=False,
                 logger=logger,
-                skip_if_exists=skip_if_exists,
+                overwrite=overwrite,
                 write_info=write_info,
                 write_spec=False,
             )
@@ -843,7 +844,7 @@ def gdalos_trans(
             )
         if write_info:
             info = gdalos_info(
-                out_filename, skip_if_exists=skip_if_exists, logger=logger
+                out_filename, overwrite=overwrite, logger=logger
             )
             if info is not None:
                 aux_files.append(info)
@@ -903,14 +904,14 @@ def add_ovr(
     filename,
     options,
     access_mode,
-    skip_if_exists=False,
+    overwrite=True,
     logger=None,
     ovr_files: list = None,
 ):
     verbose = logger is not None and logger is not ...
     filename = Path(filename)
     out_filename = gdalos_util.concat_paths(filename, ".ovr")
-    if not do_skip_if_exists(out_filename, skip_if_exists, logger):
+    if not do_skip_if_exists(out_filename, overwrite, logger):
         if verbose:
             logger.info(
                 'adding ovr for: "{}" options: {} access_mode: {}'.format(
@@ -932,7 +933,7 @@ default_dst_ovr_count = 10
 def gdalos_ovr(
     filename,
     comp=None,
-    skip_if_exists=False,
+    overwrite=True,
     ovr_type=...,
     dst_ovr_count=default_dst_ovr_count,
     kind=None,
@@ -1015,7 +1016,7 @@ def gdalos_ovr(
                 out_filename,
                 ovr_options,
                 access_mode,
-                skip_if_exists,
+                overwrite,
                 logger,
                 ovr_files,
             )
@@ -1027,7 +1028,7 @@ def gdalos_ovr(
                     filename,
                     ovr_options,
                     access_mode,
-                    skip_if_exists,
+                    overwrite,
                     logger,
                     ovr_files,
                 )
@@ -1042,14 +1043,14 @@ def gdalos_ovr(
     return ret_code
 
 
-def gdalos_info(filename_or_ds, skip_if_exists=False, logger=None):
+def gdalos_info(filename_or_ds, overwrite=True, logger=None):
     filename_or_ds = Path(filename_or_ds)
     if os.path.isdir(filename_or_ds):
         raise Exception(f"input is a dir, not a file: {filename_or_ds}")
     if not os.path.isfile(filename_or_ds):
         raise Exception("file not found: {}".format(filename_or_ds))
     out_filename = gdalos_util.concat_paths(filename_or_ds, ".info")
-    if not do_skip_if_exists(out_filename, skip_if_exists=skip_if_exists):
+    if not do_skip_if_exists(out_filename, overwrite=overwrite):
         with gdalos_util.OpenDS(filename_or_ds, logger=logger) as ds:
             gdal_info = gdal.Info(ds)
         with open(out_filename, "w") as w:
@@ -1064,7 +1065,7 @@ def gdalos_vrt(
     vrt_path=None,
     kind=None,
     resampling_alg=None,
-    skip_if_exists=True,
+    overwrite=True,
     logger=None,
 ):
     if gdalos_util.is_list_like(filenames):
@@ -1080,7 +1081,7 @@ def gdalos_vrt(
 
     if os.path.isdir(vrt_path):
         vrt_path = os.path.join(vrt_path, os.path.basename(first_filename) + ".vrt")
-    if do_skip_if_exists(vrt_path, skip_if_exists, logger):
+    if do_skip_if_exists(vrt_path, overwrite, logger):
         return vrt_path
     if os.path.isfile(vrt_path):
         raise Exception("could not delete vrt file: {}".format(vrt_path))
