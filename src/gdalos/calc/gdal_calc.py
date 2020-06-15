@@ -236,13 +236,14 @@ def doit(opts, args):
                                     "Error! GeoTransform of file %s %s are different from other files %s.  Cannot proceed" %
                                     (myF, myFileGeoTransform, GeoTransformCheck))
                             else:
+                                eps = 0.000001
                                 for i in (1, 5):
-                                    if GeoTransformCheck[i] != myFileGeoTransform[i]:
+                                    if abs(GeoTransformCheck[i] - myFileGeoTransform[i])>eps:
                                         raise Exception(
                                             "Error! Pixel size file %s %s are different from other files %s.  Cannot proceed" %
                                             (myF, myFileGeoTransform, GeoTransformCheck))
                                 for i in (2, 4):
-                                    if GeoTransformCheck[i] != myFileGeoTransform[i]:
+                                    if abs(GeoTransformCheck[i] - myFileGeoTransform[i])>eps:
                                         raise Exception(
                                             "Error! The rotation of file %s is %s, only 0 is accepted.  Cannot proceed" %
                                             (myF, (myFileGeoTransform[2], myFileGeoTransform[4]), GeoTransformCheck))
@@ -451,7 +452,8 @@ def doit(opts, args):
                     myval = gdalnumeric.BandReadAsArray(myFiles[i].GetRasterBand(myBandNo),
                                                         xoff=myX, yoff=myY,
                                                         win_xsize=nXValid, win_ysize=nYValid)
-
+                    if myval is None:
+                        raise Exception("Cannot read band array from %s" % myF[i])
                     # fill in nodata values
                     if myNDV[i] is not None:
                         # myNDVs is a boolean buffer.
