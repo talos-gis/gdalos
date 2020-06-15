@@ -1,5 +1,4 @@
 from copy import copy
-from gdalos.calc import dict_util
 
 st_seen = 5
 st_seenbut = 4
@@ -49,6 +48,9 @@ class ViewshedParams(object):
 
         self.refraction_coeff = atmospheric_refraction_coeff
         self.mode = 2
+
+    def is_omni_h(self):
+        return not self.h_aperture or abs(self.h_aperture - 360) < 0.0001
 
     @property
     def oxy(self):

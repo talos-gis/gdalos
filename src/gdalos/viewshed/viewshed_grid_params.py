@@ -13,6 +13,9 @@ class ViewshedGridParams(ViewshedParams):
         self.oz = 10
         self.tz = 10
 
+        # self.azimuth = 20
+        # self.h_aperture = 30
+
         self.name = None
         self.interval = self.max_r / 2
         j = 1

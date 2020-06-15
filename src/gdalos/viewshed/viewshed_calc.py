@@ -1,4 +1,4 @@
-import gdal, osr
+import gdal, osr, ogr
 import glob
 import tempfile
 import os
@@ -9,6 +9,8 @@ from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans
 from gdalos.calc import gdal_calc, gdal_to_czml, dict_util, gdalos_combine
 from gdalos.viewshed import viewshed_params
 from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
+from gdalos.talos.ogr_util import create_layer_from_geometries
+from gdalos.talos.geom_arc import PolygonizeSector
 
 
 class CalcOperation(Enum):
@@ -17,6 +19,15 @@ class CalcOperation(Enum):
     count = 2
     count_z = 3
     unique = 4
+
+
+def tempthing(use_temp_tif, steps, output_filename):
+    is_temp_file = (use_temp_tif and steps > 1)
+    gdal_out_format = 'GTiff' if steps == 1 or use_temp_tif else 'MEM'
+    d_path = tempfile.mktemp(
+        suffix='.tif') if is_temp_file else output_filename if gdal_out_format != 'MEM' else ''
+    return_ds = not is_temp_file
+    return is_temp_file, gdal_out_format, d_path, return_ds
 
 
 def viewshed_calc(input_ds,
@@ -32,8 +43,8 @@ def viewshed_calc(input_ds,
     color_table = gdalos_color.get_color_table(color_palette)
     # steps:
     # 1. viewshed
-    # 2. calc
-    # 3. post process
+    # 2. calc + calc_post_process
+    # 3. combined_post_process
     # 4. czml
     steps = 1
     if operation == CalcOperation.viewshed:
@@ -45,7 +56,7 @@ def viewshed_calc(input_ds,
         steps += 1
     temp_files = []
 
-    post_process_needed = False
+    combined_post_process_needed = False
 
     if not files:
         files = []
@@ -62,17 +73,11 @@ def viewshed_calc(input_ds,
 
         pjstr_src_srs = projdef.get_srs_pj_from_ds(input_ds)
         pjstr_tgt_srs = projdef.get_proj_string(out_crs) if out_crs is not None else pjstr_src_srs
-        post_process_needed = cutline or not projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs)
-        if post_process_needed:
+        combined_post_process_needed = cutline or not projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs)
+        if combined_post_process_needed:
             steps += 1
 
     if not files:
-        use_temp_tif = True  # todo: why dosn't it work without it?
-        # TypeError: '>' not supported between instances of 'NoneType' and 'int'
-
-        # gdal_out_format = 'GTiff' if use_temp_tif or (output_tif and not operation) else 'MEM'
-        # gdal_out_format = 'GTiff' if steps == 1 else 'MEM'
-
         vp_array = ViewshedGridParams.get_list_from_lists_dict(vp_array)
         vp_array = vp_array[input_slice_from:input_slice_to]
 
@@ -100,12 +105,17 @@ def viewshed_calc(input_ds,
         else:
             transform_coords_to_raster = None
 
-        gdal_out_format = 'GTiff' if steps == 1 or use_temp_tif else 'MEM'
         for vp in vp_array:
             if transform_coords_to_raster:
                 vp.ox, vp.oy, _ = transform_coords_to_raster.TransformPoint(vp.ox, vp.oy)
-            d_path = tempfile.mktemp(
-                suffix='.tif') if (use_temp_tif and steps>1) else output_filename if gdal_out_format != 'MEM' else ''
+            inter_process = not vp.is_omni_h()
+            if inter_process:
+                steps += 1
+
+            # TypeError: '>' not supported between instances of 'NoneType' and 'int'
+            # todo: why dosn't it work without it?
+            is_temp_file, gdal_out_format, d_path, return_ds = tempthing(True, steps, output_filename)
+
             inputs = vp.get_as_gdal_params()
             ds = gdal.ViewshedGenerate(input_band, gdal_out_format, str(d_path), co, **inputs)
 
@@ -114,19 +124,40 @@ def viewshed_calc(input_ds,
 
             src_band = ds.GetRasterBand(1)
             src_band.SetNoDataValue(vp.ndv)
+            if color_table and not operation:
+                src_band.SetRasterColorTable(color_table)
+                src_band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
+            src_band = None
+
+            if is_temp_file:
+                # close original ds and reopen
+                ds = None
+                ds = gdalos_util.open_ds(d_path)
+                temp_files.append(d_path)
+
+            if inter_process:
+                ring = PolygonizeSector(vp.ox, vp.oy, vp.max_r, vp.max_r, vp.azimuth, vp.h_aperture)
+                calc_cutline = tempfile.mktemp(suffix='.gpkg')
+                temp_files.append(calc_cutline)
+                create_layer_from_geometries([ring], calc_cutline)
+
+                is_temp_file, gdal_out_format, d_path, return_ds = tempthing(True, steps, output_filename)
+
+                ds = gdalos_trans(ds, out_filename=d_path, #warp_CRS=pjstr_tgt_srs,
+                                  cutline=calc_cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
+
+                if is_temp_file:
+                    # close original ds and reopen
+                    ds = None
+                    ds = gdalos_util.open_ds(d_path)
+                    temp_files.append(d_path)
+                if not ds:
+                    raise Exception('Viewshed calculation failed to cut')
+
+                steps -= 1
 
             if operation:
-                if use_temp_tif:
-                    temp_files.append(d_path)
-                    files.append(d_path)
-                    ds = None
-                else:
-                    files.append(ds)
-            else:
-                if color_table:
-                    src_band.SetRasterColorTable(color_table)
-                    src_band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
-            src_band = None
+                files.append(ds)
 
         input_ds = None
         input_band = None
@@ -164,22 +195,11 @@ def viewshed_calc(input_ds,
         user_namespace = dict(f=f)
 
         hide_nodata = True
-        use_temp_tif = False
-        # gdal_out_format = 'GTiff' if steps == 1 or use_temp_tif else 'MEM'
-        # d_path = tempfile.mktemp(
-        #     suffix='.tif') if use_temp_tif else tif_output_filename if gdal_out_format != 'MEM' else ''
 
-        # gdal_out_format = 'MEM' if is_czml else 'GTiff'
-        # d_path = output_filename
+        is_temp_file, gdal_out_format, d_path, return_ds = tempthing(False, steps, output_filename)
 
-        gdal_out_format = 'GTiff' if steps == 1 or use_temp_tif else 'MEM'
-        d_path = tempfile.mktemp(
-            suffix='.tif') if (use_temp_tif and steps > 1) else output_filename if gdal_out_format != 'MEM' else ''
-
-        # return_ds = gdal_out_format == 'MEM'
         debug_time = 1
         t = time.time()
-        return_ds = True
         for i in range(debug_time):
             ds = gdal_calc.Calc(
                 calc_expr, outfile=str(d_path), extent=extent, format=gdal_out_format,
@@ -197,16 +217,10 @@ def viewshed_calc(input_ds,
             files[i] = None  # close calc input ds(s)
         steps -= 1
 
-    if post_process_needed:
-        # gdal_out_format = 'GTiff' if steps == 1 else 'MEM'
-        use_temp_tif = False
-        gdal_out_format = 'GTiff' if steps == 1 or use_temp_tif else 'MEM'
-        d_path = tempfile.mktemp(
-            suffix='.tif') if (use_temp_tif and steps > 1) else output_filename if gdal_out_format != 'MEM' else ''
-
-        return_ds = True
+    if combined_post_process_needed:
+        is_temp_file, gdal_out_format, d_path, return_ds = tempthing(False, steps, output_filename)
         ds = gdalos_trans(ds, out_filename=d_path, warp_CRS=pjstr_tgt_srs,
-                          cutline=cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None, write_spec=False)
+                          cutline=cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
 
         if return_ds:
             if not ds:
@@ -223,7 +237,10 @@ def viewshed_calc(input_ds,
 
     if temp_files:
         for f in temp_files:
-            os.remove(f)
+            try:
+                os.remove(f)
+            except:
+                print('failed to remove temp file:{}'.format(f))
 
     return True
 
@@ -239,9 +256,6 @@ if __name__ == "__main__":
     inputs = vp.get_as_gdal_params_array()
 
     use_input_files = False
-    run_single = False
-    run_comb = True
-    run_unique = False
     run_comb_with_post = False
 
     if use_input_files:

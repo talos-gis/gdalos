@@ -272,7 +272,9 @@ def gdalos_trans(
         logger.info(all_args)
     # endregion
 
-    filename_is_ds = not isinstance(filename, (str, Path))
+    ds = gdalos_util.open_ds(filename, src_ovr=src_ovr, open_options=open_options, logger=logger)
+    # filename_is_ds = not isinstance(filename, (str, Path))
+    filename_is_ds = ds == filename
     if return_ds is ...:
         return_ds = of == 'MEM'
     if filename_is_ds:
@@ -301,8 +303,6 @@ def gdalos_trans(
     extent_was_cropped = False
     extent_aligned = True
     input_is_vrt = input_ext == ".vrt"
-
-    ds = gdalos_util.open_ds(filename, src_ovr=src_ovr, open_options=open_options, logger=logger)
 
     # region decide which overviews to make
     if src_ovr is None:
@@ -690,12 +690,11 @@ def gdalos_trans(
                 if verbose and warp_options:
                     logger.info("wrap options: " + str(warp_options))
                 out_ds = gdal.Warp(str(out_filename), ds, **common_options, **warp_options)
-                ret_code = out_ds is not None
             else:
                 if verbose and translate_options:
                     logger.info("translate options: " + str(translate_options))
                 out_ds = gdal.Translate(str(out_filename), ds, **common_options, **translate_options)
-                ret_code = out_ds is not None
+            ret_code = out_ds is not None
             if not return_ds:
                 out_ds = None  # close output ds
             if ret_code:
