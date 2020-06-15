@@ -1,19 +1,20 @@
 from gdalos import gdalos_trans
 from gdalos import GeoRectangle
 from pathlib import Path
-from gdalos.viewshed import viewshed_params, viewshed_consts
+from copy import copy
+from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
 
 
-def calc_extent(center, grid_range, interval, md, frame):
+def calc_extent(oxy, grid_range, interval, md, frame):
     # i is for x-y;
     # j is for min and max values of the grid
     # k is for the sign (to subtract or to add) the max_range
-    minmax = [center[i] + grid_range[j] * interval + k * (md + frame) for i in (0, 1) for j, k in zip((0, -1), (-1, 1))]
+    minmax = [oxy[i] + grid_range[j] * interval + k * (md + frame) for i in (0, 1) for j, k in zip((0, -1), (-1, 1))]
     full_extent = GeoRectangle.from_min_max(*minmax)
     return full_extent
 
 
-def viewshed_run(md, interval, grid_range, center, oz, tz, output_path, input_filename):
+def viewshed_run(vp: ViewshedGridParams, output_path, input_filename):
     import gdal
     from gdalos import gdalos_util
 
@@ -23,26 +24,17 @@ def viewshed_run(md, interval, grid_range, center, oz, tz, output_path, input_fi
     if band is None:
         raise Exception('band number out of range')
 
-    vals = viewshed_consts.viewshed_defaults
+    arr = vp.get_array()
+    for vp1 in arr:
+        filename = output_path / (vp1.name + '.tif')
 
-    cc = viewshed_consts.viewshed_atmospheric_refraction
-    for i in grid_range:
-        for j in grid_range:
-            ox = center[0] + i * interval
-            oy = center[1] + j * interval
+        vals = vp1.get_as_gdal_params()
+        dest = gdal.ViewshedGenerate(band, 'GTiff', str(filename), None, **vals)
 
-            name = '{}_{}'.format(i, j)
-            filename = output_path / (name + '.tif')
+        if dest is None:
+            raise Exception('error occurred')
 
-            dest = gdal.ViewshedGenerate(band, 'GTiff', str(filename), None,
-                                         ox, oy, oz, tz, **vals, cc,
-                                         mode=2,
-                                         maxDistance=md)
-
-            if dest is None:
-                raise Exception('error occurred')
-
-            del dest
+        del dest
 
 
 if __name__ == "__main__":
@@ -51,12 +43,12 @@ if __name__ == "__main__":
     output_path = dir_path / Path('comb')
     srtm_filename = Path(output_path) / Path('srtm1_36_sample.tif')
 
-    vp = viewshed_params.get_test_viewshed_params()
+    vp = ViewshedGridParams()
 
     make_map = True
     if make_map:
         frame = 500
-        full_extent = calc_extent(vp.center, vp.grid_range, vp.interval, vp.md, frame)
+        full_extent = calc_extent(vp.oxy, vp.grid_range, vp.interval, vp.max_r, frame)
         gdalos_trans(input_filename, extent=full_extent, warp_CRS=36, extent_in_4326=False, out_filename=srtm_filename)
 
-    viewshed_run(vp.md, vp.interval, vp.grid_range, vp.center, vp.oz, vp.tz, output_path, srtm_filename)
+    viewshed_run(vp, output_path, srtm_filename)

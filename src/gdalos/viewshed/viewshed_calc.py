@@ -7,8 +7,8 @@ from pathlib import Path
 from enum import Enum
 from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans
 from gdalos.calc import gdal_calc, gdal_to_czml, dict_util, gdalos_combine
-from gdalos.viewshed import viewshed_consts, viewshed_params
-from gdalos.viewshed.viewshed_consts import viewshed_defaults, viewshed_ndv, viewshed_comb_ndv
+from gdalos.viewshed import viewshed_params
+from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
 
 
 class CalcOperation(Enum):
@@ -21,7 +21,7 @@ class CalcOperation(Enum):
 
 def viewshed_calc(input_ds,
                   output_filename,
-                  arrays_dict, extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
+                  vp_array, extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
                   in_coords_crs_pj=None, out_crs=None,
                   color_palette=None,
                   bi=1, co=None, of='GTiff',
@@ -41,6 +41,7 @@ def viewshed_calc(input_ds,
     if operation:
         steps += 1
     if is_czml:
+        out_crs = 0  # czml supprts only 4326
         steps += 1
     temp_files = []
 
@@ -72,29 +73,20 @@ def viewshed_calc(input_ds,
         # gdal_out_format = 'GTiff' if use_temp_tif or (output_tif and not operation) else 'MEM'
         # gdal_out_format = 'GTiff' if steps == 1 else 'MEM'
 
-        params = 'md', 'ox', 'oy', 'oz', 'tz', \
-                 'vv', 'iv', 'ov', 'ndv', \
-                 'cc', 'mode'
-
-        new_keys = \
-            'maxDistance', 'observerX', 'observerY', 'observerHeight', 'targetHeight', \
-            'visibleVal', 'invisibleVal', 'outOfRangeVal', 'noDataVal', \
-            'dfCurvCoeff', 'mode'
-        key_map = dict(zip(params, new_keys))
-        arrays_dict = dict_util.make_dicts_list_from_lists_dict(arrays_dict, key_map)
-        arrays_dict = arrays_dict[input_slice_from:input_slice_to]
+        vp_array = ViewshedGridParams.get_list_from_lists_dict(vp_array)
+        vp_array = vp_array[input_slice_from:input_slice_to]
 
         if operation:
             # restore viewshed consts default values
-            my_viewshed_defaults = dict_util.replace_keys(viewshed_defaults, key_map)
-            for a in arrays_dict:
+            my_viewshed_defaults = viewshed_params.viewshed_defaults
+            for a in vp_array:
                 a.update(my_viewshed_defaults)
         else:
-            arrays_dict = arrays_dict[0:1]
+            vp_array = vp_array[0:1]
 
         max_rasters_count = 1 if operation is None else 254 if operation == CalcOperation.unique else 1000
-        if len(arrays_dict) > max_rasters_count:
-            arrays_dict = arrays_dict[0:max_rasters_count]
+        if len(vp_array) > max_rasters_count:
+            vp_array = vp_array[0:max_rasters_count]
 
         # in_raster_srs = projdef.get_srs_pj_from_ds(input_ds)
         in_raster_srs = osr.SpatialReference()
@@ -109,19 +101,19 @@ def viewshed_calc(input_ds,
             transform_coords_to_raster = None
 
         gdal_out_format = 'GTiff' if steps == 1 or use_temp_tif else 'MEM'
-        for vp in arrays_dict:
+        for vp in vp_array:
             if transform_coords_to_raster:
-                vp['observerX'], vp['observerY'], _ = transform_coords_to_raster.TransformPoint(vp['observerX'],
-                                                                                                vp['observerY'])
+                vp.ox, vp.oy, _ = transform_coords_to_raster.TransformPoint(vp.ox, vp.oy)
             d_path = tempfile.mktemp(
                 suffix='.tif') if (use_temp_tif and steps>1) else output_filename if gdal_out_format != 'MEM' else ''
-            ds = gdal.ViewshedGenerate(input_band, gdal_out_format, str(d_path), co, **vp)
+            inputs = vp.get_as_gdal_params()
+            ds = gdal.ViewshedGenerate(input_band, gdal_out_format, str(d_path), co, **inputs)
 
             if not ds:
                 raise Exception('Viewshed calculation failed')
 
             src_band = ds.GetRasterBand(1)
-            src_band.SetNoDataValue(vp['noDataVal'])
+            src_band.SetNoDataValue(vp.ndv)
 
             if operation:
                 if use_temp_tif:
@@ -144,31 +136,32 @@ def viewshed_calc(input_ds,
         # alpha_pattern = '1*({{}}>{})'.format(viewshed_thresh)
         # alpha_pattern = 'np.multiply({{}}>{}, dtype=np.uint8)'.format(viewshed_thresh)
         if operation == CalcOperation.viewshed:
-            no_data_value = viewshed_ndv
+            no_data_value = viewshed_params.viewshed_ndv
             f = gdalos_combine.get_by_index
-            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=sum)
+            # calc_expr, calc_kwargs, f = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f'), sum
         elif operation == CalcOperation.max:
-            no_data_value = viewshed_ndv
+            no_data_value = viewshed_params.viewshed_ndv
             f = gdalos_combine.vs_max
-            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=sum)
+            # calc_expr, calc_kwargs, f = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f'), sum
         elif operation == CalcOperation.count:
-            no_data_value = viewshed_ndv
+            no_data_value = 0
             f = gdalos_combine.vs_count
             # calc_expr, calc_kwargs = gdal_calc.make_calc_with_operand(files, alpha_pattern, '+')
-            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'sum')
+            # calc_expr, calc_kwargs, f = gdal_calc.make_calc_with_func(files, alpha_pattern), sum
         elif operation == CalcOperation.count_z:
-            no_data_value = viewshed_comb_ndv
+            no_data_value = viewshed_params.viewshed_comb_ndv
             f = gdalos_combine.vs_count_z
-            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=sum)
+            # calc_expr, calc_kwargs f, = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f'), sum
         elif operation == CalcOperation.unique:
-            no_data_value = viewshed_comb_ndv
+            no_data_value = viewshed_params.viewshed_comb_ndv
             f = gdalos_combine.vs_unique
-            # calc_expr, calc_kwargs = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f', f=unique)
+            # calc_expr, calc_kwargs, f = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f'), unique
         else:
             raise Exception('Unknown operation: {}'.format(operation))
 
         calc_expr = 'f(x)'
-        calc_kwargs = dict(x=files, f=f)
+        calc_kwargs = dict(x=files)
+        user_namespace = dict(f=f)
 
         hide_nodata = True
         use_temp_tif = False
@@ -189,9 +182,9 @@ def viewshed_calc(input_ds,
         return_ds = True
         for i in range(debug_time):
             ds = gdal_calc.Calc(
-                calc_expr, outfile=str(d_path), extent=extent, cutline=cutline, format=gdal_out_format,
+                calc_expr, outfile=str(d_path), extent=extent, format=gdal_out_format,
                 color_table=color_table, hideNodata=hide_nodata, return_ds=return_ds, overwrite=True,
-                NoDataValue=no_data_value, **calc_kwargs)
+                NoDataValue=no_data_value, user_namespace=user_namespace, **calc_kwargs)
         t = time.time() - t
         print('time for calc: {:.3f} seconds'.format(t))
 
@@ -241,31 +234,9 @@ if __name__ == "__main__":
     raster_filename = Path(output_path) / Path('srtm1_36_sample.tif')
     input_ds = ds = gdalos_util.open_ds(raster_filename)
 
-    vp = viewshed_params.get_test_viewshed_params()
+    vp = ViewshedGridParams()
 
-    oxs = []
-    oys = []
-    j = 1
-    grid_range = range(-j, j + 1)
-    for i in grid_range:
-        for j in grid_range:
-            ox = vp.center[0] + i * vp.interval
-            oy = vp.center[1] + j * vp.interval
-            oxs.append(ox)
-            oys.append(oy)
-
-    inputs = dict()
-    inputs['md'] = [vp.md]
-    inputs['ox'] = oxs
-    inputs['oy'] = oys
-    inputs['oz'] = [vp.oz]
-    inputs['tz'] = [vp.tz]
-    inputs['vv'] = [viewshed_defaults['vv']]
-    inputs['iv'] = [viewshed_defaults['iv']]
-    inputs['ov'] = [viewshed_defaults['ov']]
-    inputs['ndv'] = [viewshed_defaults['ndv']]
-    inputs['cc'] = [viewshed_consts.viewshed_atmospheric_refraction]
-    inputs['mode'] = [2]
+    inputs = vp.get_as_gdal_params_array()
 
     use_input_files = False
     run_single = False

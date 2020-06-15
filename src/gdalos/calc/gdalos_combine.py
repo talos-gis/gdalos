@@ -1,5 +1,5 @@
 import numpy as np
-from gdalos.viewshed.viewshed_consts import viewshed_thresh, viewshed_ndv, viewshed_comb_ndv, viewshed_comb_multi_val
+from gdalos.viewshed.viewshed_params import viewshed_thresh, viewshed_ndv, viewshed_comb_ndv, viewshed_comb_multi_val
 from gdalos.calc.gdal_calc import AlphaList
 
 

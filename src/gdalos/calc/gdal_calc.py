@@ -48,20 +48,21 @@ import os
 import os.path
 import sys
 import shlex
+import string
 from collections import defaultdict
+from pathlib import Path
 
 import numpy
 
 from osgeo import gdal
 from osgeo import gdalnumeric
-from gdalos import gdalos_extent
+from gdalos import gdalos_extent, gdalos_color
 
-# create alphabetic list for storing input layers
-AlphaList = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
-             "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
+# create alphabetic list (lowercase + uppercase) for storing input layers
+AlphaList = list(string.ascii_letters)
 
 # set up some default nodatavalues for each datatype
-DefaultNDVLookup = {'Byte': 255, 'UInt16': 65535, 'Int16': -32767, 'UInt32': 4294967293, 'Int32': -2147483647,
+DefaultNDVLookup = {'Byte': 255, 'UInt16': 65535, 'Int16': -32768, 'UInt32': 4294967293, 'Int32': -2147483647,
                     'Float32': 3.402823466E+38, 'Float64': 1.7976931348623158E+308}
 
 
@@ -126,6 +127,8 @@ def doit(opts, args):
     # set up global namespace for eval with all functions of gdalnumeric
     global_namespace = dict([(key, getattr(gdalnumeric, key))
                              for key in dir(gdalnumeric) if not key.startswith('__')])
+    if opts.user_namespace:
+        global_namespace.update(opts.user_namespace)
 
     if not opts.calc:
         raise Exception("No calculation provided.")
@@ -161,15 +164,16 @@ def doit(opts, args):
 
     # loop through input files - checking dimensions
     for myIs, myFs in opts.input_files.items():
-        if isinstance(myFs, str):
-            # myI is a single file
-            myFs = [myFs]
-            myIs = [myIs]
-        elif isinstance(myFs, (list, tuple)):
+        if isinstance(myFs, (list, tuple)):
             # myI is a list of files
             myFileLists.append(myIs)
+        elif isinstance(myFs, (str, Path, gdal.Dataset)):
+            # myI is a single filename or a Dataset
+            myFs = [myFs]
+            myIs = [myIs]
         else:
-            # myI is a function
+            # I guess myI should be in the global_namespace,
+            # It would have been better to pass it as user_namepsace, but I'll accept it anyway
             global_namespace[myIs] = myFs
             continue
         for myI, myF in zip(myIs*len(myFs), myFs):
@@ -180,12 +184,12 @@ def doit(opts, args):
                 else:
                     myBand = 1
 
-                myF_is_ds = not isinstance(myF, str) #  and not not isinstance(myF, Path)
-                # myF_is_ds = isinstance(myF, gdal.Dataset)
+                myF_is_ds = not isinstance(myF, (str, Path))
                 if myF_is_ds:
                     myFile = myF
                     myF = None
                 else:
+                    myF = str(myF)
                     myFile = gdal.Open(myF, gdal.GA_ReadOnly)
                 if not myFile:
                     raise IOError("No such file or directory: '%s'" % myF)
@@ -293,6 +297,8 @@ def doit(opts, args):
         if opts.debug:
             print("Output file %s exists - filling in results into file" % (opts.outF))
         myOut = gdal.Open(opts.outF, gdal.GA_Update)
+        if myOut is None:
+            raise Exception("Error! output file exists but cannot be opened for update. must use --overwrite option!")
 
         error = None
         if [myOut.RasterXSize, myOut.RasterYSize] != DimensionsCheck:
@@ -350,6 +356,8 @@ def doit(opts, args):
             myOutB.SetNoDataValue(myOutNDV)
             if opts.color_table:
                 # set color table and color interpretation
+                if isinstance(opts.color_table, str):
+                    opts.color_table = gdalos_color.get_color_table(opts.color_table)  # todo: use gdal function?
                 myOutB.SetRasterColorTable(opts.color_table)
                 myOutB.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
 
@@ -497,7 +505,7 @@ def doit(opts, args):
 
 def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_options=None, allBands='', overwrite=False,
          debug=False, quiet=False, hideNodata=False, projectionCheck=False, color_table=None,
-         extent=None, return_ds=False, **input_files):
+         extent=None, return_ds=False, user_namespace=None, **input_files):
     """ Perform raster calculations with numpy syntax.
     Use any basic arithmetic supported by numpy arrays such as +-*\ along with logical
     operators such as >. Note that all files must have the same dimensions, but no projection checking is performed.
@@ -515,6 +523,8 @@ def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_optio
 
     set values of zero and below to null:
         Calc(calc="A*(A>0)", A="input.tif", A_band=2, outfile="result.tif", NoDataValue=0)
+
+    --calc="sum(a,axis=0)" --outfile sum.tif --color_table sum.txt --hideNodata --extent=2 --overwrite -a -1_-1.tif -a -1_0.tif -a -1_1.tif -a 0_-1.tif -a 0_0.tif -a 0_1.tif -a 1_-1.tif -a 1_0.tif -a 1_1.tif
     """
     opts = Values()
     opts.input_files = input_files
@@ -534,6 +544,7 @@ def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_optio
     opts.projectionCheck = projectionCheck
     opts.color_table = color_table
     opts.extent = extent
+    opts.user_namespace = user_namespace
 
     return doit(opts, None)
 
@@ -541,8 +552,9 @@ def Calc(calc, outfile, NoDataValue=None, type=None, format=None, creation_optio
 def store_input_file(option, opt_str, value, parser):
     # pylint: disable=unused-argument
     if not hasattr(parser.values, 'input_files'):
-        parser.values.input_files = {}
-    parser.values.input_files[opt_str.lstrip('-')] = value
+        parser.values.input_files = defaultdict(list)
+    key = opt_str.lstrip('-')
+    parser.values.input_files[key].append(value)
 
 
 def add_alpha_args(parser, argv):
@@ -582,21 +594,24 @@ def main():
         help="Passes a creation option to the output format driver. Multiple "
              "options may be listed. See format specific documentation for legal "
              "creation options for each format.", metavar="option")
-    parser.add_option("--allBands", dest="allBands", default="", help="process all bands of given raster (A-Z)",
-                      metavar="[A-Z]")
+    parser.add_option("--allBands", dest="allBands", default="", help="process all bands of given raster (a-z, A-Z)",
+                      metavar="[a-z, A-Z]")
     parser.add_option("--overwrite", dest="overwrite", action="store_true",
                       help="overwrite output file if it already exists")
     parser.add_option("--debug", dest="debug", action="store_true", help="print debugging information")
     parser.add_option("--quiet", dest="quiet", action="store_true", help="suppress progress messages")
     parser.add_option("--optfile", dest="optfile", metavar="optfile",
                       help="Read the named file and substitute the contents into the command line options list.")
-    parser.add_option("--extent", dest="extent", type=str,
-                      help="how to treat different geotrasnforms [ignore|fail|union|intersect]")
-    # when extent don't agree: 0=ignore(check only dims)/1=fail (gt must also agree)/2=union/3=intersection
+    parser.add_option("--extent", dest="extent", type=int,
+                      help="how to treat different geotrasnforms [0=ignore|1=fail|2=union|3=intersect]")
+    # when extent don't agree: 0=ignore(check only dims)/1=fail (gt must also agree)/2=union/3=intersection/GeoRectangle
     parser.add_option("--projectionCheck", dest="projectionCheck", action="store_true",
                       help="check that all rasters share the same projection", metavar="value")
+    parser.add_option("--color_table", dest="color_table", help="color table file name", metavar="filename")
 
     (opts, args) = parser.parse_args()
+    opts.return_ds = False
+    opts.user_namespace = None
 
     if not hasattr(opts, "input_files"):
         opts.input_files = {}
