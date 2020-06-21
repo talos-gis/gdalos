@@ -1,4 +1,4 @@
-__version__ = "0.40.11"
+__version__ = "0.40.12"
 __author__ = "Idan Miara, Ben Avrahami"
 __author_email__ = "idan@miara.com"
 __license__ = "MIT"
