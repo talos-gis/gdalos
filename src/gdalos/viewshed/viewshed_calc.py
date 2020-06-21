@@ -30,13 +30,19 @@ def tempthing(use_temp_tif, steps, output_filename):
     return is_temp_file, gdal_out_format, d_path, return_ds
 
 
+def make_slice(slicer):
+    if isinstance(slicer, slice):
+        return slicer
+    return slice(*[{True: lambda n: None, False: int}[x == ''](x) for x in (slicer.split(':') + ['', '', ''])[:3]])
+
+
 def viewshed_calc(input_ds,
                   output_filename,
                   vp_array, extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
                   in_coords_crs_pj=None, out_crs=None,
                   color_palette=None,
                   bi=1, co=None, of='GTiff',
-                  input_slice_from=None, input_slice_to=None,
+                  vp_slice=None,
                   files=[]):
     ext = gdalos_util.get_ext_by_of(of)
     is_czml = ext == '.czml'
@@ -58,10 +64,12 @@ def viewshed_calc(input_ds,
 
     combined_post_process_needed = False
 
+    vp_slice = make_slice(vp_slice)
+
     if not files:
         files = []
     else:
-        files = files.copy()
+        files = files.copy()[vp_slice]
 
     if input_ds is None:
         if not files:
@@ -79,7 +87,7 @@ def viewshed_calc(input_ds,
 
     if not files:
         vp_array = ViewshedGridParams.get_list_from_lists_dict(vp_array)
-        vp_array = vp_array[input_slice_from:input_slice_to]
+        vp_array = vp_array[vp_slice]
 
         if operation:
             # restore viewshed consts default values
@@ -277,7 +285,7 @@ if __name__ == "__main__":
                               operation=calc,
                               color_palette=color_palette,
                               files=files,
-                              input_slice_from=i, input_slice_to=i+1
+                              vp_slice=slice(i, i+1)
                               )
         else:
             output_filename = output_path / Path('{}.tif'.format(calc.name))
@@ -287,7 +295,7 @@ if __name__ == "__main__":
                           operation=calc,
                           color_palette=color_palette,
                           files=files,
-                          # input_slice_from=0, input_slice_to=2
+                          # vp_slice=slice(0, 2)
                           )
 
     if run_comb_with_post:
