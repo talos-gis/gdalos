@@ -20,7 +20,7 @@ atmospheric_refraction_coeff = 1/7
 
 class ViewshedParams(object):
     __slots__ = ['max_r', 'min_r',
-                 'ox', 'oy', 'oz', 'tz', 'oza', 'tza',
+                 'ox', 'oy', 'oz', 'tz', 'oag', 'tag',
                  'azimuth', 'h_aperture', 'elevation', 'v_aperture',
                  'vv', 'iv', 'ov', 'ndv',
                  'refraction_coeff', 'mode']
@@ -33,8 +33,8 @@ class ViewshedParams(object):
         self.oy = None
         self.oz = None
         self.tz = None
-        self.oza = None
-        self.tza = None
+        self.oag = None
+        self.tag = None
 
         self.azimuth = None
         self.h_aperture = None

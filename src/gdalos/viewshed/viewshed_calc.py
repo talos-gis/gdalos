@@ -33,6 +33,8 @@ def tempthing(use_temp_tif, steps, output_filename):
 def make_slice(slicer):
     if isinstance(slicer, slice):
         return slicer
+    if slicer is None:
+        return slice(None)
     return slice(*[{True: lambda n: None, False: int}[x == ''](x) for x in (slicer.split(':') + ['', '', ''])[:3]])
 
 
