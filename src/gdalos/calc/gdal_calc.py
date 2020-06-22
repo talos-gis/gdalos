@@ -284,6 +284,11 @@ def doit(opts, args):
             myTempFileNames.append(temp_vrt_filename)
             myFiles[i] = None  # close original ds
             myFiles[i] = temp_vrt_ds  # replace original ds with vrt_ds
+
+            # update the new precise dimensions and gt from the new ds
+            GeoTransformCheck = temp_vrt_ds.GetGeoTransform()
+            DimensionsCheck = [temp_vrt_ds.RasterXSize, temp_vrt_ds.RasterYSize]
+
         temp_vrt_ds = None
 
 

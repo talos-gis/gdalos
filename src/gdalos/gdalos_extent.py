@@ -5,6 +5,7 @@ from osgeo import ogr, osr
 import gdal
 
 from gdalos.rectangle import GeoRectangle, get_points_extent
+from gdalos import gdalos_util
 
 # Geotransform:
 # 0 = x-coordinate of the upper-left corner of the upper-left pixel
@@ -202,6 +203,10 @@ def make_temp_vrt(ds, extent: GeoRectangle):
     vrt_ds = gdal.BuildVRT(vrt_filename, ds, options=options)
     if vrt_ds is None:
         raise Exception("Error! cannot create vrt. Cannot proceed")
+    # close_and_reopen = False
+    # if close_and_reopen:
+    #     vrt_ds = None
+    #     vrt_ds = gdalos_util.open_ds(vrt_filename)
     return vrt_filename, vrt_ds
 
 
