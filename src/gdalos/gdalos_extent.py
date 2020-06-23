@@ -151,7 +151,20 @@ def round_to_sig(d, extra_digits=-5):
     return round(d, -digits)
 
 
-def get_extent(ds):
+def get_vec_extent(lyr):
+    result = None
+    for feature in lyr:
+        geom = feature.GetGeometryRef()
+        envelope = geom.GetEnvelope()
+        r = GeoRectangle.from_min_max(*envelope)
+        if result is None:
+            result = r
+        else:
+            result = result.union(r)
+    return result
+
+
+def get_extent(ds) -> GeoRectangle:
     gt, size = get_geotransform_and_size(ds)
     return GeoRectangle.from_geotransform_and_size(gt, size)
 

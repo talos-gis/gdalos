@@ -151,7 +151,7 @@ def gdalos_trans(
     src_win=None,
     warp_CRS: MaybeSequence[Warp_crs_base] = None,
     cutline: Optional[Union[str, List[str]]] = None,
-    out_res: Tuple[Real, Real] = None,
+    out_res: Union[Real, Tuple[Real, Real]] = None,
     ovr_type: Optional[OvrType] = OvrType.auto_select,
     src_ovr: Optional[int] = None,
     keep_src_ovr_suffixes: bool = True,
@@ -688,7 +688,7 @@ def gdalos_trans(
 
             if do_warp:
                 if verbose and warp_options:
-                    logger.info("wrap options: " + str(warp_options))
+                    logger.info("warp options: " + str(warp_options))
                 out_ds = gdal.Warp(str(out_filename), ds, **common_options, **warp_options)
             else:
                 if verbose and translate_options:

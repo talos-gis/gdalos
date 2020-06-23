@@ -6,25 +6,26 @@ from typing import Iterator, Sequence
 import gdal, ogr, osr
 
 
-def open_ds(filename_or_ds, **kwargs):
-    ods = OpenDS(filename_or_ds, **kwargs)
+def open_ds(filename_or_ds, *args, **kwargs):
+    ods = OpenDS(filename_or_ds, *args, **kwargs)
     return ods.__enter__()
 
 
 class OpenDS:
-    def __init__(self, filename_or_ds, **kwargs):
+    def __init__(self, filename_or_ds, *args, **kwargs):
         if isinstance(filename_or_ds, (str, Path)):
             self.filename = str(filename_or_ds)
             self.ds = None
         else:
             self.filename = None
             self.ds = filename_or_ds
+        self.args = args
         self.kwargs = kwargs
         self.own = None
 
     def __enter__(self) -> gdal.Dataset:
         if self.ds is None:
-            self.ds = self._open_ds(self.filename, **self.kwargs)
+            self.ds = self._open_ds(self.filename, *self.args, **self.kwargs)
             if self.ds is None:
                 raise IOError('could not open file "{}"'.format(self.filename))
             self.own = True
