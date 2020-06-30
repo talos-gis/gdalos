@@ -38,9 +38,13 @@ def viewshed_run(vp: ViewshedGridParams, output_path, input_filename):
 
 
 if __name__ == "__main__":
-    dir_path = Path('/home/idan/maps')
-    input_filename = dir_path / Path('srtm1_x35_y32.tif')
-    output_path = dir_path / Path('comb')
+    input_filename = Path(r'd:\Maps\w84u36\dtm\SRTM1_hgt.x[27.97,37.98]_y[27.43,37.59].cog.tif')
+    output_path = Path(r'd:\dev\gis\maps')
+
+    # dir_path = Path('/home/idan/maps')
+    # input_filename = dir_path / Path('srtm1_x35_y32.tif')
+    # output_path = dir_path / Path('comb')
+
     srtm_filename = Path(output_path) / Path('srtm1_36_sample.tif')
 
     vp = ViewshedGridParams()

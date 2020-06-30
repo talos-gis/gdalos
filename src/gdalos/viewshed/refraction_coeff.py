@@ -27,13 +27,14 @@
 # gdal: curve_coefficient(cc) = 1-refraction_coeff = 0.85714 ~= 6/7
 # gdal: height_corrected = dem_height - cc * target_distance^2/sphere_diameter = dem_height
 # talos: earth_curve_factor = 1/cc = 1/(1-refraction_coeff); refraction_coeff = 1-1/earth_curve_factor
-# talos: refraction_coeff = 1/7 -> earth_curve_factor = 7/6
 
 # refraction_coeff values
-# 0 -> normal sphere without correction
-# 1/7 ~= 0.14286 -> normal correction for visible light
-# 0.25~0.325 -> radio waves
-# 1 -> flat earth
+# 0 -> normal sphere without correction (earth_curve_factor = 1)
+# 1/7 ~= 0.14286 -> normal correction for visible light (earth_curve_factor = 7/6)
+# 0.25~0.325 -> radio waves (earth_curve_factor = 1.33~1.48)
+# 1 -> flat earth (earth_curve_factor = inf)
+
+# earth_curv_factor = (1-refraction_coeff) / SphereDiameter;
 
 
 def height_correction(target_distance, refraction_coeff, sphere_radius=6378137):

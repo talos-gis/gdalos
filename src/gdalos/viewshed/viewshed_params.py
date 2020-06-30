@@ -1,4 +1,5 @@
 from copy import copy
+from typing import Sequence
 
 st_seen = 5
 st_seenbut = 4
@@ -19,27 +20,30 @@ atmospheric_refraction_coeff = 1/7
 
 
 class ViewshedParams(object):
-    __slots__ = ['max_r', 'min_r',
-                 'ox', 'oy', 'oz', 'tz', 'oag', 'tag',
+    __slots__ = ['max_r', 'min_r', 'MinRangeShave', 'SlantRange',
+                 'ox', 'oy', 'oz', 'tz', 'omsl', 'tmsl',
                  'azimuth', 'h_aperture', 'elevation', 'v_aperture',
                  'vv', 'iv', 'ov', 'ndv',
                  'refraction_coeff', 'mode']
 
     def __init__(self):
-        self.min_r = None
+        self.min_r = 0
         self.max_r = None
+
+        self.MinRangeShave = False
+        self.SlantRange = True
 
         self.ox = None
         self.oy = None
         self.oz = None
         self.tz = None
-        self.oag = None
-        self.tag = None
+        self.omsl = False  # observer MSL
+        self.tmsl = False  # target MSL
 
-        self.azimuth = None
-        self.h_aperture = None
-        self.elevation = None
-        self.v_aperture = None
+        self.azimuth = 0
+        self.h_aperture = 360
+        self.elevation = 0
+        self.v_aperture = 180
 
         self.vv = viewshed_visible
         self.iv = viewshed_invisible
@@ -61,16 +65,28 @@ class ViewshedParams(object):
         self.ox, self.oy = oxy
 
     def get_as_gdal_params(self):
-        short = \
+        vp_params = \
             'max_r', 'ox', 'oy', 'oz', 'tz', \
             'vv', 'iv', 'ov', 'ndv', 'mode'
 
-        full = \
+        gdal_params = \
             'maxDistance', 'observerX', 'observerY', 'observerHeight', 'targetHeight', \
             'visibleVal', 'invisibleVal', 'outOfRangeVal', 'noDataVal', 'mode'
         d = {k1: getattr(self, k0) for k0, k1 in
-             zip(short, full)}
+             zip(vp_params, gdal_params)}
         d['dfCurvCoeff'] = 1 - self.refraction_coeff
+        return d
+
+    def get_as_talos_params(self):
+        vp_params = \
+            'ox', 'oy', 'oz', 'max_r', 'min_r', 'MinRangeShave', 'SlantRange', 'tz', \
+            'omsl', 'tmsl', 'azimuth', 'h_aperture', 'elevation', 'v_aperture'
+
+        talos_params = \
+            'ox', 'oy', 'oz', 'MaxRange', 'MinRange', 'MinRangeShave', 'SlantRange', 'TargetHeight', \
+            'ObsMSL', 'TarMSL', 'Direction', 'Aperture', 'Elevation', 'ElevationAperture'
+        d = {k1: getattr(self, k0) for k0, k1 in
+             zip(vp_params, talos_params)}
         return d
 
     def update(self, d: dict):
@@ -78,7 +94,7 @@ class ViewshedParams(object):
             setattr(self, k, v)
 
     @staticmethod
-    def get_list_from_lists_dict(d: dict, key_map=None):
+    def get_list_from_lists_dict(d: dict, key_map=None) -> Sequence['ViewshedParams']:
         max_len = max(len(v) for v in d.values())
         result = []
         vp = ViewshedParams()

@@ -175,7 +175,7 @@ def qlr_to_color_file(qlr_filename: Path) -> Path:
 
 def get_file_from_strings(color_palette):
     temp_color_filename = None
-    if isinstance(color_palette, str):
+    if isinstance(color_palette, (Path, str)):
         color_filename = color_palette
     elif isinstance(color_palette, Sequence):
         temp_color_filename = tempfile.mktemp(suffix='.txt')

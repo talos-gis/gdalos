@@ -1,3 +1,5 @@
+from enum import Enum
+import sys
 import gdal, osr, ogr
 import glob
 import tempfile
@@ -5,12 +7,22 @@ import os
 import time
 from pathlib import Path
 from enum import Enum
+
+from attr import exceptions
+
 from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans
 from gdalos.calc import gdal_calc, gdal_to_czml, dict_util, gdalos_combine
 from gdalos.viewshed import viewshed_params
+from gdalos.viewshed.viewshed_params import ViewshedParams
 from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
 from gdalos.talos.ogr_util import create_layer_from_geometries
 from gdalos.talos.geom_arc import PolygonizeSector
+
+talos = None
+
+class ViewshedBackend(Enum):
+    GDAL = 0
+    TALOS = 1
 
 
 class CalcOperation(Enum):
@@ -38,6 +50,7 @@ def make_slice(slicer):
     return slice(*[{True: lambda n: None, False: int}[x == ''](x) for x in (slicer.split(':') + ['', '', ''])[:3]])
 
 
+
 def viewshed_calc(input_ds,
                   output_filename,
                   vp_array, extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
@@ -45,7 +58,10 @@ def viewshed_calc(input_ds,
                   color_palette=None,
                   bi=1, co=None, of='GTiff',
                   vp_slice=None,
+                  backend:ViewshedBackend=ViewshedBackend.GDAL,
                   files=[]):
+    if output_filename:
+        os.makedirs(os.path.dirname(str(output_filename)), exist_ok=True)
     ext = gdalos_util.get_ext_by_of(of)
     is_czml = ext == '.czml'
     color_table = gdalos_color.get_color_table(color_palette)
@@ -77,6 +93,10 @@ def viewshed_calc(input_ds,
         if not files:
             raise Exception('ds is None')
     else:
+        input_filename = input_ds
+        input_ds = gdalos_util.open_ds(input_ds)
+        if input_ds == input_filename:
+            input_filename = None
         input_band: gdal.Band = input_ds.GetRasterBand(bi)
         if input_band is None:
             raise Exception('band number out of range')
@@ -88,8 +108,12 @@ def viewshed_calc(input_ds,
             steps += 1
 
     if not files:
-        vp_array = ViewshedGridParams.get_list_from_lists_dict(vp_array)
-        vp_array = vp_array[vp_slice]
+        if isinstance(vp_array, ViewshedParams):
+            vp_array = [vp_array]
+        else:
+            if isinstance(vp_array, dict):
+                vp_array = ViewshedGridParams.get_list_from_lists_dict(vp_array)
+            vp_array = vp_array[vp_slice]
 
         if operation:
             # restore viewshed consts default values
@@ -126,18 +150,45 @@ def viewshed_calc(input_ds,
             # todo: why dosn't it work without it?
             is_temp_file, gdal_out_format, d_path, return_ds = tempthing(True, steps, output_filename)
 
-            inputs = vp.get_as_gdal_params()
-            ds = gdal.ViewshedGenerate(input_band, gdal_out_format, str(d_path), co, **inputs)
+            if backend == ViewshedBackend.GDAL:
+                inputs = vp.get_as_gdal_params()
+                ds = gdal.ViewshedGenerate(input_band, gdal_out_format, str(d_path), co, **inputs)
+                if not ds:
+                    raise Exception('Viewshed calculation failed')
 
-            if not ds:
-                raise Exception('Viewshed calculation failed')
+                src_band = ds.GetRasterBand(1)
+                src_band.SetNoDataValue(vp.ndv)
+                if color_table and not operation:
+                    src_band.SetRasterColorTable(color_table)
+                    src_band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
+                src_band = None
+            elif backend == ViewshedBackend.TALOS:
+                # is_temp_file = True  # output is file, not ds
+                if not input_filename:
+                    raise Exception('to use talos backend you need to provide an input filename')
+                # if 'talosgis.talos' not in sys.modules:
+                global talos
+                if talos is None:
+                    try:
+                        from talosgis import talos
+                    except ImportError:
+                        raise Exception('failed to load talos backend')
+                    print('GS_GetIntVersion ', talos.GS_GetIntVersion())
+                    print('GS_GetDLLVersion ', talos.GS_GetDLLVersion())
+                    gdal_path = r'd:\OSGeo4W64-20200613\bin\gdal204.dll'
+                    talos.GS_SetGDALPath(gdal_path)
 
-            src_band = ds.GetRasterBand(1)
-            src_band.SetNoDataValue(vp.ndv)
-            if color_table and not operation:
-                src_band.SetRasterColorTable(color_table)
-                src_band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
-            src_band = None
+                    print('GS_talosInit ', talos.GS_talosInit())
+                    # print('GS_SetCacheSize ', talos.GS_SetCacheSize(cache_size_mb))
+
+                talos.GS_DtmOpenDTM(str(input_filename))
+                talos.GS_SetRefractionCoeff(vp.refraction_coeff)
+                inputs = vp.get_as_talos_params()
+                ras = talos.GS_Viewshed_Calc1(**inputs)
+                talos.GS_SaveRaster(ras, str(d_path))
+                ras = None
+            else:
+                raise Exception('unknown backend {}'.format(backend))
 
             if is_temp_file:
                 # close original ds and reopen
@@ -255,15 +306,16 @@ def viewshed_calc(input_ds,
     return True
 
 
-if __name__ == "__main__":
-    dir_path = Path('/home/idan/maps')
-    output_path = dir_path / Path('comb')
-    raster_filename = Path(output_path) / Path('srtm1_36_sample.tif')
+if __name__ == "__main__":\
+    # dir_path = Path('/home/idan/maps')
+    dir_path = Path(r'd:\dev\gis\maps')
+    raster_filename = Path(dir_path) / Path('srtm1_36_sample.tif')
     input_ds = ds = gdalos_util.open_ds(raster_filename)
 
     vp = ViewshedGridParams()
 
-    inputs = vp.get_as_gdal_params_array()
+    # inputs = vp.get_as_gdal_params_array()
+    inputs = vp.get_array()
 
     use_input_files = False
     run_comb_with_post = False
@@ -273,41 +325,47 @@ if __name__ == "__main__":
         files = glob.glob(str(files_path / '*.tif'))
     else:
         files = []
-    for calc in CalcOperation:
-        # if calc != CalcOperation.viewshed:
-        #     continue
-        color_palette = './sample/color_files/viewshed/{}.txt'.format(calc.name)
-        if calc == CalcOperation.viewshed:
-            input_size = max(len(x) for x in inputs.values())
-            for i in range(input_size):
-                output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
-                viewshed_calc(input_ds,
-                              output_filename,
-                              inputs,
+
+    for backend in ViewshedBackend:
+        # backend = ViewshedBackend.TALOS
+        output_path = dir_path / Path('comb_' + str(backend))
+        cwd = Path.cwd()
+        for calc in CalcOperation:
+            # if calc != CalcOperation.viewshed:
+            #     continue
+            color_palette = cwd / 'sample/color_files/viewshed/{}.txt'.format(calc.name)
+            if calc == CalcOperation.viewshed:
+                for i, vp in enumerate(inputs):
+                    output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
+                    viewshed_calc(input_ds=raster_filename,
+                                  output_filename=output_filename,
+                                  vp_array=vp,
+                                  backend=backend,
+                                  operation=calc,
+                                  color_palette=color_palette,
+                                  files=files,
+                                  )
+            else:
+                output_filename = output_path / Path('{}.tif'.format(calc.name))
+                viewshed_calc(input_ds=raster_filename,
+                              output_filename=output_filename,
+                              vp_array=inputs,
+                              backend=backend,
                               operation=calc,
                               color_palette=color_palette,
                               files=files,
-                              vp_slice=slice(i, i+1)
+                              # vp_slice=slice(0, 2)
                               )
-        else:
-            output_filename = output_path / Path('{}.tif'.format(calc.name))
-            viewshed_calc(input_ds,
-                          output_filename,
-                          inputs,
-                          operation=calc,
-                          color_palette=color_palette,
-                          files=files,
-                          # vp_slice=slice(0, 2)
-                          )
 
-    if run_comb_with_post:
-        output_filename = output_path / 'combine_post.tif'
-        cutline = r'sample/shp/comb_poly.gml'
-        viewshed_calc(input_ds,
-                      output_filename,
-                      inputs,
-                      operation=CalcOperation.count,
-                      color_palette=color_palette,
-                      cutline=cutline,
-                      out_crs=0,
-                      files=files)
+        if run_comb_with_post:
+            output_filename = output_path / 'combine_post.tif'
+            cutline = cwd / r'sample/shp/comb_poly.gml'
+            viewshed_calc(input_ds=raster_filename,
+                          output_filename=output_filename,
+                          vp_array=inputs,
+                          backend=backend,
+                          operation=CalcOperation.count,
+                          color_palette=color_palette,
+                          cutline=cutline,
+                          out_crs=0,
+                          files=files)
