@@ -166,13 +166,6 @@ def viewshed_calc(vp_array,
                 ds = gdal.ViewshedGenerate(input_band, gdal_out_format, str(d_path), co, **inputs)
                 if not ds:
                     raise Exception('Viewshed calculation failed')
-
-                src_band = ds.GetRasterBand(1)
-                src_band.SetNoDataValue(vp.ndv)
-                if color_table and not operation:
-                    src_band.SetRasterColorTable(color_table)
-                    src_band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
-                src_band = None
             elif backend == ViewshedBackend.talos:
                 # is_temp_file = True  # output is file, not ds
                 if not input_filename:
@@ -208,8 +201,18 @@ def viewshed_calc(vp_array,
                 ras = talos.GS_Viewshed_Calc1(**inputs)
                 talos.GS_SaveRaster(ras, str(d_path))
                 ras = None
+                # I will reopen the ds to change the color table and ndv
+                # ds = gdalos_util.open_ds(d_path, access_mode=gdal.OF_UPDATE)
+                ds = gdal.OpenEx(str(d_path), gdal.OF_RASTER | gdal.OF_UPDATE)
             else:
                 raise Exception('unknown backend {}'.format(backend))
+
+            src_band = ds.GetRasterBand(1)
+            src_band.SetNoDataValue(vp.ndv)
+            if color_table and not operation:
+                src_band.SetRasterColorTable(color_table)
+                src_band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
+            src_band = None
 
             if is_temp_file:
                 # close original ds and reopen
