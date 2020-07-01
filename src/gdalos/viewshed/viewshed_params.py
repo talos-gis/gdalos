@@ -20,7 +20,7 @@ atmospheric_refraction_coeff = 1/7
 
 
 class ViewshedParams(object):
-    __slots__ = ['max_r', 'min_r', 'MinRangeShave', 'SlantRange',
+    __slots__ = ['max_r', 'min_r', 'min_r_shave', 'max_r_slant',
                  'ox', 'oy', 'oz', 'tz', 'omsl', 'tmsl',
                  'azimuth', 'h_aperture', 'elevation', 'v_aperture',
                  'vv', 'iv', 'ov', 'ndv',
@@ -30,8 +30,8 @@ class ViewshedParams(object):
         self.min_r = 0
         self.max_r = None
 
-        self.MinRangeShave = False
-        self.SlantRange = True
+        self.min_r_shave = False
+        self.max_r_slant = True
 
         self.ox = None
         self.oy = None
@@ -79,7 +79,7 @@ class ViewshedParams(object):
 
     def get_as_talos_params(self):
         vp_params = \
-            'ox', 'oy', 'oz', 'max_r', 'min_r', 'MinRangeShave', 'SlantRange', 'tz', \
+            'ox', 'oy', 'oz', 'max_r', 'min_r', 'min_r_shave', 'max_r_slant', 'tz', \
             'omsl', 'tmsl', 'azimuth', 'h_aperture', 'elevation', 'v_aperture'
 
         talos_params = \
@@ -95,12 +95,14 @@ class ViewshedParams(object):
 
     @staticmethod
     def get_list_from_lists_dict(d: dict, key_map=None) -> Sequence['ViewshedParams']:
-        max_len = max(len(v) for v in d.values())
+        max_len = max(len(v) if v else 0 for v in d.values())
         result = []
         vp = ViewshedParams()
         for i in range(max_len):
             vp = copy(vp)
             for k, v in d.items():  # zip(new_keys, d.values()):
+                if not v:
+                    continue
                 if key_map:
                     k = key_map[k]
                 len_v = len(v)

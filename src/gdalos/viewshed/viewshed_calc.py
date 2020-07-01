@@ -20,9 +20,13 @@ from gdalos.talos.geom_arc import PolygonizeSector
 
 talos = None
 
+
 class ViewshedBackend(Enum):
-    GDAL = 0
-    TALOS = 1
+    gdal = 0
+    talos = 1
+
+
+default_ViewshedBackend = ViewshedBackend.gdal
 
 
 class CalcOperation(Enum):
@@ -50,15 +54,16 @@ def make_slice(slicer):
     return slice(*[{True: lambda n: None, False: int}[x == ''](x) for x in (slicer.split(':') + ['', '', ''])[:3]])
 
 
-
-def viewshed_calc(input_ds,
+def viewshed_calc(vp_array,
                   output_filename,
-                  vp_array, extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
+                  input_ds,
+                  input_filename=None,
+                  extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
                   in_coords_crs_pj=None, out_crs=None,
                   color_palette=None,
                   bi=1, co=None, of='GTiff',
                   vp_slice=None,
-                  backend:ViewshedBackend=ViewshedBackend.GDAL,
+                  backend:ViewshedBackend=None,
                   files=[]):
     if output_filename:
         os.makedirs(os.path.dirname(str(output_filename)), exist_ok=True)
@@ -89,14 +94,14 @@ def viewshed_calc(input_ds,
     else:
         files = files.copy()[vp_slice]
 
+    if input_filename is not None:
+        input_filename = Path(input_filename).resolve()
+        if input_ds is None:
+            input_ds = gdalos_util.open_ds(input_filename)
     if input_ds is None:
         if not files:
             raise Exception('ds is None')
     else:
-        input_filename = input_ds
-        input_ds = gdalos_util.open_ds(input_ds)
-        if input_ds == input_filename:
-            input_filename = None
         input_band: gdal.Band = input_ds.GetRasterBand(bi)
         if input_band is None:
             raise Exception('band number out of range')
@@ -142,7 +147,13 @@ def viewshed_calc(input_ds,
         for vp in vp_array:
             if transform_coords_to_raster:
                 vp.ox, vp.oy, _ = transform_coords_to_raster.TransformPoint(vp.ox, vp.oy)
-            inter_process = not vp.is_omni_h()
+
+            if backend is None:
+                backend = default_ViewshedBackend
+            elif isinstance(backend, str):
+                backend = ViewshedBackend[backend]
+
+            inter_process = (backend == ViewshedBackend.gdal) and not vp.is_omni_h()
             if inter_process:
                 steps += 1
 
@@ -150,7 +161,7 @@ def viewshed_calc(input_ds,
             # todo: why dosn't it work without it?
             is_temp_file, gdal_out_format, d_path, return_ds = tempthing(True, steps, output_filename)
 
-            if backend == ViewshedBackend.GDAL:
+            if backend == ViewshedBackend.gdal:
                 inputs = vp.get_as_gdal_params()
                 ds = gdal.ViewshedGenerate(input_band, gdal_out_format, str(d_path), co, **inputs)
                 if not ds:
@@ -162,7 +173,7 @@ def viewshed_calc(input_ds,
                     src_band.SetRasterColorTable(color_table)
                     src_band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
                 src_band = None
-            elif backend == ViewshedBackend.TALOS:
+            elif backend == ViewshedBackend.talos:
                 # is_temp_file = True  # output is file, not ds
                 if not input_filename:
                     raise Exception('to use talos backend you need to provide an input filename')
@@ -170,18 +181,27 @@ def viewshed_calc(input_ds,
                 global talos
                 if talos is None:
                     try:
-                        from talosgis import talos
+                        from talosgis import get_talos_gdal_path
+                        from talosgis import talos2 as talos
                     except ImportError:
                         raise Exception('failed to load talos backend')
+
                     print('GS_GetIntVersion ', talos.GS_GetIntVersion())
                     print('GS_GetDLLVersion ', talos.GS_GetDLLVersion())
-                    gdal_path = r'd:\OSGeo4W64-20200613\bin\gdal204.dll'
-                    talos.GS_SetGDALPath(gdal_path)
 
+                    gdal_path = get_talos_gdal_path()
+                    talos.GS_SetGDALPath(gdal_path)
+                    print('GS_GetGDALPath ', talos.GS_GetGDALPath())
                     print('GS_talosInit ', talos.GS_talosInit())
+
+                    print('GS_IsGDALLoaded ', talos.GS_IsGDALLoaded())
+                    print('GS_GetGDALPath ', talos.GS_GetGDALPath())
+
                     # print('GS_SetCacheSize ', talos.GS_SetCacheSize(cache_size_mb))
 
-                talos.GS_DtmOpenDTM(str(input_filename))
+                dtm_open_err = talos.GS_DtmOpenDTM(str(input_filename))
+                if dtm_open_err != 0:
+                    raise Exception('talos could not open input file {}'.format(input_filename))
                 talos.GS_SetRefractionCoeff(vp.refraction_coeff)
                 inputs = vp.get_as_talos_params()
                 ras = talos.GS_Viewshed_Calc1(**inputs)
@@ -326,7 +346,7 @@ if __name__ == "__main__":\
     else:
         files = []
 
-    for backend in ViewshedBackend:
+    for backend in reversed(ViewshedBackend):
         # backend = ViewshedBackend.TALOS
         output_path = dir_path / Path('comb_' + str(backend))
         cwd = Path.cwd()
@@ -337,7 +357,7 @@ if __name__ == "__main__":\
             if calc == CalcOperation.viewshed:
                 for i, vp in enumerate(inputs):
                     output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
-                    viewshed_calc(input_ds=raster_filename,
+                    viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
                                   output_filename=output_filename,
                                   vp_array=vp,
                                   backend=backend,
@@ -347,7 +367,7 @@ if __name__ == "__main__":\
                                   )
             else:
                 output_filename = output_path / Path('{}.tif'.format(calc.name))
-                viewshed_calc(input_ds=raster_filename,
+                viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
                               output_filename=output_filename,
                               vp_array=inputs,
                               backend=backend,
@@ -360,7 +380,7 @@ if __name__ == "__main__":\
         if run_comb_with_post:
             output_filename = output_path / 'combine_post.tif'
             cutline = cwd / r'sample/shp/comb_poly.gml'
-            viewshed_calc(input_ds=raster_filename,
+            viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
                           output_filename=output_filename,
                           vp_array=inputs,
                           backend=backend,
