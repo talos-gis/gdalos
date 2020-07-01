@@ -190,12 +190,13 @@ def viewshed_calc(vp_array,
                     print('GS_GetDLLVersion ', talos.GS_GetDLLVersion())
 
                     gdal_path = get_talos_gdal_path()
+                    # gdal_path = r'd:\OSGeo4W64-20200613\bin\gdal204.dll'
                     talos.GS_SetGDALPath(gdal_path)
-                    print('GS_GetGDALPath ', talos.GS_GetGDALPath())
+                    # print('GS_GetGDALPath ', talos.GS_GetGDALPath())
                     print('GS_talosInit ', talos.GS_talosInit())
 
-                    print('GS_IsGDALLoaded ', talos.GS_IsGDALLoaded())
-                    print('GS_GetGDALPath ', talos.GS_GetGDALPath())
+                    # print('GS_IsGDALLoaded ', talos.GS_IsGDALLoaded())
+                    # print('GS_GetGDALPath ', talos.GS_GetGDALPath())
 
                     # print('GS_SetCacheSize ', talos.GS_SetCacheSize(cache_size_mb))
 
