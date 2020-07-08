@@ -48,9 +48,9 @@ def translate_extent(extent: GeoRectangle, transform, sample_count=1000):
         return GeoRectangle.empty()
 
     y = float(extent.min_y)
-    while y <= extent.max_y:
+    while y <= extent.max_y + dy:
         x = float(extent.min_x)
-        while x < extent.max_x:
+        while x <= extent.max_x + dx:
             tx, ty, tz = transform.TransformPoint(x, y)
             x += dx
             if not math.isfinite(tz):

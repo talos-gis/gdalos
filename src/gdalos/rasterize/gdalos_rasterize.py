@@ -11,7 +11,7 @@ from pathlib import Path
 def gdalos_rasterize(
         in_filename: str, shp_filename_or_ds: str,
         out_filename: str = None, shp_layer_name: str = None, shp_z_attribute: str = 'Height',
-        add: bool = True, extent: GeoRectangle = ..., out_res: Real = None, out_srs: str = None, overwrite: bool = True):
+        add: bool = True, extent: GeoRectangle = ..., **kwargs):
 
     """rasterize a vector layer into a given raster layer, overriding or adding the values
 
@@ -33,9 +33,9 @@ def gdalos_rasterize(
         None - use the extent of the input raster
         ... - use the extent of the input vector layer
         GeoRectangle - custom extent
-    out_res: Real
+    warp_CRS: Real
         output resolution (if None then auto select)
-    out_srs: str=None
+    warp_CRS: str=None
         output srs
     overwrite: bool=True
         what to do if the output exists (fail of overwrite)
@@ -65,8 +65,8 @@ def gdalos_rasterize(
             transform = projdef.get_transform(cov_pj_srs, pj4326)
             extent = gdalos_extent.translate_extent(cov_extent, transform)
 
-        dstDs = gdalos_trans(in_filename, out_filename, extent=extent, warp_CRS=out_srs, out_res=out_res,
-                             cog=False, ovr_type=None, overwrite=overwrite, return_ds=True)
+        dstDs = gdalos_trans(in_filename, out_filename, extent=extent,
+                             cog=False, ovr_type=None, return_ds=True, **kwargs)
 
     if shp is not None:
         rasteize_options = gdal.RasterizeOptions(
@@ -84,6 +84,7 @@ if __name__ == '__main__':
     cov_filename = out_dir / Path('ras_cov.gpkg')
 
     my_out_srs = projdef.get_proj_string(36)
+    out_res = 10
     do_overwrite = True
     do_cog = True
     do_add = False
@@ -107,7 +108,8 @@ if __name__ == '__main__':
     dstDs = gdalos_rasterize(
         input_raster,
         shp_filename_or_ds=shp_filename_or_ds, out_filename=out_filename,
-        add=do_add, extent=out_extent, out_srs=my_out_srs, overwrite=do_overwrite)
+        add=do_add, extent=out_extent,
+        warp_CRS=my_out_srs, out_res=out_res, overwrite=do_overwrite)
 
     if do_cog:
         if out_filename is None:
@@ -116,5 +118,3 @@ if __name__ == '__main__':
 
     del dstDs
     print('done!')
-
-

@@ -65,15 +65,8 @@ class RasterKind(Enum):
 
 
 def resampling_alg_by_kind(kind, expand_rgb=False):
-    if kind is None:
-        return None
-    elif kind == RasterKind.pal:
-        if expand_rgb:
-            return "average"
-        else:
-            return "near"
-    elif kind == RasterKind.dtm:
-        return "average"
+    if kind == RasterKind.pal and not expand_rgb:
+        return "near"
     else:
         return "cubic"
 
