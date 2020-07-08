@@ -7,7 +7,7 @@ import os
 import time
 from pathlib import Path
 from enum import Enum
-
+import copy
 from attr import exceptions
 
 from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans
@@ -64,7 +64,7 @@ def viewshed_calc(vp_array,
                   bi=1, co=None, of='GTiff',
                   vp_slice=None,
                   backend:ViewshedBackend=None,
-                  files=[]):
+                  files=None):
     if output_filename:
         os.makedirs(os.path.dirname(str(output_filename)), exist_ok=True)
     ext = gdalos_util.get_ext_by_of(of)
@@ -176,9 +176,13 @@ def viewshed_calc(vp_array,
                     try:
                         from talosgis import get_talos_gdal_path
                         from talosgis import talos2 as talos
+                        import talosgis_data.__data__
+                        import gdalos_data.__data__
                     except ImportError:
                         raise Exception('failed to load talos backend')
 
+                    print('gdalos Version ', gdalos_data.__data__.__version__)
+                    print('talos Version ', talosgis_data.__data__.__version__)
                     print('GS_GetIntVersion ', talos.GS_GetIntVersion())
                     print('GS_GetDLLVersion ', talos.GS_GetDLLVersion())
 
@@ -207,8 +211,10 @@ def viewshed_calc(vp_array,
             else:
                 raise Exception('unknown backend {}'.format(backend))
 
+            set_nodata = backend == ViewshedBackend.gdal
             src_band = ds.GetRasterBand(1)
-            src_band.SetNoDataValue(vp.ndv)
+            if set_nodata:
+                src_band.SetNoDataValue(vp.ndv)
             if color_table and not operation:
                 src_band.SetRasterColorTable(color_table)
                 src_band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
@@ -330,30 +336,31 @@ def viewshed_calc(vp_array,
     return True
 
 
-if __name__ == "__main__":\
-    # dir_path = Path('/home/idan/maps')
-    dir_path = Path(r'd:\dev\gis\maps')
-    raster_filename = Path(dir_path) / Path('srtm1_36_sample.tif')
-    input_ds = ds = gdalos_util.open_ds(raster_filename)
+def test_multi_z(inputs, raster_filename, input_ds):
+    cwd = Path.cwd()
+    backend = ViewshedBackend.talos
+    output_path = dir_path / Path('multi_' + str(backend))
+    for calc in CalcOperation:
+        # if calc != CalcOperation.viewshed:
+        #     continue
+        color_palette = None #cwd / 'sample/color_files/viewshed/{}.txt'.format(calc.name)
+        if calc == CalcOperation.viewshed:
+            for i, vp in enumerate(inputs):
+                output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
+                viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
+                              output_filename=output_filename,
+                              vp_array=vp,
+                              backend=backend,
+                              operation=calc,
+                              color_palette=color_palette,
+                              files=files,
+                              )
 
-    vp = ViewshedGridParams()
 
-    # inputs = vp.get_as_gdal_params_array()
-    inputs = vp.get_array()
-
-    use_input_files = False
-    run_comb_with_post = False
-
-    if use_input_files:
-        files_path = Path('/home/idan/maps/grid_comb/viewshed')
-        files = glob.glob(str(files_path / '*.tif'))
-    else:
-        files = []
-
+def test_simple_viewshed(inputs, raster_filename, input_ds, dir_path, files=None, run_comb_with_post=False):
+    cwd = Path.cwd()
     for backend in reversed(ViewshedBackend):
-        # backend = ViewshedBackend.TALOS
         output_path = dir_path / Path('comb_' + str(backend))
-        cwd = Path.cwd()
         for calc in CalcOperation:
             # if calc != CalcOperation.viewshed:
             #     continue
@@ -393,3 +400,30 @@ if __name__ == "__main__":\
                           cutline=cutline,
                           out_crs=0,
                           files=files)
+
+
+if __name__ == "__main__":\
+    # dir_path = Path('/home/idan/maps')
+    dir_path = Path(r'd:\dev\gis\maps')
+    raster_filename = Path(dir_path) / Path('srtm1_36_sample.tif')
+    input_ds = ds = gdalos_util.open_ds(raster_filename)
+
+    vp = ViewshedGridParams()
+    inputs = vp.get_array()
+
+    use_input_files = False
+    if use_input_files:
+        files_path = Path('/home/idan/maps/grid_comb/viewshed')
+        files = glob.glob(str(files_path / '*.tif'))
+    else:
+        files = None
+
+    if True:
+        vp1 = copy.copy(vp)
+        vp1.tz = None
+        inputs = vp1.get_array()
+        test_multi_z(inputs=inputs, raster_filename=raster_filename, input_ds=input_ds)
+    if False:
+        inputs = vp.get_array()
+        test_simple_viewshed(inputs=inputs, run_comb_with_post=False, files=files,
+                             dir_path=dir_path, raster_filename=raster_filename, input_ds=input_ds)

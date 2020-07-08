@@ -1,5 +1,6 @@
 from copy import copy
 from typing import Sequence
+import gdal
 
 st_seen = 5
 st_seenbut = 4
@@ -83,10 +84,22 @@ class ViewshedParams(object):
             'omsl', 'tmsl', 'azimuth', 'h_aperture', 'elevation', 'v_aperture'
 
         talos_params = \
-            'ox', 'oy', 'oz', 'MaxRange', 'MinRange', 'MinRangeShave', 'SlantRange', 'TargetHeight', \
+            'ox', 'oy', 'oz', 'MaxRange', 'MinRange', 'MinRangeShave', 'SlantRange', 'tz', \
             'ObsMSL', 'TarMSL', 'Direction', 'Aperture', 'Elevation', 'ElevationAperture'
         d = {k1: getattr(self, k0) for k0, k1 in
              zip(vp_params, talos_params)}
+
+        SlackDummyHeight = -1000
+        result_dt = gdal.GDT_Byte
+        if d['oz'] is None or d['tz'] is None:
+            result_dt = gdal.GDT_Int16
+            if d['oz'] is None:
+                d['oz'] = SlackDummyHeight
+                if d['tz'] is None:
+                    raise Exception ('You have to specify at least one of oz or tz')
+            else:
+                d['tz'] = SlackDummyHeight
+        d['result_dt'] = result_dt
         return d
 
     def update(self, d: dict):
