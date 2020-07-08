@@ -17,6 +17,7 @@ from gdalos.viewshed.viewshed_params import ViewshedParams
 from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
 from gdalos.talos.ogr_util import create_layer_from_geometries
 from gdalos.talos.geom_arc import PolygonizeSector
+from gdalos.calc.gdal_dem_color_cutline import gdaldem_crop_and_color
 
 talos = None
 
@@ -75,7 +76,7 @@ def viewshed_calc(vp_array,
     # 2. calc + calc_post_process
     # 3. combined_post_process
     # 4. czml
-    steps = 1
+    steps = 0
     if operation == CalcOperation.viewshed:
         operation = None
     if operation:
@@ -84,6 +85,7 @@ def viewshed_calc(vp_array,
         out_crs = 0  # czml supprts only 4326
         steps += 1
     temp_files = []
+    do_palette = color_table and not operation
 
     combined_post_process_needed = False
 
@@ -144,6 +146,7 @@ def viewshed_calc(vp_array,
         else:
             transform_coords_to_raster = None
 
+        steps += len(vp_array)
         for vp in vp_array:
             if transform_coords_to_raster:
                 vp.ox, vp.oy, _ = transform_coords_to_raster.TransformPoint(vp.ox, vp.oy)
@@ -157,11 +160,12 @@ def viewshed_calc(vp_array,
             if inter_process:
                 steps += 1
 
-            # TypeError: '>' not supported between instances of 'NoneType' and 'int'
-            # todo: why dosn't it work without it?
-            is_temp_file, gdal_out_format, d_path, return_ds = tempthing(True, steps, output_filename)
-
             if backend == ViewshedBackend.gdal:
+                # TypeError: '>' not supported between instances of 'NoneType' and 'int'
+                bnd_type = gdal.GDT_Byte
+                do_color = False
+                # todo: why dosn't it work without it?
+                is_temp_file, gdal_out_format, d_path, return_ds = tempthing(True, steps, output_filename)
                 inputs = vp.get_as_gdal_params()
                 ds = gdal.ViewshedGenerate(input_band, gdal_out_format, str(d_path), co, **inputs)
                 if not ds:
@@ -203,6 +207,14 @@ def viewshed_calc(vp_array,
                 talos.GS_SetRefractionCoeff(vp.refraction_coeff)
                 inputs = vp.get_as_talos_params()
                 ras = talos.GS_Viewshed_Calc1(**inputs)
+
+                bnd_type = inputs['result_dt']
+                do_color = do_palette and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
+                if do_color:
+                    steps += 1
+
+                is_temp_file, gdal_out_format, d_path, return_ds = tempthing(True, steps, output_filename)
+
                 talos.GS_SaveRaster(ras, str(d_path))
                 ras = None
                 # I will reopen the ds to change the color table and ndv
@@ -211,20 +223,38 @@ def viewshed_calc(vp_array,
             else:
                 raise Exception('unknown backend {}'.format(backend))
 
+            input_ds = None
+            input_band = None
+
             set_nodata = backend == ViewshedBackend.gdal
-            src_band = ds.GetRasterBand(1)
+            bnd = ds.GetRasterBand(1)
             if set_nodata:
-                src_band.SetNoDataValue(vp.ndv)
-            if color_table and not operation:
-                src_band.SetRasterColorTable(color_table)
-                src_band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
-            src_band = None
+                bnd.SetNoDataValue(vp.ndv)
+            if do_palette and not do_color:
+                if bnd_type != bnd.DataType:
+                    raise Exception('Unexpected band type, expected: {}, got {}'.format(bnd_type, bnd.DataType))
+                bnd.SetRasterColorTable(color_table)
+                bnd.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
+            bnd = None
 
             if is_temp_file:
                 # close original ds and reopen
                 ds = None
                 ds = gdalos_util.open_ds(d_path)
                 temp_files.append(d_path)
+            steps -= 1
+
+            if do_color:
+                is_temp_file, gdal_out_format, d_path, return_ds = tempthing(False, steps, output_filename)
+                ds, _pal = gdaldem_crop_and_color(ds, out_filename=d_path, color_palette=color_palette)
+                if is_temp_file:
+                    # close original ds and reopen
+                    ds = None
+                    ds = gdalos_util.open_ds(d_path)
+                    temp_files.append(d_path)
+                if not ds:
+                    raise Exception('Viewshed calculation failed to color result')
+                steps -= 1
 
             if inter_process:
                 ring = PolygonizeSector(vp.ox, vp.oy, vp.max_r, vp.max_r, vp.azimuth, vp.h_aperture)
@@ -250,10 +280,7 @@ def viewshed_calc(vp_array,
             if operation:
                 files.append(ds)
 
-        input_ds = None
-        input_band = None
-
-    steps -= 1
+    # steps -= 1
     if operation:
         # alpha_pattern = '1*({{}}>{})'.format(viewshed_thresh)
         # alpha_pattern = 'np.multiply({{}}>{}, dtype=np.uint8)'.format(viewshed_thresh)
@@ -339,22 +366,24 @@ def viewshed_calc(vp_array,
 def test_multi_z(inputs, raster_filename, input_ds):
     cwd = Path.cwd()
     backend = ViewshedBackend.talos
-    output_path = dir_path / Path('multi_' + str(backend))
-    for calc in CalcOperation:
-        # if calc != CalcOperation.viewshed:
-        #     continue
-        color_palette = None #cwd / 'sample/color_files/viewshed/{}.txt'.format(calc.name)
-        if calc == CalcOperation.viewshed:
-            for i, vp in enumerate(inputs):
-                output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
-                viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
-                              output_filename=output_filename,
-                              vp_array=vp,
-                              backend=backend,
-                              operation=calc,
-                              color_palette=color_palette,
-                              files=files,
-                              )
+    for color_palette in [None, gdalos_color.talos_pal_percent()]:
+        prefix = 'mul_col_' if color_palette else 'multi_'
+        output_path = dir_path / Path(prefix + str(backend))
+        for calc in CalcOperation:
+            # if calc != CalcOperation.viewshed:
+            #     continue
+            # color_palette = cwd / 'sample/color_files/viewshed/{}.txt'.format(calc.name)
+            if calc == CalcOperation.viewshed:
+                for i, vp in enumerate(inputs):
+                    output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
+                    viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
+                                  output_filename=output_filename,
+                                  vp_array=vp,
+                                  backend=backend,
+                                  operation=calc,
+                                  color_palette=color_palette,
+                                  files=files,
+                                  )
 
 
 def test_simple_viewshed(inputs, raster_filename, input_ds, dir_path, files=None, run_comb_with_post=False):

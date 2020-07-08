@@ -82,16 +82,19 @@ def czml_gdaldem_crop_and_color(ds: gdal.Dataset, process_palette, czml_output_f
 
 
 def gdaldem_crop_and_color(ds: gdal.Dataset,
-                           out_filename: str, output_format: str = 'GTiff',
+                           out_filename: str='', output_format: str = None,
                            extent: Optional[GeoRectangle] = None,
                            cutline: Optional[Union[str, List[str]]] = None,
                            color_palette: Optional[Union[str, Sequence[str]]] = None,
-                           process_palette=2,
+                           process_palette=None,
                            common_options: dict = None):
     do_color = color_palette is not None
     do_crop = (extent or cutline) is not None
 
-    if out_filename is None:
+    if not output_format:
+        output_format = 'GTiff' if out_filename else 'MEM'
+
+    if not out_filename:
         out_filename = ''
         if output_format != 'MEM':
             raise Exception('output filename is None')
@@ -125,7 +128,7 @@ def gdaldem_crop_and_color(ds: gdal.Dataset,
             'format': output_format,
             'processing': 'color-relief',
             'colorFilename': color_filename}
-        ds = gdal.DEMProcessing(out_filename, ds, **dem_options)
+        ds = gdal.DEMProcessing(str(out_filename), ds, **dem_options)
         if temp_color_filename is not None:
             os.remove(temp_color_filename)
         if ds is None:
@@ -164,6 +167,7 @@ if __name__ == '__main__':
         out_filename=out_filename,
         cutline=wkt_list,
         color_palette=color_palette,
+        process_palette=2,
         output_format='GTiff')
     print(out_filename)
     print(pal)

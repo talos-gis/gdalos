@@ -7,6 +7,7 @@ from pathlib import Path
 import glob
 import tempfile
 from typing import Sequence
+import math
 
 
 def to_number(s):
@@ -30,23 +31,38 @@ class ColorPalette:
     def __repr__(self):
         return str(self.pal)
 
+    def set_num_to_percent(self, ndv=True):
+        new_pal = ColorPalette()
+        for num, val in self.pal.items():
+            if not isinstance(num, str):
+                if num < 0:
+                    num = 0
+                elif num > 100:
+                    num = 100
+                num = str(num)+'%'
+            new_pal.pal[num] = val
+        new_pal._all_numeric = False
+        if ndv:
+            new_pal.pal['nv'] = 0
+        return new_pal
+
     def apply_percent(self, min_val, max_val):
         if self._all_numeric:
             # nothing to do
             return
         all_numeric = True
         new_pal = self.pal.copy()
-        for val in self.pal.keys():
-            if not isinstance(val, str):
+        for num in self.pal.keys():
+            if not isinstance(num, str):
                 continue
-            is_percent = val.endswith('%')
+            is_percent = num.endswith('%')
             if is_percent:
-                new_val = val.rstrip('%')
+                new_num = num.rstrip('%')
                 try:
-                    new_val = to_number(new_val)
+                    new_num = to_number(new_num)
                     if is_percent:
-                        new_val = (max_val - min_val) * new_val * 0.01 + min_val
-                    new_pal[new_val] = new_pal.pop(val)
+                        new_num = (max_val - min_val) * new_num * 0.01 + min_val
+                    new_pal[new_num] = new_pal.pop(num)
                 except ValueError:
                     all_numeric = False
             else:
@@ -61,6 +77,36 @@ class ColorPalette:
             self.read_qlr(filename)
         else:
             self.read_color_file(filename)
+
+    def read_talos_palette(self, s: str):
+        self.pal.clear()
+        self._all_numeric = True
+        x = s.split(';')
+        min_value = float(x[0])
+        count = int(x[1])
+        selected = x[2]
+        lock_values = x[3]
+        multiplier = float(x[4])
+        special_draw = x[5]
+        interpolate = x[6]
+        log_base = float(x[8])
+        if log_base == 0:
+            ln_log_base = None
+        else:
+            ln_log_base = math.log(log_base)
+        j = 8
+        for i in range(count):
+            name = x[j]
+            color = x[j+2]
+            color = self.pas_color_to_rgb(color)
+            brush = x[j+3]
+            key = min_value + i * multiplier
+            if ln_log_base:
+                key = math.exp(ln_log_base * key)  # == log_base^key
+            self.pal[key] = color
+            j += 4
+        # flags = x[j]
+        # pal_version = x[j+1]
 
     def read_color_file(self, color_filename):
         self.pal.clear()
@@ -163,6 +209,14 @@ class ColorPalette:
         except:
             return 0
 
+    @staticmethod
+    def pas_color_to_rgb(col):
+        # $CC00FF80
+        # $AARRGGBB
+        if isinstance(col, str):
+            col = str(col).strip('$')
+        return int(col, 16)
+
 
 def qlr_to_color_file(qlr_filename: Path) -> Path:
     qlr_filename = Path(qlr_filename)
@@ -175,7 +229,11 @@ def qlr_to_color_file(qlr_filename: Path) -> Path:
 
 def get_file_from_strings(color_palette):
     temp_color_filename = None
-    if isinstance(color_palette, (Path, str)):
+    if isinstance(color_palette, ColorPalette):
+        temp_color_filename = tempfile.mktemp(suffix='.txt')
+        color_filename = temp_color_filename
+        color_palette.write_color_file(temp_color_filename)
+    elif isinstance(color_palette, (Path, str)):
         color_filename = color_palette
     elif isinstance(color_palette, Sequence):
         temp_color_filename = tempfile.mktemp(suffix='.txt')
@@ -200,8 +258,23 @@ def get_color_table(color_palette):
     return color_table
 
 
-if __name__ == "__main__":
+def talos_pal_percent():
+    # talos_pal = '0;11;10;0;10;0;1;1;0;|;$00FFFFFF;0;3;2|;$CC000080;0;3;2|;$CC0000BF;0;3;2|;$CC0000FF;0;3;2|;$CC00FFFF;0;3;2|;$CC00FF80;0;3;2|;$CC00FF00;0;3;2|;$CCFFFF00;0;3;2|;$CCFF0000;0;3;2|;$CCFF007F;0;3;2|;$CCFF00FF;0;3;2'
+    talos_pal = '0;7;6;0;16.666666666667;0;1;1;0;|;$CC00007F;0;3;2|;$CC0000FF;0;3;2|;$CC00FFFF;0;3;2|;$CC00FF00;0;3;2|;$CCFFFF00;0;3;2|;$CCFF0000;0;3;2|;$CCFF00FF;0;3;2'
+    pal = ColorPalette()
+    pal.read_talos_palette(talos_pal)
+    pal = pal.set_num_to_percent(ndv=True)
+    return pal
+
+
+def test_qlr():
     # dir_path = Path('/home/idan/maps/comb')
     dir_path = Path(r'sample/color_files')
     for filename in glob.glob(str(dir_path / '*.qlr')):
         qlr_to_color_file(filename)
+
+if __name__ == "__main__":
+    # test_qlr()
+    print(talos_pal_percent())
+
+
