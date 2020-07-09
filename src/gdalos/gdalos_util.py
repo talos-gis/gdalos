@@ -60,7 +60,6 @@ class OpenDS:
             return gdal.Open(str(filename), access_mode)
 
 
-
 def _get_bands(ds: gdal.Dataset) -> Iterator[gdal.Band]:
     return (ds.GetRasterBand(i + 1) for i in range(ds.RasterCount))
 

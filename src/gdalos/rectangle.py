@@ -144,6 +144,10 @@ class GeoRectangle:
         return cls.from_xwyh(pix_origin[0], size[0], pix_origin[1], size[1])
 
     @property
+    def area(self):
+        return self.w * self.h
+
+    @property
     def size(self):
         return self.w, self.h
 

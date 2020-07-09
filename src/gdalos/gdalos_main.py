@@ -11,7 +11,6 @@ from typing import List, Optional, Sequence, Tuple, TypeVar, Union
 from osgeo import gdal
 from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef
 from gdalos.__util__ import with_param_dict
-from gdalos.gdalos_util import concat_paths
 from gdalos.rectangle import GeoRectangle
 from gdalos_data.__data__ import __version__
 
@@ -739,7 +738,7 @@ def gdalos_trans(
                 all_args_new["ovr_files"] = []  # there shouldn't be any
                 all_args_new["aux_files"] = []
                 all_args_new["temp_files"] = []  # there shouldn't be any
-                all_args_new["out_filename"] = concat_paths(
+                all_args_new["out_filename"] = gdalos_util.concat_paths(
                     out_filename, ".ovr" * (ovr_index - src_ovr)
                 )
                 all_args_new["src_ovr"] = ovr_index
