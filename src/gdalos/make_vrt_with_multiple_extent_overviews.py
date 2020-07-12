@@ -37,8 +37,7 @@ class RasterOverview(AutoRepr):
         return level
 
     def get_ds(self):
-        src_ovr = None if self.ovr < 0 else self.ovr
-        return open_ds(self.path, src_ovr=src_ovr)
+        return open_ds(self.path, src_ovr=self.ovr)
 
     # def __repr__(self):
     #     return str([str(ovr) for ovr in self.o])
@@ -106,7 +105,7 @@ def make_vrt_with_multiple_extent_overviews(ros: List[RasterOverview], vrt_filen
 
     print('best ros:')
     print_ros(best_ros)
-    make_ros_vrt(ros, extent, vrt_filename)
+    return make_ros_vrt(ros, extent, vrt_filename)
 
 
 def make_ros_vrt(ros: List[RasterOverview], extent: GeoRectangle, vrt_filename: Path):
@@ -127,7 +126,7 @@ def make_vrt_with_multiple_extent_overviews_from_dir(path: Path, pattern='*.tif'
     for path in paths:
         r = RasterOverviewList(path)
         o.extend(r.o)
-    make_vrt_with_multiple_extent_overviews(o, vrt_filename=vrt_filename)
+    return make_vrt_with_multiple_extent_overviews(o, vrt_filename=vrt_filename)
 
 
 if __name__ == '__main__':
