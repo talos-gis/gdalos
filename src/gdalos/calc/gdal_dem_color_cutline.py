@@ -129,7 +129,7 @@ def gdaldem_crop_and_color(ds: gdal.Dataset,
             'addAlpha': True,
             'format': output_format,
             'processing': 'color-relief',
-            'colorFilename': color_filename}
+            'colorFilename': str(color_filename)}
         ds = gdal.DEMProcessing(str(out_filename), ds, **dem_options)
         if temp_color_filename is not None:
             os.remove(temp_color_filename)

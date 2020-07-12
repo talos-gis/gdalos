@@ -1,5 +1,6 @@
 from enum import Enum
 import sys
+from functools import partial
 import gdal, osr, ogr
 import glob
 import tempfile
@@ -33,12 +34,13 @@ default_ViewshedBackend = ViewshedBackend.gdal
 class CalcOperation(Enum):
     viewshed = 0
     max = 1
-    count = 2
-    count_z = 3
-    unique = 4
+    min = 2
+    count = 3
+    count_z = 4
+    unique = 5
 
 
-def tempthing1(is_temp_file):
+def temp_params(is_temp_file):
     gdal_out_format = 'GTiff' if is_temp_file else 'MEM'
     d_path = tempfile.mktemp(suffix='.tif') if is_temp_file else ''
     return_ds = not is_temp_file
@@ -55,6 +57,7 @@ def make_slice(slicer):
 
 def viewshed_calc(output_filename, of='GTiff', **kwargs):
     output_filename = Path(output_filename)
+    print(output_filename)
     # ext = output_filename.suffix
     ext = gdalos_util.get_ext_by_of(of)
     if output_filename:
@@ -62,17 +65,26 @@ def viewshed_calc(output_filename, of='GTiff', **kwargs):
     is_czml = ext == '.czml'
     if is_czml:
         kwargs['out_crs'] = 0  # czml supprts only 4326
-
-    ds = viewshed_calc_to_ds(**kwargs)
+    temp_files=[]
+    ds = viewshed_calc_to_ds(**kwargs, temp_files=temp_files)
     if not ds:
         raise Exception('error occurred')
+    dst_ds = None
     if is_czml:
         gdal_to_czml.gdal_to_czml(ds, name=str(output_filename), out_filename=output_filename)
     else:
         driver = gdal.GetDriverByName(of)
         dst_ds = driver.CreateCopy(str(output_filename), ds)
-        dst_ds = None
-    return ds
+        # dst_ds = None
+    ds = None
+
+    if temp_files:
+        for f in temp_files:
+            try:
+                os.remove(f)
+            except:
+                print('failed to remove temp file:{}'.format(f))
+    return dst_ds
 
 
 def viewshed_calc_to_ds(vp_array,
@@ -85,16 +97,16 @@ def viewshed_calc_to_ds(vp_array,
                         bi=1, co=None,
                         vp_slice=None,
                         backend:ViewshedBackend=None,
+                        temp_files=None,
                         files=None):
-    is_temp_file, gdal_out_format, d_path, return_ds = tempthing1(False)
+    is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
 
     color_table = gdalos_color.get_color_table(color_palette)
     if operation == CalcOperation.viewshed:
         operation = None
 
     do_color = False
-    temp_files = []
-    do_palette = color_table and not operation
+    temp_files = temp_files or []
 
     combined_post_process_needed = False
 
@@ -163,7 +175,7 @@ def viewshed_calc_to_ds(vp_array,
                 backend = ViewshedBackend[backend]
 
             inter_process = (backend == ViewshedBackend.gdal) and not vp.is_omni_h()
-
+            is_base_calc = True
             if backend == ViewshedBackend.gdal:
                 # TypeError: '>' not supported between instances of 'NoneType' and 'int'
                 is_temp_file = True
@@ -171,7 +183,7 @@ def viewshed_calc_to_ds(vp_array,
 
                 bnd_type = gdal.GDT_Byte
                 # todo: why dosn't it work without it?
-                is_temp_file, gdal_out_format, d_path, return_ds = tempthing1(True)
+                is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
 
                 inputs = vp.get_as_gdal_params()
                 print(inputs)
@@ -217,9 +229,10 @@ def viewshed_calc_to_ds(vp_array,
                 ras = talos.GS_Viewshed_Calc1(**inputs)
 
                 bnd_type = inputs['result_dt']
-                do_color = do_palette and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
+                is_base_calc = bnd_type in [gdal.GDT_Byte]
+                do_color = color_table and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
 
-                is_temp_file, gdal_out_format, d_path, return_ds = tempthing1(True)
+                is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
 
                 talos.GS_SaveRaster(ras, str(d_path))
                 ras = None
@@ -233,10 +246,14 @@ def viewshed_calc_to_ds(vp_array,
             input_band = None
 
             set_nodata = backend == ViewshedBackend.gdal
+            # set_nodata = is_base_calc
             bnd = ds.GetRasterBand(1)
             if set_nodata:
-                bnd.SetNoDataValue(vp.ndv)
-            if do_palette and not do_color:
+                base_calc_ndv = vp.ndv
+                bnd.SetNoDataValue(base_calc_ndv)
+            else:
+                base_calc_ndv = bnd.GetNoDataValue()
+            if color_table and not do_color:
                 if bnd_type != bnd.DataType:
                     raise Exception('Unexpected band type, expected: {}, got {}'.format(bnd_type, bnd.DataType))
                 bnd.SetRasterColorTable(color_table)
@@ -248,7 +265,7 @@ def viewshed_calc_to_ds(vp_array,
                 ds = None
                 ds = gdalos_util.open_ds(d_path)
                 temp_files.append(d_path)
-                is_temp_file, gdal_out_format, d_path, return_ds = tempthing1(False)
+                is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
 
             if inter_process:
                 ring = PolygonizeSector(vp.ox, vp.oy, vp.max_r, vp.max_r, vp.azimuth, vp.h_aperture)
@@ -267,14 +284,17 @@ def viewshed_calc_to_ds(vp_array,
     if operation:
         # alpha_pattern = '1*({{}}>{})'.format(viewshed_thresh)
         # alpha_pattern = 'np.multiply({{}}>{}, dtype=np.uint8)'.format(viewshed_thresh)
+        no_data_value = base_calc_ndv
         if operation == CalcOperation.viewshed:
-            no_data_value = viewshed_params.viewshed_ndv
+            # no_data_value = viewshed_params.viewshed_ndv
             f = gdalos_combine.get_by_index
             # calc_expr, calc_kwargs, f = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f'), sum
         elif operation == CalcOperation.max:
-            no_data_value = viewshed_params.viewshed_ndv
+            # no_data_value = viewshed_params.viewshed_ndv
             f = gdalos_combine.vs_max
             # calc_expr, calc_kwargs, f = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f'), sum
+        elif operation == CalcOperation.min:
+            f = gdalos_combine.vs_min
         elif operation == CalcOperation.count:
             no_data_value = 0
             f = gdalos_combine.vs_count
@@ -282,7 +302,7 @@ def viewshed_calc_to_ds(vp_array,
             # calc_expr, calc_kwargs, f = gdal_calc.make_calc_with_func(files, alpha_pattern), sum
         elif operation == CalcOperation.count_z:
             no_data_value = viewshed_params.viewshed_comb_ndv
-            f = gdalos_combine.vs_count_z
+            f = partial(gdalos_combine.vs_count_z, in_ndv=base_calc_ndv)
             # calc_expr, calc_kwargs f, = gdal_calc.make_calc_with_func(files, alpha_pattern, 'f'), sum
         elif operation == CalcOperation.unique:
             no_data_value = viewshed_params.viewshed_comb_ndv
@@ -333,22 +353,26 @@ def viewshed_calc_to_ds(vp_array,
             try:
                 os.remove(f)
             except:
-                print('failed to remove temp file:{}'.format(f))
+                pass
+                # probably this is a file that backs the ds that we'll return
+                # print('failed to remove temp file:{}'.format(f))
 
     return ds
 
 
-def test_multi_z(inputs, raster_filename, input_ds):
+def test_calcz(inputs, raster_filename, input_ds):
     cwd = Path.cwd()
     backend = ViewshedBackend.talos
-    for color_palette in [None, gdalos_color.talos_pal_percent()]:
-        prefix = 'mul_col_' if color_palette else 'multi_'
+    for color_palette in [..., None]:
+        prefix = 'calcz_color_' if color_palette else 'calcz_'
         output_path = dir_path / Path(prefix + str(backend))
         for calc in CalcOperation:
             # if calc != CalcOperation.viewshed:
             #     continue
-            # color_palette = cwd / 'sample/color_files/viewshed/{}.txt'.format(calc.name)
+            if color_palette is ...:
+                color_palette = cwd / 'sample/color_files/gradient/{}.txt'.format('percentages')  #calc.name)
             if calc == CalcOperation.viewshed:
+                # continue
                 for i, vp in enumerate(inputs):
                     output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
                     viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
@@ -359,15 +383,26 @@ def test_multi_z(inputs, raster_filename, input_ds):
                                   color_palette=color_palette,
                                   files=files,
                                   )
+            elif calc in [CalcOperation.max, CalcOperation.min]:
+                output_filename = output_path / Path('{}.tif'.format(calc.name))
+                viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
+                              output_filename=output_filename,
+                              vp_array=inputs,
+                              backend=backend,
+                              operation=calc,
+                              color_palette=color_palette,
+                              files=files,
+                              # vp_slice=slice(0, 2)
+                              )
 
 
 def test_simple_viewshed(inputs, raster_filename, input_ds, dir_path, files=None, run_comb_with_post=False):
+    calc_filter = CalcOperation
+    calc_filter = [CalcOperation.count_z]
     cwd = Path.cwd()
     for backend in reversed(ViewshedBackend):
         output_path = dir_path / Path('comb_' + str(backend))
-        for calc in CalcOperation:
-            # if calc != CalcOperation.viewshed:
-            #     continue
+        for calc in calc_filter:
             color_palette = cwd / 'sample/color_files/viewshed/{}.txt'.format(calc.name)
             if calc == CalcOperation.viewshed:
                 for i, vp in enumerate(inputs):
@@ -382,15 +417,18 @@ def test_simple_viewshed(inputs, raster_filename, input_ds, dir_path, files=None
                                   )
             else:
                 output_filename = output_path / Path('{}.tif'.format(calc.name))
-                viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
-                              output_filename=output_filename,
-                              vp_array=inputs,
-                              backend=backend,
-                              operation=calc,
-                              color_palette=color_palette,
-                              files=files,
-                              # vp_slice=slice(0, 2)
-                              )
+                try:
+                    viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
+                                  output_filename=output_filename,
+                                  vp_array=inputs,
+                                  backend=backend,
+                                  operation=calc,
+                                  color_palette=color_palette,
+                                  files=files,
+                                  # vp_slice=slice(0, 2)
+                                  )
+                except:
+                    print('failed to run viewshed calc with backend: {}, inputs: {}'.format(backend, inputs))
 
         if run_comb_with_post:
             output_filename = output_path / 'combine_post.tif'
@@ -422,12 +460,12 @@ if __name__ == "__main__":
     else:
         files = None
 
+    # if True:
+    #     vp1 = copy.copy(vp)
+    #     vp1.tz = None
+    #     inputs = vp1.get_array()
+    #     test_calcz(inputs=inputs, raster_filename=raster_filename, input_ds=input_ds)
     if True:
-        vp1 = copy.copy(vp)
-        vp1.tz = None
-        inputs = vp1.get_array()
-        test_multi_z(inputs=inputs, raster_filename=raster_filename, input_ds=input_ds)
-    if False:
         inputs = vp.get_array()
         test_simple_viewshed(inputs=inputs, run_comb_with_post=False, files=files,
                              dir_path=dir_path, raster_filename=raster_filename, input_ds=input_ds)

@@ -19,6 +19,15 @@ def vs_max(a):
     return ret
 
 
+def vs_min(a):
+    """
+    max value of each pixel
+    """
+    concatenate = np.stack(a)
+    ret = concatenate.min(axis=0)
+    return ret
+
+
 def vs_count(a, threshold=viewshed_thresh):
     """
     count non zero values
