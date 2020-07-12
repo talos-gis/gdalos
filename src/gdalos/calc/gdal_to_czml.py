@@ -67,6 +67,6 @@ def gdal_to_czml(ds, name=None, out_filename=None, description=None):
     )
     ds = None  # close the ds in case it was transformed
     if out_filename:
-        with open(out_filename, 'w') as f:
+        with open(str(out_filename), 'w') as f:
             print(czml_doc, file=f)
     return czml_doc

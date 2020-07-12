@@ -129,6 +129,7 @@ class ColorPalette:
                 self.pal[key] = color
 
     def write_color_file(self, color_filename):
+        os.makedirs(os.path.dirname(str(color_filename)), exist_ok=True)
         with open(str(color_filename), mode='w') as fp:
             for key, color in self.pal.items():
                 cc = self.color_to_cc(color)
@@ -220,11 +221,19 @@ class ColorPalette:
 
 def qlr_to_color_file(qlr_filename: Path) -> Path:
     qlr_filename = Path(qlr_filename)
-    cp = ColorPalette()
-    cp.read_qlr(qlr_filename)
+    pal = ColorPalette()
+    pal.read_qlr(qlr_filename)
     color_filename = qlr_filename.with_suffix('.txt')
-    cp.write_color_file(color_filename)
-    return color_filename
+    pal.write_color_file(color_filename)
+    return pal, color_filename
+
+
+def talos_to_color_file(talos_pal: str, color_filename: Path) -> Path:
+    pal = ColorPalette()
+    pal.read_talos_palette(talos_pal)
+    pal = pal.set_num_to_percent(ndv=True)
+    pal.write_color_file(color_filename)
+    return pal, color_filename
 
 
 def get_file_from_strings(color_palette):
@@ -258,23 +267,28 @@ def get_color_table(color_palette):
     return color_table
 
 
-def talos_pal_percent():
-    # talos_pal = '0;11;10;0;10;0;1;1;0;|;$00FFFFFF;0;3;2|;$CC000080;0;3;2|;$CC0000BF;0;3;2|;$CC0000FF;0;3;2|;$CC00FFFF;0;3;2|;$CC00FF80;0;3;2|;$CC00FF00;0;3;2|;$CCFFFF00;0;3;2|;$CCFF0000;0;3;2|;$CCFF007F;0;3;2|;$CCFF00FF;0;3;2'
-    talos_pal = '0;7;6;0;16.666666666667;0;1;1;0;|;$CC00007F;0;3;2|;$CC0000FF;0;3;2|;$CC00FFFF;0;3;2|;$CC00FF00;0;3;2|;$CCFFFF00;0;3;2|;$CCFF0000;0;3;2|;$CCFF00FF;0;3;2'
-    pal = ColorPalette()
-    pal.read_talos_palette(talos_pal)
-    pal = pal.set_num_to_percent(ndv=True)
-    return pal
+def test_talos_pal(talos_paletts):
+    dir_path = Path(r'sample/color_files')
+    for name, talos_pal in talos_paletts:
+        path = dir_path / Path(name+'.txt')
+        pal, filename = talos_to_color_file(talos_pal, path)
+        print(filename, pal)
 
 
 def test_qlr():
     # dir_path = Path('/home/idan/maps/comb')
     dir_path = Path(r'sample/color_files')
     for filename in glob.glob(str(dir_path / '*.qlr')):
-        qlr_to_color_file(filename)
+        pal, filename = qlr_to_color_file(filename)
+        print(filename, pal)
+
 
 if __name__ == "__main__":
+    my_talos_paletts = [
+        ('percents',
+         '0;7;6;0;16.666666666667;0;1;1;0;|;$CC00007F;0;3;2|;$CC0000FF;0;3;2|;$CC00FFFF;0;3;2|;$CC00FF00;0;3;2|;$CCFFFF00;0;3;2|;$CCFF0000;0;3;2|;$CCFF00FF;0;3;2')
+    ]
+    test_talos_pal(my_talos_paletts)
     # test_qlr()
-    print(talos_pal_percent())
 
 

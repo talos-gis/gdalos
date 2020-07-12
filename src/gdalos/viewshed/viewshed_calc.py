@@ -38,11 +38,9 @@ class CalcOperation(Enum):
     unique = 4
 
 
-def tempthing(use_temp_tif, steps, output_filename):
-    is_temp_file = (use_temp_tif and steps > 1)
-    gdal_out_format = 'GTiff' if steps == 1 or use_temp_tif else 'MEM'
-    d_path = tempfile.mktemp(
-        suffix='.tif') if is_temp_file else output_filename if gdal_out_format != 'MEM' else ''
+def tempthing1(is_temp_file):
+    gdal_out_format = 'GTiff' if is_temp_file else 'MEM'
+    d_path = tempfile.mktemp(suffix='.tif') if is_temp_file else ''
     return_ds = not is_temp_file
     return is_temp_file, gdal_out_format, d_path, return_ds
 
@@ -55,35 +53,46 @@ def make_slice(slicer):
     return slice(*[{True: lambda n: None, False: int}[x == ''](x) for x in (slicer.split(':') + ['', '', ''])[:3]])
 
 
-def viewshed_calc(vp_array,
-                  output_filename,
-                  input_ds,
-                  input_filename=None,
-                  extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
-                  in_coords_crs_pj=None, out_crs=None,
-                  color_palette=None,
-                  bi=1, co=None, of='GTiff',
-                  vp_slice=None,
-                  backend:ViewshedBackend=None,
-                  files=None):
+def viewshed_calc(output_filename, of='GTiff', **kwargs):
+    output_filename = Path(output_filename)
+    # ext = output_filename.suffix
+    ext = gdalos_util.get_ext_by_of(of)
     if output_filename:
         os.makedirs(os.path.dirname(str(output_filename)), exist_ok=True)
-    ext = gdalos_util.get_ext_by_of(of)
     is_czml = ext == '.czml'
+    if is_czml:
+        kwargs['out_crs'] = 0  # czml supprts only 4326
+
+    ds = viewshed_calc_to_ds(**kwargs)
+    if not ds:
+        raise Exception('error occurred')
+    if is_czml:
+        gdal_to_czml.gdal_to_czml(ds, name=str(output_filename), out_filename=output_filename)
+    else:
+        driver = gdal.GetDriverByName(of)
+        dst_ds = driver.CreateCopy(str(output_filename), ds)
+        dst_ds = None
+    return ds
+
+
+def viewshed_calc_to_ds(vp_array,
+                        input_ds,
+                        input_filename=None,
+                        extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
+                        in_coords_crs_pj=None, out_crs=None,
+                        color_palette=None,
+                        color_mode=True,
+                        bi=1, co=None,
+                        vp_slice=None,
+                        backend:ViewshedBackend=None,
+                        files=None):
+    is_temp_file, gdal_out_format, d_path, return_ds = tempthing1(False)
+
     color_table = gdalos_color.get_color_table(color_palette)
-    # steps:
-    # 1. viewshed
-    # 2. calc + calc_post_process
-    # 3. combined_post_process
-    # 4. czml
-    steps = 0
     if operation == CalcOperation.viewshed:
         operation = None
-    if operation:
-        steps += 1
-    if is_czml:
-        out_crs = 0  # czml supprts only 4326
-        steps += 1
+
+    do_color = False
     temp_files = []
     do_palette = color_table and not operation
 
@@ -111,8 +120,6 @@ def viewshed_calc(vp_array,
         pjstr_src_srs = projdef.get_srs_pj_from_ds(input_ds)
         pjstr_tgt_srs = projdef.get_proj_string(out_crs) if out_crs is not None else pjstr_src_srs
         combined_post_process_needed = cutline or not projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs)
-        if combined_post_process_needed:
-            steps += 1
 
     if not files:
         if isinstance(vp_array, ViewshedParams):
@@ -146,7 +153,6 @@ def viewshed_calc(vp_array,
         else:
             transform_coords_to_raster = None
 
-        steps += len(vp_array)
         for vp in vp_array:
             if transform_coords_to_raster:
                 vp.ox, vp.oy, _ = transform_coords_to_raster.TransformPoint(vp.ox, vp.oy)
@@ -157,16 +163,18 @@ def viewshed_calc(vp_array,
                 backend = ViewshedBackend[backend]
 
             inter_process = (backend == ViewshedBackend.gdal) and not vp.is_omni_h()
-            if inter_process:
-                steps += 1
 
             if backend == ViewshedBackend.gdal:
                 # TypeError: '>' not supported between instances of 'NoneType' and 'int'
+                is_temp_file = True
+                d_path = tempfile.mktemp(suffix='.tif')
+
                 bnd_type = gdal.GDT_Byte
-                do_color = False
                 # todo: why dosn't it work without it?
-                is_temp_file, gdal_out_format, d_path, return_ds = tempthing(True, steps, output_filename)
+                is_temp_file, gdal_out_format, d_path, return_ds = tempthing1(True)
+
                 inputs = vp.get_as_gdal_params()
+                print(inputs)
                 ds = gdal.ViewshedGenerate(input_band, gdal_out_format, str(d_path), co, **inputs)
                 if not ds:
                     raise Exception('Viewshed calculation failed')
@@ -210,10 +218,8 @@ def viewshed_calc(vp_array,
 
                 bnd_type = inputs['result_dt']
                 do_color = do_palette and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
-                if do_color:
-                    steps += 1
 
-                is_temp_file, gdal_out_format, d_path, return_ds = tempthing(True, steps, output_filename)
+                is_temp_file, gdal_out_format, d_path, return_ds = tempthing1(True)
 
                 talos.GS_SaveRaster(ras, str(d_path))
                 ras = None
@@ -242,19 +248,7 @@ def viewshed_calc(vp_array,
                 ds = None
                 ds = gdalos_util.open_ds(d_path)
                 temp_files.append(d_path)
-            steps -= 1
-
-            if do_color:
-                is_temp_file, gdal_out_format, d_path, return_ds = tempthing(False, steps, output_filename)
-                ds, _pal = gdaldem_crop_and_color(ds, out_filename=d_path, color_palette=color_palette)
-                if is_temp_file:
-                    # close original ds and reopen
-                    ds = None
-                    ds = gdalos_util.open_ds(d_path)
-                    temp_files.append(d_path)
-                if not ds:
-                    raise Exception('Viewshed calculation failed to color result')
-                steps -= 1
+                is_temp_file, gdal_out_format, d_path, return_ds = tempthing1(False)
 
             if inter_process:
                 ring = PolygonizeSector(vp.ox, vp.oy, vp.max_r, vp.max_r, vp.azimuth, vp.h_aperture)
@@ -262,25 +256,14 @@ def viewshed_calc(vp_array,
                 temp_files.append(calc_cutline)
                 create_layer_from_geometries([ring], calc_cutline)
 
-                is_temp_file, gdal_out_format, d_path, return_ds = tempthing(True, steps, output_filename)
-
                 ds = gdalos_trans(ds, out_filename=d_path, #warp_CRS=pjstr_tgt_srs,
                                   cutline=calc_cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
-
-                if is_temp_file:
-                    # close original ds and reopen
-                    ds = None
-                    ds = gdalos_util.open_ds(d_path)
-                    temp_files.append(d_path)
                 if not ds:
                     raise Exception('Viewshed calculation failed to cut')
-
-                steps -= 1
 
             if operation:
                 files.append(ds)
 
-    # steps -= 1
     if operation:
         # alpha_pattern = '1*({{}}>{})'.format(viewshed_thresh)
         # alpha_pattern = 'np.multiply({{}}>{}, dtype=np.uint8)'.format(viewshed_thresh)
@@ -314,8 +297,6 @@ def viewshed_calc(vp_array,
 
         hide_nodata = True
 
-        is_temp_file, gdal_out_format, d_path, return_ds = tempthing(False, steps, output_filename)
-
         debug_time = 1
         t = time.time()
         for i in range(debug_time):
@@ -329,29 +310,23 @@ def viewshed_calc(vp_array,
         if return_ds:
             if not ds:
                 raise Exception('error occurred')
-        elif steps > 1:
-            ds = gdalos_util.open_ds(d_path)
         for i in range(len(files)):
             files[i] = None  # close calc input ds(s)
-        steps -= 1
 
     if combined_post_process_needed:
-        is_temp_file, gdal_out_format, d_path, return_ds = tempthing(False, steps, output_filename)
         ds = gdalos_trans(ds, out_filename=d_path, warp_CRS=pjstr_tgt_srs,
                           cutline=cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
 
         if return_ds:
             if not ds:
                 raise Exception('error occurred')
-        elif steps>1:
-            ds = gdalos_util.open_ds(d_path)
 
-        steps -= 1
-
-    if is_czml and ds is not None:
-        gdal_to_czml.gdal_to_czml(ds, name=output_filename, out_filename=output_filename)
-
-    ds = None  # close ds
+    if do_color:
+        ds, _pal = gdaldem_crop_and_color(ds, out_filename=d_path, color_palette=color_palette,
+                                          color_mode=color_mode)
+        if not ds:
+            raise Exception('Viewshed calculation failed to color result')
+        # steps -= 1
 
     if temp_files:
         for f in temp_files:
@@ -360,7 +335,7 @@ def viewshed_calc(vp_array,
             except:
                 print('failed to remove temp file:{}'.format(f))
 
-    return True
+    return ds
 
 
 def test_multi_z(inputs, raster_filename, input_ds):
@@ -431,7 +406,7 @@ def test_simple_viewshed(inputs, raster_filename, input_ds, dir_path, files=None
                           files=files)
 
 
-if __name__ == "__main__":\
+if __name__ == "__main__":
     # dir_path = Path('/home/idan/maps')
     dir_path = Path(r'd:\dev\gis\maps')
     raster_filename = Path(dir_path) / Path('srtm1_36_sample.tif')

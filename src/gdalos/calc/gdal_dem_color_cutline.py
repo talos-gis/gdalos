@@ -86,6 +86,7 @@ def gdaldem_crop_and_color(ds: gdal.Dataset,
                            extent: Optional[GeoRectangle] = None,
                            cutline: Optional[Union[str, List[str]]] = None,
                            color_palette: Optional[Union[str, Sequence[str]]] = None,
+                           color_mode=0,
                            process_palette=None,
                            common_options: dict = None):
     do_color = color_palette is not None
@@ -124,6 +125,7 @@ def gdaldem_crop_and_color(ds: gdal.Dataset,
             pal.apply_percent(min_val, max_val)
             # color_palette_stats(color_filename, min_val, max_val, process_palette)
         dem_options = {
+            'options': ['-nearest_color_entry'] if color_mode else [],
             'addAlpha': True,
             'format': output_format,
             'processing': 'color-relief',
