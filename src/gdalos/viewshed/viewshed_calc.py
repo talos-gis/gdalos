@@ -398,7 +398,7 @@ def test_calcz(inputs, raster_filename, input_ds):
 
 def test_simple_viewshed(inputs, raster_filename, input_ds, dir_path, files=None, run_comb_with_post=False):
     calc_filter = CalcOperation
-    calc_filter = [CalcOperation.count_z]
+    # calc_filter = [CalcOperation.count_z]
     cwd = Path.cwd()
     for backend in reversed(ViewshedBackend):
         output_path = dir_path / Path('comb_' + str(backend))
@@ -460,11 +460,11 @@ if __name__ == "__main__":
     else:
         files = None
 
-    # if True:
-    #     vp1 = copy.copy(vp)
-    #     vp1.tz = None
-    #     inputs = vp1.get_array()
-    #     test_calcz(inputs=inputs, raster_filename=raster_filename, input_ds=input_ds)
+    if True:
+        vp1 = copy.copy(vp)
+        vp1.tz = None
+        inputs = vp1.get_array()
+        test_calcz(inputs=inputs, raster_filename=raster_filename, input_ds=input_ds)
     if True:
         inputs = vp.get_array()
         test_simple_viewshed(inputs=inputs, run_comb_with_post=False, files=files,
