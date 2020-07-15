@@ -46,6 +46,14 @@ class ColorPalette:
             new_pal.pal['nv'] = 0
         return new_pal
 
+    def to_serial_values(self, first=0):
+        keys = list(self.pal.keys())
+        i = first
+        for key in keys:
+            if not isinstance(key, str):
+                self.pal[i] = self.pal.pop(key)
+                i += 1
+
     def apply_percent(self, min_val, max_val):
         if self._all_numeric:
             # nothing to do
@@ -136,19 +144,39 @@ class ColorPalette:
                 cc = ' '.join(str(c) for c in cc)
                 fp.write('{} {}\n'.format(key, cc))
 
-    def read_qlr(self, qlr_filename):
+    def read_xml(self, xml_filename, type=None, tag_name=None):
+        if tag_name is None:
+            if type is None:
+                type = Path(xml_filename).suffix
+            type = type.lstrip('.').lower()
+            if type == 'qlr':
+                #             <paletteEntry color="#ffffff" alpha="0" label="0" value="0"/>
+                tag_name = "paletteEntry"
+            elif type == 'qml':
+                #           <item label="-373" color="#d7191c" alpha="255" value="-373"/>
+                tag_name = "item"
+            else:
+                raise Exception('Unknown file type {}'.format(xml_filename))
         self.pal.clear()
-        qlr = minidom.parse(str(qlr_filename))
+        qlr = minidom.parse(str(xml_filename))
         #             <paletteEntry color="#ffffff" alpha="0" label="0" value="0"/>
-        color_palette = qlr.getElementsByTagName("paletteEntry")
+        color_palette = qlr.getElementsByTagName(tag_name)
         for palette_entry in color_palette:
             color = palette_entry.getAttribute("color")
             if str(color).startswith('#'):
                 color = int(color[1:], 16)
-            alpha = int(palette_entry.getAttribute("alpha"))
+            alpha = palette_entry.getAttribute("alpha")
+            alpha = int(alpha)
             color = color + (alpha << 8*3)  # * 256**3
-            key = int(palette_entry.getAttribute("value"))
+            key = palette_entry.getAttribute("value")
+            key = float(key)
             self.pal[key] = color
+
+    def read_qlr(self, qlr_filename):
+        return self.read_xml(qlr_filename, type='qlr')
+
+    def read_qml(self, qml_filename):
+        return self.read_xml(qml_filename, type='qml')
 
     def get_color_table(self, min_val=0, max_val=256, fill_missing_colors=True):
         # create color table
@@ -219,11 +247,11 @@ class ColorPalette:
         return int(col, 16)
 
 
-def qlr_to_color_file(qlr_filename: Path) -> Path:
-    qlr_filename = Path(qlr_filename)
+def xml_to_color_file(xml_filename: Path, **kwargs) -> Path:
+    xml_filename = Path(xml_filename)
     pal = ColorPalette()
-    pal.read_qlr(qlr_filename)
-    color_filename = qlr_filename.with_suffix('.txt')
+    pal.read_xml(xml_filename, **kwargs)
+    color_filename = xml_filename.with_suffix('.txt')
     pal.write_color_file(color_filename)
     return pal, color_filename
 
@@ -267,7 +295,12 @@ def get_color_table(color_palette):
     return color_table
 
 
-def test_talos_pal(talos_paletts):
+def test_talos_pal(talos_paletts=None):
+    if talos_paletts is None:
+        talos_paletts = [
+            ('percents',
+             '0;7;6;0;16.666666666667;0;1;1;0;|;$CC00007F;0;3;2|;$CC0000FF;0;3;2|;$CC00FFFF;0;3;2|;$CC00FF00;0;3;2|;$CCFFFF00;0;3;2|;$CCFF0000;0;3;2|;$CCFF00FF;0;3;2')
+        ]
     dir_path = Path(r'sample/color_files')
     for name, talos_pal in talos_paletts:
         path = dir_path / Path(name+'.txt')
@@ -275,20 +308,17 @@ def test_talos_pal(talos_paletts):
         print(filename, pal)
 
 
-def test_qlr():
+def test_xml():
     # dir_path = Path('/home/idan/maps/comb')
     dir_path = Path(r'sample/color_files')
-    for filename in glob.glob(str(dir_path / '*.qlr')):
-        pal, filename = qlr_to_color_file(filename)
-        print(filename, pal)
+    for ext in ['qlr', 'qml']:
+        for filename in glob.glob(str(dir_path / '**' / Path('*.'+ext))):
+            pal, filename = xml_to_color_file(filename, type=ext)
+            print(filename, pal)
 
 
 if __name__ == "__main__":
-    my_talos_paletts = [
-        ('percents',
-         '0;7;6;0;16.666666666667;0;1;1;0;|;$CC00007F;0;3;2|;$CC0000FF;0;3;2|;$CC00FFFF;0;3;2|;$CC00FF00;0;3;2|;$CCFFFF00;0;3;2|;$CCFF0000;0;3;2|;$CCFF00FF;0;3;2')
-    ]
-    test_talos_pal(my_talos_paletts)
-    # test_qlr()
+    # test_talos_pal()
+    test_xml()
 
 

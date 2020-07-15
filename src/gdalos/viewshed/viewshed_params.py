@@ -1,4 +1,4 @@
-from copy import copy
+import copy
 from typing import Sequence
 import gdal
 
@@ -112,8 +112,8 @@ class ViewshedParams(object):
         result = []
         vp = ViewshedParams()
         for i in range(max_len):
-            vp = copy(vp)
-            for k, v in d.items():  # zip(new_keys, d.values()):
+            vp = copy.deepcopy(vp)
+            for k, v in d.items():
                 if not v:
                     continue
                 if key_map:

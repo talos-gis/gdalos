@@ -1,4 +1,4 @@
-from copy import copy
+import copy
 from gdalos.viewshed.viewshed_params import ViewshedParams
 
 
@@ -26,7 +26,7 @@ class ViewshedGridParams(ViewshedParams):
         prefix = self.name + '_' if self.name else ''
         for i in self.grid_range:
             for j in self.grid_range:
-                res = copy(self)
+                res = copy.deepcopy(self)
                 res.ox = self.ox + i * self.interval
                 res.oy = self.oy + j * self.interval
                 res.name = prefix+'{}_{}'.format(i, j)
@@ -34,7 +34,7 @@ class ViewshedGridParams(ViewshedParams):
         return result
 
     def get_as_gdal_params_array(self):
-        res = copy(self)
+        res = copy.deepcopy(self)
         res.ox = []
         res.oy = []
         for i in self.grid_range:

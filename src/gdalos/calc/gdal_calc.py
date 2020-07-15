@@ -62,8 +62,9 @@ from gdalos import gdalos_extent, gdalos_color
 AlphaList = list(string.ascii_letters)
 
 # set up some default nodatavalues for each datatype
-DefaultNDVLookup = {'Byte': 255, 'UInt16': 65535, 'Int16': -32768, 'UInt32': 4294967293, 'Int32': -2147483647,
-                    'Float32': 3.402823466E+38, 'Float64': 1.7976931348623158E+308}
+DefaultNDVLookup = {gdal.GDT_Byte: 255, gdal.GDT_UInt16: 65535, gdal.GDT_Int16: -32768,
+                    gdal.GDT_UInt32: 4294967293, gdal.GDT_Int32: -2147483647,
+                    gdal.GDT_Float32: 3.402823466E+38, gdal.GDT_Float64: 1.7976931348623158E+308}
 
 
 def DoesDriverHandleExtension(drv, ext):
@@ -318,7 +319,7 @@ def doit(opts, args):
 
         myOutB = myOut.GetRasterBand(1)
         myOutNDV = myOutB.GetNoDataValue()
-        myOutType = gdal.GetDataTypeName(myOutB.DataType)
+        myOutType = myOutB.DataType
 
     else:
         # remove existing file and regenerate
@@ -334,15 +335,17 @@ def doit(opts, args):
         # find data type to use
         if not opts.type:
             # use the largest type of the input files
-            myOutType = gdal.GetDataTypeName(max(myDataTypeNum))
+            myOutType = max(myDataTypeNum)
         else:
             myOutType = opts.type
+            if isinstance(myOutType, str):
+                myOutType = gdal.GetDataTypeByName(myOutType)
 
         # create file
         myOutDrv = gdal.GetDriverByName(opts.format)
         myOut = myOutDrv.Create(
             opts.outF, DimensionsCheck[0], DimensionsCheck[1], allBandsCount,
-            gdal.GetDataTypeByName(myOutType), opts.creation_options)
+            myOutType, opts.creation_options)
 
         # set output geo info based on first input layer
         if not GeoTransformCheck:
@@ -371,7 +374,7 @@ def doit(opts, args):
 
     if opts.debug:
         print("output file: %s, dimensions: %s, %s, type: %s" % (
-        opts.outF, myOut.RasterXSize, myOut.RasterYSize, myOutType))
+        opts.outF, myOut.RasterXSize, myOut.RasterYSize, gdal.GetDataTypeName(myOutType)))
 
     ################################################################
     # find block size to chop grids into bite-sized chunks
