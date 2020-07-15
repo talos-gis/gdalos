@@ -1,26 +1,21 @@
 import gdal
 from gdalos.gdalos_color import ColorPalette
 from gdalos.calc import gdal_calc
-from enum import Enum
 from functools import partial
 import numpy as np
 import copy
 from gdalos.gdalos_util import open_ds
 from pathlib import Path
+from gdalos.calc.discrete_mode import DiscreteMode
 
 
-class DiscreteMode(Enum):
-    up = 1
-    down = 2
-
-
-def cont2discrete_array(arr, values, mode: DiscreteMode, dtype=np.uint8):
+def cont2discrete_array(arr, values, discrete_mode: DiscreteMode, dtype=np.uint8):
     """
     input: continues np array [float | int]
     output: uint8 np array with discrete values
     """
     enumerated_values = list(enumerate(sorted(values)))
-    if mode == DiscreteMode.up:
+    if discrete_mode == DiscreteMode.up:
         # 0 - equal or below first value
         # 1 - above first
         # 2 - above second
@@ -29,7 +24,7 @@ def cont2discrete_array(arr, values, mode: DiscreteMode, dtype=np.uint8):
         # iterate values from high to low
         for i, val in reversed(enumerated_values[:-1]):
             ret[(arr <= val)] = i
-    else:
+    elif discrete_mode == DiscreteMode.down:
         # 0 - below first value
         # 1 - below second
         # 2 - below third
@@ -38,22 +33,24 @@ def cont2discrete_array(arr, values, mode: DiscreteMode, dtype=np.uint8):
         # iterate values from low to high
         for i, val in list(enumerated_values[1:]):
             ret[(arr >= val)] = i
+    else:
+        raise Exception('unsupported mode {}'.format(discrete_mode))
     return ret
 
 
-def cont2discrete(filename_or_ds: gdal.Dataset, pal: ColorPalette, outfile=None, mode: DiscreteMode=DiscreteMode.down) -> gdal.Dataset:
-    values = list(pal.pal.keys())
+def cont2discrete(filename_or_ds: gdal.Dataset, color_palette: ColorPalette, outfile=None, discrete_mode: DiscreteMode = DiscreteMode.down) -> gdal.Dataset:
+    values = list(color_palette.pal.keys())
     try:
         values.remove('np')
     except:
         pass
-    f = partial(cont2discrete_array, values=values,  mode=mode)
+    f = partial(cont2discrete_array, values=values, discrete_mode=discrete_mode)
     calc_expr = 'f(x)'
 
     filename_or_ds = open_ds(filename_or_ds)
     calc_kwargs = dict(x=filename_or_ds)
     user_namespace = dict(f=f)
-    serial_pal = copy.deepcopy(pal)
+    serial_pal = copy.deepcopy(color_palette)
     serial_pal.to_serial_values()
     color_table = serial_pal.get_color_table()
     ds = gdal_calc.Calc(
@@ -66,7 +63,7 @@ def cont2discrete(filename_or_ds: gdal.Dataset, pal: ColorPalette, outfile=None,
 def test_main(path, pal):
     for mode in DiscreteMode:
         outfile = path.with_suffix('.{}.tif'.format(mode))
-        cont2discrete(path, pal, outfile=outfile, mode=mode)
+        cont2discrete(path, pal, outfile=outfile, discrete_mode=mode)
 
 
 def test_dtm():

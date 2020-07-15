@@ -6,6 +6,8 @@ from gdalos.rectangle import GeoRectangle
 from gdalos.calc import gdal_to_czml
 from gdalos.gdalos_color import ColorPalette, get_file_from_strings
 from gdalos import gdalos_util
+from gdalos.calc.discrete_mode import DiscreteMode
+import copy
 
 # def get_named_temporary_filenme(suffix='', dir_name=''):
 #     filename = next(tempfile._get_candidate_names())+suffix
@@ -72,11 +74,14 @@ def make_czml_description(pal:ColorPalette, process_palette):
 
 
 def czml_gdaldem_crop_and_color(ds: gdal.Dataset, process_palette, czml_output_filename: str, **kwargs):
-    ds, pal = gdaldem_crop_and_color(ds=ds, process_palette=process_palette, **kwargs)
+    ds, meta = gdaldem_crop_and_color(ds=ds, get_min_max=process_palette, **kwargs)
     if ds is None:
         raise Exception('fail to color')
     if czml_output_filename is not None:
-        description = make_czml_description(pal, process_palette)
+        color_palette_abs = copy.deepcopy(color_palette)
+        if meta:
+            color_palette_abs.apply_percent(*meta)
+        description = make_czml_description(color_palette_abs, process_palette)
         gdal_to_czml.gdal_to_czml(ds, name=czml_output_filename, out_filename=czml_output_filename, description=description)
     return ds
 
@@ -85,9 +90,10 @@ def gdaldem_crop_and_color(ds: gdal.Dataset,
                            out_filename: str='', output_format: str = None,
                            extent: Optional[GeoRectangle] = None,
                            cutline: Optional[Union[str, List[str]]] = None,
-                           color_palette: Optional[Union[str, Sequence[str]]] = None,
-                           color_mode=0,
-                           process_palette=None,
+                           # color_palette: Optional[Union[str, Sequence[str]]] = None,
+                           color_palette: ColorPalette = None,
+                           discrete_mode=DiscreteMode.interp,
+                           get_min_max=None,
                            common_options: dict = None):
     do_color = color_palette is not None
     do_crop = (extent or cutline) is not None
@@ -108,36 +114,34 @@ def gdaldem_crop_and_color(ds: gdal.Dataset,
         if ds is None:
             raise Exception('fail to crop')
 
-    pal = None
-    if process_palette:
+    meta = None
+    if get_min_max:
         bnd = ds.GetRasterBand(1)
         bnd.ComputeStatistics(0)
         min_val = bnd.GetMinimum()
         max_val = bnd.GetMaximum()
+        meta = (min_val, max_val)
 
     if do_color:
-        color_filename, temp_color_filename = get_file_from_strings(color_palette)
-        if not process_palette:
-            pal = None
-        else:
-            pal = ColorPalette()
-            pal.read(color_filename)
-            pal.apply_percent(min_val, max_val)
-            # color_palette_stats(color_filename, min_val, max_val, process_palette)
+        temp_color_filename = color_palette.write_color_file()
+        # color_filename, temp_color_filename = get_file_from_strings(color_palette)
+        # pal = ColorPalette()
+        # pal.read(color_filename)
+        # pal.apply_percent(min_val, max_val)
+        # color_palette_stats(color_filename, min_val, max_val, process_palette)
         dem_options = {
-            'options': ['-nearest_color_entry'] if color_mode else [],
+            'options': ['-nearest_color_entry'] if discrete_mode == DiscreteMode.near else [],
             'addAlpha': True,
             'format': output_format,
             'processing': 'color-relief',
-            'colorFilename': str(color_filename)}
+            'colorFilename': str(temp_color_filename)}
         ds = gdal.DEMProcessing(str(out_filename), ds, **dem_options)
-        if temp_color_filename is not None:
-            os.remove(temp_color_filename)
+        os.remove(temp_color_filename)
         if ds is None:
             raise Exception('fail to color')
     # else:
     #     stats = [min_val, max_val]
-    return ds, pal
+    return ds, meta
 
 
 def get_wkt_list(filename):
@@ -160,16 +164,20 @@ if __name__ == '__main__':
     shp_filename = os.path.join(root_data, r'shp/poly.shp')
     color_palette_filename = os.path.join(root_data, r'color_files/percents.txt')
     wkt_list = get_wkt_list(shp_filename)
-    color_palette = read_list(color_palette_filename)
+
+    # color_palette = read_list(color_palette_filename)
+    color_palette = ColorPalette()
+    color_palette.read_color_file(color_palette_filename)
+
     raster_filename = os.path.join(root_data, r'maps/srtm1_x35_y32.tif')
     ds = gdalos_util.open_ds(raster_filename)
     out_filename = tempfile.mktemp(suffix='.tif')
-    ds, pal = gdaldem_crop_and_color(
+    ds = gdaldem_crop_and_color(
         ds=ds,
         out_filename=out_filename,
         cutline=wkt_list,
         color_palette=color_palette,
-        process_palette=2,
+        get_min_max=2,
         output_format='GTiff')
     print(out_filename)
-    print(pal)
+    print(color_palette)

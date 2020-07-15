@@ -8,6 +8,7 @@ import glob
 import tempfile
 from typing import Sequence
 import math
+import copy
 
 
 def to_number(s):
@@ -116,33 +117,42 @@ class ColorPalette:
         # flags = x[j]
         # pal_version = x[j+1]
 
-    def read_color_file(self, color_filename):
-        self.pal.clear()
-        with open(str(color_filename)) as fp:
-            for line in fp:
-                split_line = line.strip().split(' ', maxsplit=1)
-                if len(split_line) < 2:
-                    continue
-                try:
-                    color = self.pal_color_to_rgb(split_line[1])
-                    key = split_line[0].strip()
-                except:
-                    raise Exception('Error reading palette line: {}'.format(line))
-                try:
-                    key = to_number(key)
-                except ValueError:
-                    # should be percent
-                    self._all_numeric = False
-                    pass
-                self.pal[key] = color
+    def read_color_file(self, color_filename_or_lines):
+        if isinstance(color_filename_or_lines, ColorPalette):
+            return self
+        elif isinstance(color_filename_or_lines, (Path, str)):
+            color_filename_or_lines = open(str(color_filename_or_lines)).readlines()
+        elif not isinstance(color_filename_or_lines, Sequence):
+            raise Exception('unknwon input {}'.format(color_filename_or_lines))
 
-    def write_color_file(self, color_filename):
+        self.pal.clear()
+        for line in color_filename_or_lines:
+            split_line = line.strip().split(' ', maxsplit=1)
+            if len(split_line) < 2:
+                continue
+            try:
+                color = self.pal_color_to_rgb(split_line[1])
+                key = split_line[0].strip()
+            except:
+                raise Exception('Error reading palette line: {}'.format(line))
+            try:
+                key = to_number(key)
+            except ValueError:
+                # should be percent
+                self._all_numeric = False
+                pass
+            self.pal[key] = color
+
+    def write_color_file(self, color_filename=None):
+        if color_filename is None:
+            color_filename = tempfile.mktemp(suffix='.txt')
         os.makedirs(os.path.dirname(str(color_filename)), exist_ok=True)
         with open(str(color_filename), mode='w') as fp:
             for key, color in self.pal.items():
                 cc = self.color_to_cc(color)
                 cc = ' '.join(str(c) for c in cc)
                 fp.write('{} {}\n'.format(key, cc))
+        return color_filename
 
     def read_xml(self, xml_filename, type=None, tag_name=None):
         if tag_name is None:
@@ -192,8 +202,13 @@ class ColorPalette:
         else:
             for key, col in self.pal.items():
                 color_table.SetColorEntry(key, self.color_to_cc(col))  # set color for each key
-
         return color_table
+
+    @staticmethod
+    def from_string_list(color_palette_strings):
+        res = ColorPalette()
+        res.read_color_file(color_palette_strings)
+        return res
 
     @staticmethod
     def format_number(num):

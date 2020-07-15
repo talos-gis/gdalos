@@ -1,4 +1,3 @@
-from enum import Enum
 import sys
 from functools import partial
 import gdal, osr, ogr
@@ -19,6 +18,8 @@ from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
 from gdalos.talos.ogr_util import create_layer_from_geometries
 from gdalos.talos.geom_arc import PolygonizeSector
 from gdalos.calc.gdal_dem_color_cutline import gdaldem_crop_and_color
+from gdalos.calc.discrete_mode import DiscreteMode
+from gdalos.calc.cont2discrete_raster import cont2discrete
 
 talos = None
 
@@ -93,7 +94,7 @@ def viewshed_calc_to_ds(vp_array,
                         extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
                         in_coords_crs_pj=None, out_crs=None,
                         color_palette=None,
-                        color_mode=True,
+                        discrete_mode:DiscreteMode=DiscreteMode.interp,
                         bi=1, co=None,
                         vp_slice=None,
                         backend:ViewshedBackend=None,
@@ -105,12 +106,15 @@ def viewshed_calc_to_ds(vp_array,
     if operation == CalcOperation.viewshed:
         operation = None
 
-    do_color = False
+    do_discrete = False
     temp_files = temp_files or []
 
     combined_post_process_needed = False
 
     vp_slice = make_slice(vp_slice)
+
+    if isinstance(discrete_mode, str):
+        discrete_mode = DiscreteMode[discrete_mode]
 
     if not files:
         files = []
@@ -230,7 +234,7 @@ def viewshed_calc_to_ds(vp_array,
 
                 bnd_type = inputs['result_dt']
                 is_base_calc = bnd_type in [gdal.GDT_Byte]
-                do_color = color_table and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
+                do_discrete = color_table and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
 
                 is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
 
@@ -253,7 +257,7 @@ def viewshed_calc_to_ds(vp_array,
                 bnd.SetNoDataValue(base_calc_ndv)
             else:
                 base_calc_ndv = bnd.GetNoDataValue()
-            if color_table and not do_color:
+            if color_table and not do_discrete:
                 if bnd_type != bnd.DataType:
                     raise Exception('Unexpected band type, expected: {}, got {}'.format(bnd_type, bnd.DataType))
                 bnd.SetRasterColorTable(color_table)
@@ -341,9 +345,12 @@ def viewshed_calc_to_ds(vp_array,
             if not ds:
                 raise Exception('error occurred')
 
-    if do_color:
-        ds, _pal = gdaldem_crop_and_color(ds, out_filename=d_path, color_palette=color_palette,
-                                          color_mode=color_mode)
+    if do_discrete:
+        if discrete_mode in [DiscreteMode.interp, DiscreteMode.near]:
+            ds = gdaldem_crop_and_color(ds, out_filename=d_path, color_palette=color_palette,
+                                              discrete_mode=discrete_mode)
+        else:
+            ds = cont2discrete(ds, color_palette=color_palette, discrete_mode=discrete_mode)
         if not ds:
             raise Exception('Viewshed calculation failed to color result')
         # steps -= 1
