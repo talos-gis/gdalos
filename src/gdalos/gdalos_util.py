@@ -107,6 +107,15 @@ def get_raster_minimum(filename_or_ds):
         return min(_band_getmin(b) for b in _get_bands(ds))
 
 
+def get_raster_min_max(filename_or_ds):
+    with OpenDS(filename_or_ds) as ds:
+        bnd = ds.GetRasterBand(1)
+        bnd.ComputeStatistics(0)
+        min_val = bnd.GetMinimum()
+        max_val = bnd.GetMaximum()
+        return min_val, max_val
+
+
 def get_image_structure_metadata(filename_or_ds, key: str, default=None):
     key = key.strip()
     if not key.endswith("="):

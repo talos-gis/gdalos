@@ -8,10 +8,15 @@ from czml3.properties import (
 
 from osgeo import gdal
 from gdalos import gdalos_trans, projdef
+from gdalos.gdalos_color import ColorPalette
 import base64
 
+czml_metadata_name = 'colors'
 
-def gdal_to_czml(ds, name=None, out_filename=None, description=None):
+
+def gdal_to_czml(ds:gdal.Dataset, name=None, out_filename=None, description=None):
+    if description is None:
+        description = ds.GetMetadataItem(czml_metadata_name)
     pjstr_src_srs = projdef.get_srs_pj_from_ds(ds)
     pjstr_tgt_srs = projdef.get_srs_pj_from_epsg()
     if not projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs):
@@ -65,8 +70,21 @@ def gdal_to_czml(ds, name=None, out_filename=None, description=None):
             ),
         ]
     )
-    ds = None  # close the ds in case it was transformed
     if out_filename:
         with open(str(out_filename), 'w') as f:
             print(czml_doc, file=f)
-    return czml_doc
+    return ds, czml_doc
+
+
+def make_czml_description(pal: ColorPalette, process_palette=2):
+    if pal:
+        if process_palette >= 2:
+            # number:color
+            return ' '.join(['{}:{}'.format(
+                ColorPalette.format_number(x),
+                ColorPalette.format_color(c)) for x, c in pal.pal.items()])
+        else:
+            # numbers
+            return ' '.join([ColorPalette.format_number(x) for x in pal.pal.keys()])
+    else:
+        return None

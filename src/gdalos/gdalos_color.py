@@ -55,6 +55,17 @@ class ColorPalette:
                 self.pal[i] = self.pal.pop(key)
                 i += 1
 
+    def has_percents(self):
+        if self._all_numeric:
+            False
+        for num in self.pal.keys():
+            if not isinstance(num, str):
+                continue
+            is_percent = num.endswith('%')
+            if is_percent:
+                return True
+        return False
+
     def apply_percent(self, min_val, max_val):
         if self._all_numeric:
             # nothing to do

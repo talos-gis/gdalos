@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 from enum import Enum
 import copy
-from attr import exceptions
 
 from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans
 from gdalos.calc import gdal_calc, gdal_to_czml, dict_util, gdalos_combine
@@ -17,9 +16,8 @@ from gdalos.viewshed.viewshed_params import ViewshedParams
 from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
 from gdalos.talos.ogr_util import create_layer_from_geometries
 from gdalos.talos.geom_arc import PolygonizeSector
-from gdalos.calc.gdal_dem_color_cutline import gdaldem_crop_and_color
 from gdalos.calc.discrete_mode import DiscreteMode
-from gdalos.calc.cont2discrete_raster import cont2discrete
+from gdalos.calc.gdalos_raster_color import gdalos_raster_color
 
 talos = None
 
@@ -70,14 +68,11 @@ def viewshed_calc(output_filename, of='GTiff', **kwargs):
     ds = viewshed_calc_to_ds(**kwargs, temp_files=temp_files)
     if not ds:
         raise Exception('error occurred')
-    dst_ds = None
     if is_czml:
-        gdal_to_czml.gdal_to_czml(ds, name=str(output_filename), out_filename=output_filename)
-    else:
+        ds = gdal_to_czml.gdal_to_czml(ds, name=str(output_filename), out_filename=output_filename)
+    elif of != 'MEM':
         driver = gdal.GetDriverByName(of)
-        dst_ds = driver.CreateCopy(str(output_filename), ds)
-        # dst_ds = None
-    ds = None
+        ds = driver.CreateCopy(str(output_filename), ds)
 
     if temp_files:
         for f in temp_files:
@@ -85,7 +80,7 @@ def viewshed_calc(output_filename, of='GTiff', **kwargs):
                 os.remove(f)
             except:
                 print('failed to remove temp file:{}'.format(f))
-    return dst_ds
+    return ds
 
 
 def viewshed_calc_to_ds(vp_array,
@@ -106,7 +101,7 @@ def viewshed_calc_to_ds(vp_array,
     if operation == CalcOperation.viewshed:
         operation = None
 
-    do_discrete = False
+    do_post_color = False
     temp_files = temp_files or []
 
     combined_post_process_needed = False
@@ -234,7 +229,7 @@ def viewshed_calc_to_ds(vp_array,
 
                 bnd_type = inputs['result_dt']
                 is_base_calc = bnd_type in [gdal.GDT_Byte]
-                do_discrete = color_table and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
+                do_post_color = color_table and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
 
                 is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
 
@@ -257,7 +252,7 @@ def viewshed_calc_to_ds(vp_array,
                 bnd.SetNoDataValue(base_calc_ndv)
             else:
                 base_calc_ndv = bnd.GetNoDataValue()
-            if color_table and not do_discrete:
+            if color_table and not do_post_color:
                 if bnd_type != bnd.DataType:
                     raise Exception('Unexpected band type, expected: {}, got {}'.format(bnd_type, bnd.DataType))
                 bnd.SetRasterColorTable(color_table)
@@ -345,15 +340,10 @@ def viewshed_calc_to_ds(vp_array,
             if not ds:
                 raise Exception('error occurred')
 
-    if do_discrete:
-        if discrete_mode in [DiscreteMode.interp, DiscreteMode.near]:
-            ds = gdaldem_crop_and_color(ds, out_filename=d_path, color_palette=color_palette,
-                                              discrete_mode=discrete_mode)
-        else:
-            ds = cont2discrete(ds, color_palette=color_palette, discrete_mode=discrete_mode)
+    if do_post_color:
+        ds = gdalos_raster_color(ds, out_filename=d_path, color_palette=color_palette, discrete_mode=discrete_mode)
         if not ds:
             raise Exception('Viewshed calculation failed to color result')
-        # steps -= 1
 
     if temp_files:
         for f in temp_files:
