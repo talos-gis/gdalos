@@ -49,8 +49,8 @@ class GdalosWidget(FidgetConverter):
                             "make cloud optimized geotiff", initial_value=True
                         ),
                     ),
-                    FidgetCheckBox.template("delete temp files", initial_value=True),
-                    FidgetCheckBox.template("skip if exists", initial_value=True),
+                    FidgetCheckBox.template("delete_temp_files", initial_value=True),
+                    FidgetCheckBox.template("overwrite", initial_value=False),
                     (
                         "multi_file_as_vrt",
                         FidgetCheckBox.template(

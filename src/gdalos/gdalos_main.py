@@ -133,6 +133,7 @@ def gdalos_trans(
     of: MaybeSequence[str] = "GTiff",
     outext: str = "tif",
     tiled: bool = True,
+    block_size: int = ...,
     big_tiff: str = "IF_SAFER",
     config_options: dict = None,
     open_options: dict = None,
@@ -638,13 +639,25 @@ def gdalos_trans(
     out_ds = None
     if not skipped:
         no_yes = ("NO", "YES")
-        if not isinstance(tiled, str):
-            tiled = no_yes[tiled]
+        if not tiled:
+            tiled = False
+        else:
+            tiled = isinstance(tiled, str) and tiled.upper() != no_yes[False]
+
+        tiled_str = no_yes[tiled]
         common_options["format"] = of
         if of.upper() == 'GTIFF':
-            creation_options["TILED"] = tiled
+            creation_options["TILED"] = tiled_str
             creation_options["BIGTIFF"] = big_tiff
             creation_options["COMPRESS"] = comp
+            if tiled:
+                if block_size is ...:
+                    block_size = 256  # default gdal block_size
+                    # assert(width / BlockXSize * height / BlockYSize * (big_tiff ? 8: 4) <= 0x80000000)
+                    # File too large regarding tile size. This would result
+                    # in a file with tile arrays larger than 2GB
+                creation_options["BLOCKXSIZE"] = block_size
+                creation_options["BLOCKYSIZE"] = block_size
         if cog and not cog_2_steps:
             creation_options["COPY_SRC_OVERVIEWS"] = "YES"
 

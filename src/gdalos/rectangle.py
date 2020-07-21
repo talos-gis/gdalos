@@ -110,6 +110,15 @@ class GeoRectangle:
         return ret
 
     @classmethod
+    def from_center_and_radius(cls, cent_x, cent_y, rad_x, rad_y):
+        x = cent_x - rad_x
+        y = cent_y - rad_y
+        w = rad_x * 2
+        h = rad_y * 2
+        ret = cls(x, y, w, h)
+        return ret
+
+    @classmethod
     def from_points(cls, points):
         return cls.from_min_max(
             min(p[0] for p in points),
