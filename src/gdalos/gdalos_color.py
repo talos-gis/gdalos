@@ -102,14 +102,14 @@ class ColorPalette:
         self.pal.clear()
         self._all_numeric = True
         x = s.split(';')
-        min_value = float(x[0])
+        min_value = to_number(x[0])
         count = int(x[1])
         selected = x[2]
         lock_values = x[3]
-        multiplier = float(x[4])
+        multiplier = to_number(x[4])
         special_draw = x[5]
         interpolate = x[6]
-        log_base = float(x[8])
+        log_base = to_number(x[8])
         if log_base == 0:
             ln_log_base = None
         else:
@@ -190,7 +190,7 @@ class ColorPalette:
             alpha = int(alpha)
             color = color + (alpha << 8*3)  # * 256**3
             key = palette_entry.getAttribute("value")
-            key = float(key)
+            key = to_number(key)
             self.pal[key] = color
 
     def read_qlr(self, qlr_filename):
@@ -344,7 +344,7 @@ def test_xml():
 
 
 if __name__ == "__main__":
-    # test_talos_pal()
+    test_talos_pal()
     test_xml()
 
 
