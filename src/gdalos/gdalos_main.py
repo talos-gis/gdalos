@@ -617,7 +617,9 @@ def gdalos_trans(
         ovr_files_for_step_1 = ovr_files
 
     cog_ready = cog and do_skip_if_exists(cog_filename, overwrite, logger)
-    if cog_ready or ovr_type == OvrType.existing_reuse or (filename == out_filename):
+    if (not cog or cog_2_steps) and \
+            not trans_or_warp_is_needed and \
+            (cog_ready or ovr_type == OvrType.existing_reuse or (filename == out_filename)):
         skipped = True
     else:
         skipped = False if filename_is_ds else do_skip_if_exists(out_filename, overwrite, logger)
@@ -639,11 +641,7 @@ def gdalos_trans(
     out_ds = None
     if not skipped:
         no_yes = ("NO", "YES")
-        if not tiled:
-            tiled = False
-        else:
-            tiled = isinstance(tiled, str) and tiled.upper() != no_yes[False]
-
+        tiled = False if not tiled else tiled.upper() != no_yes[False] if isinstance(tiled, str) else True
         tiled_str = no_yes[tiled]
         common_options["format"] = of
         if of.upper() == 'GTIFF':
@@ -728,79 +726,82 @@ def gdalos_trans(
         if not skipped and hide_nodatavalue:
             gdalos_util.unset_nodatavalue(out_ds or str(out_filename))
 
-        if ovr_type == OvrType.existing_reuse:
-            # overviews are numbered as follows (i.e. for dst_ovr_count=3, meaning create base+3 ovrs=4 files):
-            # -1: base dataset, 0: first ovr, 1: second ovr, 2: third ovr
+        if not cog or cog_2_steps:
+            # create overview file(s)
+            if ovr_type == OvrType.existing_reuse:
+                # overviews are numbered as follows (i.e. for dst_ovr_count=3, meaning create base+3 ovrs=4 files):
+                # -1: base dataset, 0: first ovr, 1: second ovr, 2: third ovr
 
-            all_args_new = all_args.copy()
-            all_args_new["ovr_type"] = None
-            all_args_new["dst_ovr_count"] = None
-            all_args_new["out_path"] = None
-            all_args_new["write_spec"] = False
-            all_args_new["cog"] = False
-            all_args_new["logger"] = logger
-            # iterate backwards on the overviews
-            if verbose:
-                logger.debug(
-                    "iterate on overviews creation, from {} to {}".format(
-                        src_ovr_last, src_ovr
-                    )
-                )
-            for ovr_index in range(src_ovr_last, src_ovr - 1, -1):
-                all_args_new["final_files"] = []
-                all_args_new["ovr_files"] = []  # there shouldn't be any
-                all_args_new["aux_files"] = []
-                all_args_new["temp_files"] = []  # there shouldn't be any
-                all_args_new["out_filename"] = gdalos_util.concat_paths(
-                    out_filename, ".ovr" * (ovr_index - src_ovr)
-                )
-                all_args_new["src_ovr"] = ovr_index
-                if out_res is not None:
-                    res_factor = 2 ** (ovr_index + 1)
-                    all_args_new["out_res"] = [r * res_factor for r in out_res]
-                all_args_new["write_info"] = (
-                        write_info and (ovr_index == src_ovr) and not cog
-                )
-                ret_code = gdalos_trans(**all_args_new)
-                if not ret_code:
-                    logger.warning(
-                        "return code was None for creating {}".format(
-                            all_args_new["out_filename"]
+                all_args_new = all_args.copy()
+                all_args_new["ovr_type"] = None
+                all_args_new["dst_ovr_count"] = None
+                all_args_new["out_path"] = None
+                all_args_new["write_spec"] = False
+                all_args_new["cog"] = False
+                all_args_new["logger"] = logger
+                # iterate backwards on the overviews
+                if verbose:
+                    logger.debug(
+                        "iterate on overviews creation, from {} to {}".format(
+                            src_ovr_last, src_ovr
                         )
                     )
-                if ovr_index == src_ovr:
-                    final_files_for_step_1.extend(all_args_new["final_files"])
-                else:
-                    ovr_files_for_step_1.extend(all_args_new["final_files"])
-                if verbose:
-                    for f in ["ovr_files", "temp_files"]:
-                        if all_args_new[f]:
+                for ovr_index in range(src_ovr_last, src_ovr - 1, -1):
+                    all_args_new["final_files"] = []
+                    all_args_new["ovr_files"] = []  # there shouldn't be any
+                    all_args_new["aux_files"] = []
+                    all_args_new["temp_files"] = []  # there shouldn't be any
+                    all_args_new["out_filename"] = gdalos_util.concat_paths(
+                        out_filename, ".ovr" * (ovr_index - src_ovr)
+                    )
+                    all_args_new["src_ovr"] = ovr_index
+                    if out_res is not None:
+                        res_factor = 2 ** (ovr_index-src_ovr)
+                        all_args_new["out_res"] = [r * res_factor for r in out_res]
+                    all_args_new["write_info"] = (
+                            write_info and (ovr_index == src_ovr) and not cog
+                    )
+                    ret_code = gdalos_trans(**all_args_new)
+                    if not ret_code:
+                        logger.warning(
+                            "return code was None for creating {}".format(
+                                all_args_new["out_filename"]
+                            )
+                        )
+                    if ovr_index == src_ovr:
+                        final_files_for_step_1.extend(all_args_new["final_files"])
+                    else:
+                        ovr_files_for_step_1.extend(all_args_new["final_files"])
+                    if verbose:
+                        for f in ["ovr_files", "temp_files"]:
+                            if all_args_new[f]:
+                                logger.error(
+                                    "there shound not be any {} here, but there are! {}".format(
+                                        f, all_args_new[f]
+                                    )
+                                )
+                        if len(all_args_new["final_files"]) != 1:
                             logger.error(
-                                "there shound not be any {} here, but there are! {}".format(
-                                    f, all_args_new[f]
+                                "ovr creating should have made exactly 1 file! {}".format(
+                                    all_args_new["final_files"]
                                 )
                             )
-                    if len(all_args_new["final_files"]) != 1:
-                        logger.error(
-                            "ovr creating should have made exactly 1 file! {}".format(
-                                all_args_new["final_files"]
-                            )
-                        )
-                aux_files.extend(all_args_new["aux_files"])
-            write_info = write_info and cog
-        elif not filename_is_ds and ovr_type not in [None, OvrType.existing_reuse, OvrType.existing_auto]:
-            # create overviews from dataset (internal or external)
-            ret_code = gdalos_ovr(
-                out_filename,
-                overwrite=overwrite,
-                ovr_type=ovr_type,
-                dst_ovr_count=dst_ovr_count,
-                kind=kind,
-                resampling_alg=resampling_alg,
-                print_progress=print_progress,
-                logger=logger,
-                ovr_files=ovr_files_for_step_1,
-            )
+                    aux_files.extend(all_args_new["aux_files"])
+                write_info = write_info and cog
+            elif not filename_is_ds and ovr_type not in [None, OvrType.existing_reuse, OvrType.existing_auto]:
+                # create overviews from dataset (internal or external)
+                ret_code = gdalos_ovr(
+                    out_filename,
+                    overwrite=overwrite,
+                    ovr_type=ovr_type,
+                    dst_ovr_count=dst_ovr_count,
+                    kind=kind,
+                    resampling_alg=resampling_alg,
+                    print_progress=print_progress,
+                    logger=logger,
+                    ovr_files=ovr_files_for_step_1,
+                )
+
         if cog_2_steps:
             if verbose:
                 logger.debug("running cog 2nd step...")
