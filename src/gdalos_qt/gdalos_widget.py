@@ -57,6 +57,7 @@ class GdalosWidget(FidgetConverter):
                             "treat multi file as vrt", initial_value=False
                         ),
                     ),
+                    FidgetCheckBox.template("sparse_ok", initial_value=True),
                     FidgetCheckBox.template("write_info", initial_value=True),
                     FidgetCheckBox.template("write_spec", initial_value=True),
                 ],
@@ -77,7 +78,7 @@ class GdalosWidget(FidgetConverter):
                         make_title=True,
                     ),
                     FidgetCombo.template(
-                        "ovr type",
+                        "ovr_type",
                         options=list(
                             chain((("AUTO", ...), ("None", None)), OvrType.__members__)
                         ),
@@ -85,7 +86,7 @@ class GdalosWidget(FidgetConverter):
                         make_title=True,
                     ),
                     FidgetCheckBox.template(
-                        "keep src ovr suffixes", initial_value=True
+                        "keep_src_ovr_suffixes", initial_value=True
                     ),
                 ],
                 make_plaintext=False,
@@ -97,7 +98,7 @@ class GdalosWidget(FidgetConverter):
                     (
                         "of",
                         FidgetEditCombo.template(
-                            "output format", options=("GTiff",), make_title=True
+                            "output format", options=(..., "GTiff", 'cog'), make_title=True
                         ),
                     ),
                     (
@@ -107,14 +108,11 @@ class GdalosWidget(FidgetConverter):
                         ),
                     ),
                     FidgetCheckBox.template("tiled", options=("NO", "YES")),
-                    (
+                    FidgetCombo.template(
                         "big_tiff",
-                        FidgetCombo.template(
-                            "BIGTIFF",
-                            options=["YES", "NO", "IF_NEEDED", "IF_SAFER"],
-                            initial_value="IF_SAFER",
-                            make_title=True,
-                        ),
+                        options=["YES", "NO", "IF_NEEDED", "IF_SAFER"],
+                        initial_value="IF_SAFER",
+                        make_title=True,
                     ),
                 ],
                 make_plaintext=False,
@@ -128,22 +126,19 @@ class GdalosWidget(FidgetConverter):
                         initial_index=0,
                         make_title=True,
                     ),
-                    (
+                    FidgetCombo.template(
                         "kind",
-                        FidgetCombo.template(
-                            "raster kind",
-                            options=list(
-                                chain((("AUTO", ...),), RasterKind.__members__.items())
-                            ),
-                            initial_index=0,
-                            make_title=True,
+                        options=list(
+                            chain((("AUTO", ...),), RasterKind.__members__.items())
                         ),
+                        initial_index=0,
+                        make_title=True,
                     ),
-                    FidgetCheckBox.template("expand rgb", initial_value=False),
+                    FidgetCheckBox.template("expand_rgb", initial_value=False),
                     FidgetMinimal.template(
                         FidgetOptional.template(
                             CrsWidget.template(
-                                "warp CRS",
+                                "warp_CRS",
                                 make_plaintext=True,
                                 make_indicator=True,
                                 frame_style=QFrame.Box | QFrame.Plain,
@@ -238,11 +233,11 @@ class GdalosWidget(FidgetConverter):
                     FidgetCheckBox.template("hide nodatavalue", initial_value=False),
                     (
                         "dst_nodatavalue",
-                        NodatavalueWidgetDst.template("destination nodatavalue"),
+                        NodatavalueWidgetDst.template("dst_nodatavalue"),
                     ),
                     (
                         "src_nodatavalue",
-                        NodatavalueWidgetSrc.template("source nodatavalue"),
+                        NodatavalueWidgetSrc.template("src_nodatavalue"),
                     ),
                 ],
                 make_plaintext=False,
@@ -282,7 +277,7 @@ class GdalosWidget(FidgetConverter):
                 "advanced",
                 [
                     FidgetCombo.template(
-                        "resampling alg",
+                        "resampling_alg",
                         options=(
                             ("auto", ...),
                             "nearest",
@@ -296,9 +291,9 @@ class GdalosWidget(FidgetConverter):
                         initial_index=0,
                         make_title=True,
                     ),
-                    FidgetCheckBox.template("keep alpha"),
+                    FidgetCheckBox.template("keep_alpha"),
                     FidgetSpin.template(
-                        "jpeg quality", 1, 100, initial_value=75, make_title=True
+                        "quality", 1, 100, initial_value=75, make_title=True
                     ),
                 ],
                 make_plaintext=False,

@@ -19,6 +19,12 @@ def print_time_now(logger):
     logger.info("Current time: {}".format(datetime.datetime.now()))
 
 
+class GdalOutputFormat(Enum):
+    gtiff = auto()
+    cog = auto()
+    mem = auto()
+
+
 class OvrType(Enum):
     # existing_auto or create_external_auto (by existance of src overviews)
     auto_select = auto()
@@ -120,54 +126,57 @@ default_multi_byte_nodata_value = -32768
 
 @with_param_dict("all_args")
 def gdalos_trans(
-    filename: MaybeSequence[str],
-    out_filename: str = None,
-    out_path: str = None,
-    return_ds: Union[type(...), bool] = ...,
-    out_path_with_src_folders: str = True,
-    overwrite=False,
-    cog: Union[type(...), bool] = ...,
-    write_info: bool = False,
-    write_spec: bool = False,
-    multi_file_as_vrt: bool = False,
-    of: MaybeSequence[str] = "GTiff",
-    outext: str = "tif",
-    tiled: bool = True,
-    block_size: int = ...,
-    big_tiff: str = "IF_SAFER",
-    config_options: dict = None,
-    open_options: dict = None,
-    common_options: dict = None,
-    creation_options: dict = None,
-    extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None,
-    extent_in_4326: bool = True,
-    src_win=None,
-    warp_CRS: MaybeSequence[Warp_crs_base] = None,
-    cutline: Optional[Union[str, List[str]]] = None,
-    out_res: Union[Real, Tuple[Real, Real]] = None,
-    ovr_type: Optional[OvrType] = OvrType.auto_select,
-    src_ovr: Optional[int] = None,
-    keep_src_ovr_suffixes: bool = True,
-    dst_ovr_count: Optional[int] = None,
-    dst_nodatavalue: Optional[Union[type(...), Real]] = None,  # None -> don't change; ... -> change only for DTM
-    src_nodatavalue: Optional[Union[type(...), Real]] = ...,  # None -> use minimum; ... -> use original
-    hide_nodatavalue: bool = False,
-    kind: RasterKind = None,
-    resampling_alg=None,
-    lossy: bool = None,
-    expand_rgb: bool = False,
-    jpeg_quality: Real = 75,
-    keep_alpha: bool = True,
-    final_files: list = None,
-    ovr_files: list = None,
-    aux_files: list = None,
-    temp_files: list = None,
-    delete_temp_files=True,
-    partition=None,
-    print_progress=...,
-    logger=...,
-    *,
-    all_args: dict = None,
+        filename: MaybeSequence[str],
+        out_filename: str = None,
+        out_path: str = None,
+        return_ds: Union[type(...), bool] = ...,
+        out_path_with_src_folders: str = True,
+        overwrite=False,
+        cog: Union[type(...), bool] = ...,
+        write_info: bool = False,
+        write_spec: bool = False,
+        multi_file_as_vrt: bool = False,
+        of: MaybeSequence[Union[type(...), GdalOutputFormat, str]] = ...,
+        outext: str = "tif",
+        tiled: bool = True,
+        block_size: int = ...,
+        big_tiff: str = ...,
+        config_options: dict = None,
+        open_options: dict = None,
+        common_options: dict = None,
+        creation_options: dict = None,
+        translate_options: dict = None,
+        warp_options: dict = None,
+        extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None,
+        extent_in_4326: bool = True,
+        src_win=None,
+        warp_CRS: MaybeSequence[Warp_crs_base] = None,
+        cutline: Optional[Union[str, List[str]]] = None,
+        out_res: Union[Real, Tuple[Real, Real]] = None,
+        ovr_type: Optional[OvrType] = OvrType.auto_select,
+        src_ovr: Optional[int] = None,
+        keep_src_ovr_suffixes: bool = True,
+        dst_ovr_count: Optional[int] = None,
+        dst_nodatavalue: Optional[Union[type(...), Real]] = None,  # None -> don't change; ... -> change only for DTM
+        src_nodatavalue: Optional[Union[type(...), Real]] = ...,  # None -> use minimum; ... -> use original
+        hide_nodatavalue: bool = False,
+        kind: RasterKind = None,
+        resampling_alg=None,
+        lossy: bool = None,
+        expand_rgb: bool = False,
+        quality: Real = 75,
+        keep_alpha: bool = ...,
+        sparse_ok: bool = True,
+        final_files: list = None,
+        ovr_files: list = None,
+        aux_files: list = None,
+        temp_files: list = None,
+        delete_temp_files=True,
+        partition=None,
+        print_progress=...,
+        logger=...,
+        *,
+        all_args: dict = None,
 ):
     print(all_args)
 
@@ -268,8 +277,28 @@ def gdalos_trans(
     ds = gdalos_util.open_ds(filename, src_ovr=src_ovr, open_options=open_options, logger=logger)
     # filename_is_ds = not isinstance(filename, (str, Path))
     filename_is_ds = ds == filename
+
+    try:
+        support_of_cog = int(gdal.VersionInfo()) >= 301000
+    except:
+        support_of_cog = False
+    if cog is ...:
+        cog = not filename_is_ds
+    if ovr_type is None:
+        cog = False
+    if of is ... or of is None:
+        of = GdalOutputFormat.cog if (cog and support_of_cog) else GdalOutputFormat.gtiff
+    elif isinstance(of, str):
+        of = of.lower()
+        try:
+            of = GdalOutputFormat[of]
+        except:
+            pass
+    if of == GdalOutputFormat.cog:
+        cog = True
+
     if return_ds is ...:
-        return_ds = of == 'MEM'
+        return_ds = of == GdalOutputFormat.mem
     if filename_is_ds:
         input_ext = None
         write_info = False
@@ -280,18 +309,21 @@ def gdalos_trans(
         if not os.path.isfile(filename):
             raise OSError('file not found: "{}"'.format(filename))
         input_ext = os.path.splitext(filename)[1].lower()
-    if cog is ...:
-        cog = not filename_is_ds
 
     if extent is None:
         extent_in_4326 = True
     # creating a copy of the input dictionaries, as I don't want to change the input
+    no_yes = ("NO", "YES")
     config_options = dict(config_options or dict())
     common_options = dict(common_options or dict())
     creation_options = dict(creation_options or dict())
-    translate_options = {}
-    warp_options = {}
+    translate_options = dict(translate_options or dict())
+    warp_options = dict(warp_options or dict())
     out_suffixes = []
+
+    if sparse_ok is ...:
+        sparse_ok = not filename_is_ds and str(Path(filename).suffix).lower() == '.vrt'
+    creation_options["SPARSE_OK"] = no_yes[bool(sparse_ok)]
 
     extent_was_cropped = False
     extent_aligned = True
@@ -374,6 +406,7 @@ def gdalos_trans(
     else:
         comp = "JPEG"
         out_suffixes.append("jpg")
+    jpeg_compression = (comp == "JPEG") and (len(band_types) in (3, 4))
     # endregion
 
     # region expand_rgb
@@ -490,32 +523,7 @@ def gdalos_trans(
         out_res = input_res
     # endregion
 
-    # region jpeg
-    # if (comp == 'JPEG') and (len(bands) == 3) or ((len(bands) == 4) and (keep_alpha)):
-    if (comp == "JPEG") and (len(band_types) in (3, 4)):
-        creation_options["PHOTOMETRIC"] = "YCBCR"
-        creation_options["JPEG_QUALITY"] = str(jpeg_quality)
-
-        if (
-            len(band_types) == 4
-        ):  # alpha channel is not supported with PHOTOMETRIC=YCBCR, thus we drop it or keep it as a mask band
-            if do_warp:
-                raise Exception(
-                    "this mode is not supported: warp RGBA raster with JPEG output. "
-                    "You could do it in two steps: "
-                    "1. warp with lossless ouput, "
-                    "2. save as jpeg"
-                )
-            else:
-                translate_options["bandList"] = [1, 2, 3]
-                if keep_alpha:
-                    translate_options["maskBand"] = 4  # keep the alpha band as mask
-    # endregion
-
     # region decide ovr_type
-    if ovr_type is None:
-        cog = False
-    cog_2_steps = cog
     if ovr_type in [..., OvrType.auto_select]:
         if overview_count > 0:
             # if the raster has overviews then use them, otherwise create overviews
@@ -531,22 +539,25 @@ def gdalos_trans(
         or (lossy != src_is_lossy)
         or translate_options
     )
+
+    cog_2_steps = cog
     if ovr_type in [None, OvrType.existing_reuse, OvrType.existing_auto]:
-        can_cog = not trans_or_warp_is_needed
-        if cog and can_cog:
+        if cog and (of == GdalOutputFormat.cog or not trans_or_warp_is_needed):
             cog_2_steps = False
         elif ovr_type == OvrType.existing_auto:
             ovr_type = OvrType.existing_reuse
     # endregion
 
     # region make out_filename
-    auto_out_filename = out_filename is None and of != 'MEM'
+    auto_out_filename = out_filename is None and of != GdalOutputFormat.mem
     if auto_out_filename:
+        if filename_is_ds:
+            raise Exception('input is ds and no output filename is given')
         if (
-            cog_2_steps
-            and ovr_type == OvrType.create_external_auto
-            and not trans_or_warp_is_needed
-            and not input_is_vrt
+                cog_2_steps
+                and ovr_type == OvrType.create_external_auto
+                and not trans_or_warp_is_needed
+                and not input_is_vrt
         ):
             # create overviews for the input file then create a cog
             out_filename = filename
@@ -598,15 +609,15 @@ def gdalos_trans(
 
     if cog:
         if auto_out_filename:
-            cog_filename = out_filename.with_suffix(".cog" + "." + outext)
+            final_filename = out_filename.with_suffix(".cog" + "." + outext)
             if not cog_2_steps:
-                out_filename = cog_filename
+                out_filename = final_filename
         else:
-            cog_filename = out_filename
+            final_filename = out_filename
             if cog_2_steps:
                 out_filename = out_filename.with_suffix(".temp" + "." + outext)
     else:
-        cog_filename = out_filename
+        final_filename = out_filename
     # endregion
 
     if cog_2_steps:
@@ -616,16 +627,18 @@ def gdalos_trans(
         final_files_for_step_1 = final_files
         ovr_files_for_step_1 = ovr_files
 
-    cog_ready = cog and do_skip_if_exists(cog_filename, overwrite, logger)
-    if (not cog or cog_2_steps) and \
-            not trans_or_warp_is_needed and \
-            (cog_ready or ovr_type == OvrType.existing_reuse or (filename == out_filename)):
-        skipped = True
-    else:
-        skipped = False if filename_is_ds else do_skip_if_exists(out_filename, overwrite, logger)
+    final_output_exists = do_skip_if_exists(final_filename, overwrite, logger)
 
-    if not cog_ready and write_spec:
-        spec_filename = gdalos_util.concat_paths(cog_filename, ".spec")
+    # for OvrType.existing_reuse we'll create the files in backwards order in the overview creation step
+    skipped = (final_output_exists or
+               (not filename_is_ds) and
+               ((ovr_type == OvrType.existing_reuse and (not cog or cog_2_steps)) or
+                ((not trans_or_warp_is_needed) and (filename == out_filename))))
+
+    if final_output_exists:
+        final_files.append(final_filename)
+    elif write_spec:
+        spec_filename = gdalos_util.concat_paths(final_filename, ".spec")
         logger_handlers.append(gdalos_logger.set_file_logger(logger, spec_filename))
         logger.debug('spec file handler added: "{}"'.format(spec_filename))
         logger.debug("gdalos versoin: {}".format(__version__))
@@ -640,23 +653,56 @@ def gdalos_trans(
     ret_code = None
     out_ds = None
     if not skipped:
-        no_yes = ("NO", "YES")
-        tiled = False if not tiled else tiled.upper() != no_yes[False] if isinstance(tiled, str) else True
-        tiled_str = no_yes[tiled]
-        common_options["format"] = of
-        if of.upper() == 'GTIFF':
-            creation_options["TILED"] = tiled_str
+        # region jpeg
+        if jpeg_compression:
+            if of != GdalOutputFormat.cog:
+                creation_options["PHOTOMETRIC"] = "YCBCR"
+            creation_options["JPEG_QUALITY" if of == GdalOutputFormat.gtiff else 'QUALITY'] = str(quality)
+
+            # alpha channel is not supported with PHOTOMETRIC=YCBCR, thus we drop it or keep it as a mask band
+            if len(band_types) == 4:
+                if do_warp:
+                    raise Exception(
+                        "this mode is not supported: warp RGBA raster with JPEG output. "
+                        "You could do it in two steps: "
+                        "1. warp with lossless ouput, "
+                        "2. save as jpeg"
+                    )
+                else:
+                    translate_options["bandList"] = [1, 2, 3]
+                    if keep_alpha is ...:
+                        keep_alpha = filename_is_ds or input_ext != '.gpkg'
+                    if keep_alpha:
+                        translate_options["maskBand"] = 4  # keep the alpha band as mask
+        # endregion
+
+        common_options["format"] = of.name if isinstance(of, GdalOutputFormat) else str(of)
+        if of in [GdalOutputFormat.gtiff, GdalOutputFormat.cog]:
+            if not big_tiff:
+                big_tiff = False
+            elif big_tiff is ...:
+                big_tiff = "IF_SAFER"
+            elif not isinstance(big_tiff, str):
+                big_tiff = no_yes[bool(big_tiff)]
+
             creation_options["BIGTIFF"] = big_tiff
             creation_options["COMPRESS"] = comp
-            if tiled:
-                if block_size is ...:
-                    block_size = 256  # default gdal block_size
-                    # assert(width / BlockXSize * height / BlockYSize * (big_tiff ? 8: 4) <= 0x80000000)
-                    # File too large regarding tile size. This would result
-                    # in a file with tile arrays larger than 2GB
+
+        tiled = tiled.upper() != no_yes[False] if isinstance(tiled, str) else bool(tiled)
+        if of == GdalOutputFormat.gtiff:
+            creation_options["TILED"] = no_yes[tiled]
+        if tiled and block_size is not ...:
+            # if block_size is ...:
+            #     block_size = 256  # default gdal block_size
+            # assert(width / BlockXSize * height / BlockYSize * (big_tiff ? 8: 4) <= 0x80000000)
+            # File too large regarding tile size. This would result
+            # in a file with tile arrays larger than 2GB
+            if of == GdalOutputFormat.gtiff:
                 creation_options["BLOCKXSIZE"] = block_size
                 creation_options["BLOCKYSIZE"] = block_size
-        if cog and not cog_2_steps:
+            elif of == GdalOutputFormat.cog:
+                creation_options["BLOCKSIZE"] = block_size
+        if cog and not cog_2_steps and of != GdalOutputFormat.cog:
             creation_options["COPY_SRC_OVERVIEWS"] = "YES"
 
         if creation_options:
@@ -722,6 +768,7 @@ def gdalos_trans(
     # end region
 
     # region create overviews, cog, info
+    cog_ready = cog and final_output_exists
     if not cog_ready and (ret_code or skipped):
         if not skipped and hide_nodatavalue:
             gdalos_util.unset_nodatavalue(out_ds or str(out_filename))
@@ -756,7 +803,7 @@ def gdalos_trans(
                     )
                     all_args_new["src_ovr"] = ovr_index
                     if out_res is not None:
-                        res_factor = 2 ** (ovr_index-src_ovr)
+                        res_factor = 2 ** (ovr_index - src_ovr)
                         all_args_new["out_res"] = [r * res_factor for r in out_res]
                     all_args_new["write_info"] = (
                             write_info and (ovr_index == src_ovr) and not cog
@@ -811,7 +858,7 @@ def gdalos_trans(
             cog_aux_files = []
             ret_code = gdalos_trans(
                 out_filename,
-                out_filename=cog_filename,
+                out_filename=final_filename,
                 cog=True,
                 ovr_type=OvrType.existing_auto,
                 of=of,
@@ -906,12 +953,12 @@ def gdalos_trans(
 
 
 def add_ovr(
-    filename,
-    options,
-    access_mode,
-    overwrite=True,
-    logger=None,
-    ovr_files: list = None,
+        filename,
+        options,
+        access_mode,
+        overwrite=True,
+        logger=None,
+        ovr_files: list = None,
 ):
     verbose = logger is not None and logger is not ...
     filename = Path(filename)
@@ -936,18 +983,18 @@ default_dst_ovr_count = 10
 
 
 def gdalos_ovr(
-    filename,
-    comp=None,
-    overwrite=True,
-    ovr_type=...,
-    dst_ovr_count=default_dst_ovr_count,
-    kind=None,
-    resampling_alg=None,
-    config_options: dict = None,
-    ovr_options: dict = None,
-    ovr_files: list = None,
-    print_progress=...,
-    logger=None,
+        filename,
+        comp=None,
+        overwrite=True,
+        ovr_type=...,
+        dst_ovr_count=default_dst_ovr_count,
+        kind=None,
+        resampling_alg=None,
+        config_options: dict = None,
+        ovr_options: dict = None,
+        ovr_files: list = None,
+        print_progress=...,
+        logger=None,
 ):
     verbose = logger is not None and logger is not ...
     filename = Path(filename)
@@ -1066,12 +1113,12 @@ def gdalos_info(filename_or_ds, overwrite=True, logger=None):
 
 
 def gdalos_vrt(
-    filenames: MaybeSequence,
-    vrt_path=None,
-    kind=None,
-    resampling_alg=None,
-    overwrite=True,
-    logger=None,
+        filenames: MaybeSequence,
+        vrt_path=None,
+        kind=None,
+        resampling_alg=None,
+        overwrite=True,
+        logger=None,
 ):
     if gdalos_util.is_list_like(filenames):
         flatten_filenames = gdalos_util.flatten_and_expand_file_list(filenames)

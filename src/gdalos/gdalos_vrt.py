@@ -66,7 +66,7 @@ def print_ros(ros: List[RasterOverview]):
     print(x)
 
 
-def make_vrt_with_multiple_extent_overviews(ros: List[RasterOverview], vrt_filename):
+def make_vrt_with_multiple_extent_overviews_from_raster_overview_list(ros: List[RasterOverview], vrt_filename, **kwargs):
     if not ros:
         return None
     print_ros(ros)
@@ -124,11 +124,12 @@ def make_vrt_with_multiple_extent_overviews(ros: List[RasterOverview], vrt_filen
         # if ro.ovr < 0:
         #     continue
         print('{}: {}'.format(idx, ro.path))
-        single_src_vrt = ro.path.with_suffix('.{}.vrt'.format(ro.ovr))
+        # single_src_vrt = ro.path.with_suffix('.{}.vrt'.format(ro.ovr))
+        single_src_vrt = (ro.path.with_name('vrt') / ro.path.name).with_suffix('.{}.vrt'.format(ro.ovr))
         make_ros_vrt([ro], extent, single_src_vrt)
         ro.path = single_src_vrt
         ro.ovr = -1
-    return make_ros_vrt_overviews(ros, extent, vrt_filename)
+    return make_ros_vrt_overviews(ros, extent, vrt_filename, **kwargs)
 
 
 def vrt_add_overviews(ros: List[RasterOverview], filename_in: Path, filename_out: Path):
@@ -153,7 +154,7 @@ def vrt_add_overviews(ros: List[RasterOverview], filename_in: Path, filename_out
                 if m:
                     for ro in ros:
                         ovr_filename = ro.path
-                        ovr_path = dir_name / Path(ovr_filename)
+                        ovr_path = (dir_name / Path(ovr_filename)).resolve()
                         if ovr_path.is_file():
                             f2.write('\t<Overview>\n')
                             f2.write('\t\t<SourceFilename relativeToVRT="1">{}</SourceFilename>\n'.format(str(ovr_filename)))
@@ -180,7 +181,7 @@ def vrt_fix_openoptions(ros: List[RasterOverview], filename_in: Path, filename_o
                 ovr = ...
                 for ro in ros:
                     if relative:
-                        SourceFilename = dir_name / SourceFilename
+                        SourceFilename = (dir_name / SourceFilename).resolve()
                     if ro.path == SourceFilename:
                         ovr = ro.ovr
                         if ovr >= 0:
@@ -192,7 +193,7 @@ def vrt_fix_openoptions(ros: List[RasterOverview], filename_in: Path, filename_o
                     raise Exception('SourceFilename: {} not found'.format(SourceFilename))
 
 
-def make_ros_vrt_overviews(ros: List[RasterOverview], extent: GeoRectangle, vrt_filename: Path, add_overviews=True):
+def make_ros_vrt_overviews(ros: List[RasterOverview], extent: GeoRectangle, vrt_filename: Path, add_overviews=True, return_ds=False):
     options = gdal.BuildVRTOptions(outputBounds=(extent.min_x, extent.min_y, extent.max_x, extent.max_y))
     vrt_ds = gdal.BuildVRT(str(vrt_filename), ros[0].get_ds(), options=options)
     if vrt_ds is None:
@@ -203,13 +204,18 @@ def make_ros_vrt_overviews(ros: List[RasterOverview], extent: GeoRectangle, vrt_
         shutil.move(vrt_filename, vrt_filename_temp)
         vrt_add_overviews(ros[1:], filename_in=vrt_filename_temp, filename_out=vrt_filename)
         os.remove(vrt_filename_temp)
-        vrt_ds = open_ds(vrt_filename)
-    return vrt_ds
+        if return_ds:
+            vrt_ds = open_ds(vrt_filename)
+    if return_ds:
+        return vrt_ds
+    else:
+        return vrt_filename
 
 
 def make_ros_vrt(ros: List[RasterOverview], extent: GeoRectangle, vrt_filename: Path, fix_open_options=True):
     options = gdal.BuildVRTOptions(outputBounds=(extent.min_x, extent.min_y, extent.max_x, extent.max_y))
     ds_list = [ro.get_ds() for ro in ros]
+    os.makedirs(os.path.dirname(str(vrt_filename)), exist_ok=True)
     vrt_ds = gdal.BuildVRT(str(vrt_filename), ds_list, options=options)
     if vrt_ds is None:
         raise Exception("Error! cannot create vrt. Cannot proceed")
@@ -223,22 +229,31 @@ def make_ros_vrt(ros: List[RasterOverview], extent: GeoRectangle, vrt_filename: 
     return vrt_ds
 
 
-def make_vrt_with_multiple_extent_overviews_from_dir(path: Path, pattern='*.tif'):
-    print(path)
-    paths = list(path.glob(pattern=pattern))
-    vrt_filename = path / (path.name + '.vrt')
-
+def make_overviews_vrt(paths: List[Path], vrt_filename=None, **kwargs):
+    if not paths:
+        raise Exception ('no files are given')
+    print(paths)
+    if vrt_filename is None:
+        first = paths[0]
+        vrt_filename = first.with_suffix('.super.vrt')
     o = []
     for path in paths:
         r = RasterOverviewList(path)
         o.extend(r.o)
-    return make_vrt_with_multiple_extent_overviews(o, vrt_filename=vrt_filename)
+    return make_vrt_with_multiple_extent_overviews_from_raster_overview_list(o, vrt_filename=vrt_filename, **kwargs)
+
+
+def make_overviews_vrt_dir(path: Path, pattern='*.tif', **kwargs):
+    paths = list(path.glob(pattern=pattern))
+    vrt_filename = path.with_suffix('.vrt')
+    return make_overviews_vrt(paths=paths, vrt_filename=vrt_filename, **kwargs)
 
 
 if __name__ == '__main__':
-    parent_path = Path(r'd:\Maps.raw\osm')
+    # parent_path = Path(r'd:\Maps.raw\osm')
     # parent_path = Path(r'd:\Maps\temp\x')
+    parent_path = Path(r'd:\Maps\w84geo\topo')
     for path in parent_path.glob(pattern='*'):
         if path.is_dir():
-            make_vrt_with_multiple_extent_overviews_from_dir(path)
+            make_overviews_vrt_dir(path)
     print('done!')
