@@ -133,8 +133,8 @@ def gdalos_trans(
         out_path_with_src_folders: str = True,
         overwrite=False,
         cog: Union[type(...), bool] = ...,
-        write_info: bool = False,
-        write_spec: bool = False,
+        write_info: bool = True,
+        write_spec: bool = True,
         multi_file_as_vrt: bool = False,
         of: MaybeSequence[Union[type(...), GdalOutputFormat, str]] = ...,
         outext: str = "tif",
@@ -164,7 +164,7 @@ def gdalos_trans(
         resampling_alg=None,
         lossy: bool = None,
         expand_rgb: bool = False,
-        quality: Real = 75,
+        quality: Real = ...,
         keep_alpha: bool = ...,
         sparse_ok: bool = True,
         final_files: list = None,
@@ -265,8 +265,6 @@ def gdalos_trans(
         logger = logging.getLogger(__name__)
         logger_handlers.append(gdalos_logger.set_logger_console(logger))
         logger.debug("console handler added")
-    if write_spec and logger is None:
-        logger = logging.getLogger(__name__)
     all_args["logger"] = logger
     verbose = logger is not None and logger is not ...
     if verbose:
@@ -297,11 +295,13 @@ def gdalos_trans(
     if of == GdalOutputFormat.cog:
         cog = True
 
+    if of == GdalOutputFormat.mem:
+        write_info = False
+        write_spec = False
     if return_ds is ...:
         return_ds = of == GdalOutputFormat.mem
     if filename_is_ds:
         input_ext = None
-        write_info = False
     else:
         filename = Path(filename.strip())
         if os.path.isdir(filename):
@@ -525,7 +525,7 @@ def gdalos_trans(
 
     # region decide ovr_type
     if ovr_type in [..., OvrType.auto_select]:
-        if overview_count > 0:
+        if overview_count > 0 or (of == GdalOutputFormat.cog):
             # if the raster has overviews then use them, otherwise create overviews
             ovr_type = OvrType.existing_auto
         else:
@@ -540,12 +540,11 @@ def gdalos_trans(
         or translate_options
     )
 
-    cog_2_steps = cog
-    if ovr_type in [None, OvrType.existing_reuse, OvrType.existing_auto]:
-        if cog and (of == GdalOutputFormat.cog or not trans_or_warp_is_needed):
-            cog_2_steps = False
-        elif ovr_type == OvrType.existing_auto:
-            ovr_type = OvrType.existing_reuse
+    if ovr_type == OvrType.existing_auto:
+        ovr_type = OvrType.existing_reuse
+    cog_2_steps = cog and \
+                  (of != GdalOutputFormat.cog) and \
+                  (trans_or_warp_is_needed or (ovr_type not in [None, OvrType.existing_reuse, OvrType.existing_auto]))
     # endregion
 
     # region make out_filename
@@ -638,7 +637,7 @@ def gdalos_trans(
     if final_output_exists:
         final_files.append(final_filename)
     elif write_spec:
-        spec_filename = gdalos_util.concat_paths(final_filename, ".spec")
+        spec_filename = gdalos_util.concat_paths(out_filename, ".spec")
         logger_handlers.append(gdalos_logger.set_file_logger(logger, spec_filename))
         logger.debug('spec file handler added: "{}"'.format(spec_filename))
         logger.debug("gdalos versoin: {}".format(__version__))
@@ -657,7 +656,8 @@ def gdalos_trans(
         if jpeg_compression:
             if of != GdalOutputFormat.cog:
                 creation_options["PHOTOMETRIC"] = "YCBCR"
-            creation_options["JPEG_QUALITY" if of == GdalOutputFormat.gtiff else 'QUALITY'] = str(quality)
+            if quality not in [..., None]:
+                creation_options["JPEG_QUALITY" if of == GdalOutputFormat.gtiff else 'QUALITY'] = str(quality)
 
             # alpha channel is not supported with PHOTOMETRIC=YCBCR, thus we drop it or keep it as a mask band
             if len(band_types) == 4:
