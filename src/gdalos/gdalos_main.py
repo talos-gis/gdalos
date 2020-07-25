@@ -19,6 +19,10 @@ def print_time_now(logger):
     logger.info("Current time: {}".format(datetime.datetime.now()))
 
 
+def enum_to_str(enum_or_str):
+    return enum_or_str.name if isinstance(enum_or_str, Enum) else str(enum_or_str)
+
+
 class GdalOutputFormat(Enum):
     gtiff = auto()
     cog = auto()
@@ -40,6 +44,27 @@ class OvrType(Enum):
     existing_auto = auto()
     # work with existing overviews
     existing_reuse = auto()
+
+
+# these are the common resamplers for translate, warp, addo, buildvrt.
+# there are some specific resamplers for warp and addo
+class GdalResamplingAlg(Enum):
+    # nearest applies a nearest neighbour (simple sampling) resampler. for warp it's called 'near'
+    nearest = auto()
+    # average computes the average of all non-NODATA contributing pixels.
+    # Starting with GDAL 3.1, this is a weighted average taking into account properly
+    # the weight of source pixels not contributing fully to the target pixel.
+    average = auto()
+    # bilinear applies a bilinear convolution kernel.
+    bilinear = auto()
+    # cubic applies a cubic convolution kernel.
+    cubic = auto()
+    # cubicspline applies a B-Spline convolution kernel.
+    cubicspline = auto()
+    # lanczos applies a Lanczos windowed sinc convolution kernel.
+    lanczos = auto()
+    # mode selects the value which appears most often of all the sampled points.
+    mode = auto()
 
 
 class RasterKind(Enum):
@@ -69,11 +94,17 @@ class RasterKind(Enum):
         raise Exception("could not guess raster kind")
 
 
-def resampling_alg_by_kind(kind, expand_rgb=False):
+def resampling_alg_by_kind(kind, expand_rgb=False, fast_mode=False) -> GdalResamplingAlg:
     if kind == RasterKind.pal and not expand_rgb:
-        return "near"
+        if fast_mode:
+            return GdalResamplingAlg.nearest
+        else:
+            return GdalResamplingAlg.mode
     else:
-        return "cubic"
+        if fast_mode:
+            return GdalResamplingAlg.average
+        else:
+            return GdalResamplingAlg.cubic
 
 
 def do_skip_if_exists(out_filename, overwrite, logger=None):
@@ -92,12 +123,12 @@ def do_skip_if_exists(out_filename, overwrite, logger=None):
 
 
 def print_progress_from_to(r0, r1):
-    # print(str(round(r1)) + '%', end=" ")
-    i0 = 0 if (r0 is None) or (r0 > r1) else round(r0) + 1
-    i1 = round(r1) + 1
+    # print(str(round(r1*100)) + '%', end=" ")
+    i0 = 0 if (r0 is None) or (r0 > r1) else round(r0 * 100) + 1
+    i1 = round(r1 * 100) + 1
     for i in range(i0, i1):
         print(str(i) if i % 5 == 0 else ".", end="", flush=True)
-    if r1 >= 100:
+    if r1 >= 1:
         print("% done!")
 
 
@@ -109,11 +140,10 @@ def print_progress_callback(print_progress):
             def print_progress(prog, *_):
                 nonlocal last
 
-                percent = prog * 100
                 r0 = last
-                r1 = percent
+                r1 = prog
                 print_progress_from_to(r0, r1)
-                last = percent
+                last = prog
 
     return print_progress
 
@@ -161,7 +191,7 @@ def gdalos_trans(
         src_nodatavalue: Optional[Union[type(...), Real]] = ...,  # None -> use minimum; ... -> use original
         hide_nodatavalue: bool = False,
         kind: RasterKind = None,
-        resampling_alg=None,
+        resampling_alg: Union[type(...), None, GdalResamplingAlg, str] = ...,
         lossy: bool = None,
         expand_rgb: bool = False,
         quality: Real = ...,
@@ -656,7 +686,7 @@ def gdalos_trans(
         if jpeg_compression:
             if of != GdalOutputFormat.cog:
                 creation_options["PHOTOMETRIC"] = "YCBCR"
-            if quality not in [..., None]:
+            if quality and (quality is not ...):
                 creation_options["JPEG_QUALITY" if of == GdalOutputFormat.gtiff else 'QUALITY'] = str(quality)
 
             # alpha channel is not supported with PHOTOMETRIC=YCBCR, thus we drop it or keep it as a mask band
@@ -676,7 +706,7 @@ def gdalos_trans(
                         translate_options["maskBand"] = 4  # keep the alpha band as mask
         # endregion
 
-        common_options["format"] = of.name if isinstance(of, GdalOutputFormat) else str(of)
+        common_options["format"] = enum_to_str(of)
         if of in [GdalOutputFormat.gtiff, GdalOutputFormat.cog]:
             if not big_tiff:
                 big_tiff = False
@@ -715,10 +745,10 @@ def gdalos_trans(
             common_options["callback"] = print_progress_callback(print_progress)
 
         if resample_is_needed:
-            if resampling_alg in [None, ...]:
+            if resampling_alg is ...:
                 resampling_alg = resampling_alg_by_kind(kind, expand_rgb)
             if resampling_alg is not None:
-                common_options["resampleAlg"] = resampling_alg
+                common_options["resampleAlg"] = enum_to_str(resampling_alg)
 
         if verbose:
             logger.info('filename: "' + str(out_filename) + '" ...')
@@ -989,7 +1019,7 @@ def gdalos_ovr(
         ovr_type=...,
         dst_ovr_count=default_dst_ovr_count,
         kind=None,
-        resampling_alg=None,
+        resampling_alg=...,
         config_options: dict = None,
         ovr_options: dict = None,
         ovr_files: list = None,
@@ -1028,12 +1058,12 @@ def gdalos_ovr(
         ovr_options = dict()
     if config_options is None:
         config_options = dict()
-    if resampling_alg in [None, ...]:
+    if resampling_alg is ...:
         if kind in [None, ...]:
             kind = RasterKind.guess(filename)
         resampling_alg = resampling_alg_by_kind(kind)
     if resampling_alg is not None:
-        ovr_options["resampling"] = resampling_alg
+        ovr_options["resampling"] = enum_to_str(resampling_alg)
     if print_progress:
         ovr_options["callback"] = print_progress_callback(print_progress)
 
@@ -1116,7 +1146,7 @@ def gdalos_vrt(
         filenames: MaybeSequence,
         vrt_path=None,
         kind=None,
-        resampling_alg=None,
+        resampling_alg=...,
         overwrite=True,
         logger=None,
 ):
@@ -1139,7 +1169,7 @@ def gdalos_vrt(
         raise Exception("could not delete vrt file: {}".format(vrt_path))
     os.makedirs(os.path.dirname(vrt_path), exist_ok=True)
     vrt_options = dict()
-    if resampling_alg in [None, ...]:
+    if resampling_alg is ...:
         if kind in [None, ...]:
             kind = RasterKind.guess(first_filename)
         resampling_alg = resampling_alg_by_kind(kind)

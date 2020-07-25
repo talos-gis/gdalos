@@ -17,7 +17,7 @@ from fidget.widgets import (
     FidgetTuple,
     inner_fidget,
 )
-from gdalos import GeoRectangle, OvrType, RasterKind
+from gdalos.gdalos_main import GeoRectangle, OvrType, RasterKind, GdalResamplingAlg, GdalOutputFormat
 from gdalos_qt.crs_widget import CrsWidget
 from gdalos_qt.nodatavalue_widget import NodatavalueWidgetSrc, NodatavalueWidgetDst
 
@@ -97,8 +97,13 @@ class GdalosWidget(FidgetConverter):
                     # todo validate drivers?
                     (
                         "of",
-                        FidgetEditCombo.template(
-                            "output format", options=(..., "GTiff", 'cog'), make_title=True
+                        FidgetCombo.template(
+                            "output format",
+                            options=list(
+                                chain((("AUTO", ...),), GdalOutputFormat.__members__)
+                            ),
+                            initial_index=0,
+                            make_title=True,
                         ),
                     ),
                     (
@@ -278,15 +283,8 @@ class GdalosWidget(FidgetConverter):
                 [
                     FidgetCombo.template(
                         "resampling_alg",
-                        options=(
-                            ("auto", ...),
-                            "nearest",
-                            "bilinear",
-                            "cubic",
-                            "cubicspline",
-                            "lanczos",
-                            "average",
-                            "mode",
+                        options=list(
+                            chain((("AUTO", ...), ("None", None)), GdalResamplingAlg.__members__)
                         ),
                         initial_index=0,
                         make_title=True,
