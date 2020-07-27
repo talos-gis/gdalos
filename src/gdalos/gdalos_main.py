@@ -307,7 +307,10 @@ def gdalos_trans(
     filename_is_ds = ds == filename
 
     try:
-        support_of_cog = int(gdal.VersionInfo()) >= 301000
+        gdal_version = int(gdal.VersionInfo())
+        support_of_cog = gdal_version >= 3_01_00_00
+        if verbose:
+            logger.info(f'gdal version: {gdal_version}; cog driver support: {support_of_cog}')
     except:
         support_of_cog = False
     if cog is ...:
