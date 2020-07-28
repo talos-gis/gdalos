@@ -272,7 +272,7 @@ def viewshed_calc_to_ds(vp_array,
                 temp_files.append(calc_cutline)
                 create_layer_from_geometries([ring], calc_cutline)
 
-                ds = gdalos_trans(ds, out_filename=d_path, #warp_CRS=pjstr_tgt_srs,
+                ds = gdalos_trans(ds, out_filename=d_path, #warp_srs=pjstr_tgt_srs,
                                   cutline=calc_cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
                 if not ds:
                     raise Exception('Viewshed calculation failed to cut')
@@ -333,7 +333,7 @@ def viewshed_calc_to_ds(vp_array,
             files[i] = None  # close calc input ds(s)
 
     if combined_post_process_needed:
-        ds = gdalos_trans(ds, out_filename=d_path, warp_CRS=pjstr_tgt_srs,
+        ds = gdalos_trans(ds, out_filename=d_path, warp_srs=pjstr_tgt_srs,
                           cutline=cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
 
         if return_ds:

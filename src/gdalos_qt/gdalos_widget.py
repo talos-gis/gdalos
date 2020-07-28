@@ -145,7 +145,7 @@ class GdalosWidget(FidgetConverter):
                     FidgetMinimal.template(
                         FidgetOptional.template(
                             CrsWidget.template(
-                                "warp_CRS",
+                                "warp_srs",
                                 make_plaintext=True,
                                 make_indicator=True,
                                 frame_style=QFrame.Box | QFrame.Plain,

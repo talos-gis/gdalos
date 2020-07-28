@@ -52,6 +52,6 @@ if __name__ == "__main__":
     if make_map:
         frame = 500
         full_extent = calc_extent(vp.oxy, vp.grid_range, vp.interval, vp.max_r, frame)
-        gdalos_trans(input_filename, extent=full_extent, warp_CRS=36, extent_in_4326=False, out_filename=srtm_filename)
+        gdalos_trans(input_filename, extent=full_extent, warp_srs=36, extent_in_4326=False, out_filename=srtm_filename)
 
     viewshed_run(vp, output_path, srtm_filename)

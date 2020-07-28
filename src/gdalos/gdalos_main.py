@@ -148,7 +148,7 @@ def print_progress_callback(print_progress):
 
 T = TypeVar("T")
 MaybeSequence = Union[T, Sequence[T]]
-Warp_crs_base = Union[str, int, Real]
+warp_srs_base = Union[str, int, Real]
 default_multi_byte_nodata_value = -32768
 
 
@@ -181,7 +181,7 @@ def gdalos_trans(
         src_win=None,
         cutline: Optional[Union[str, List[str]]] = None,
         out_res: Optional[Union[type(...), Real, Tuple[Real, Real]]] = None,  # None: gdalos decides; ...: gdal decides
-        warp_CRS: MaybeSequence[Warp_crs_base] = None,
+        warp_srs: MaybeSequence[warp_srs_base] = None,
         warp_scale: Union[Real, Tuple[Real, Real]] = 1,  # https://github.com/OSGeo/gdal/issues/2810
         warp_error_threshold: Optional[Real] = 0,  # [None|0]: [linear approximator|exact] coordinate reprojection
         ovr_type: Optional[OvrType] = OvrType.auto_select,
@@ -238,7 +238,7 @@ def gdalos_trans(
     key_list_arguments = [
         "filename",
         "extent",
-        "warp_CRS",
+        "warp_srs",
         # "cutline"
         "of",
         "expand_rgb",
@@ -394,14 +394,14 @@ def gdalos_trans(
     pjstr_src_srs = projdef.get_srs_pj_from_ds(ds)
     pjstr_tgt_srs = None
     tgt_zone = None
-    if warp_CRS is not None:
-        pjstr_tgt_srs, tgt_zone1 = projdef.parse_proj_string_and_zone(warp_CRS)
+    if warp_srs is not None:
+        pjstr_tgt_srs, tgt_zone1 = projdef.parse_proj_string_and_zone(warp_srs)
         tgt_datum, tgt_zone = projdef.get_datum_and_zone_from_projstring(pjstr_tgt_srs)
         if tgt_zone1:
             tgt_zone = tgt_zone1
         if projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs):
-            warp_CRS = None  # no warp is really needed here
-    if warp_CRS is not None:
+            warp_srs = None  # no warp is really needed here
+    if warp_srs is not None:
         extent_aligned = False
         if tgt_zone is not None and extent_in_4326:
             if tgt_zone != 0:
@@ -427,10 +427,10 @@ def gdalos_trans(
             gdalos_util.wkt_write_ogr(cutline_filename, cutline, of='GPKG')
         warp_options['cutlineDSName'] = cutline_filename
 
-    do_warp = warp_CRS is not None or cutline is not None
+    do_warp = warp_srs is not None or cutline is not None
 
     # region compression
-    resample_is_needed = warp_CRS is not None or (out_res not in [..., None])
+    resample_is_needed = warp_srs is not None or (out_res not in [..., None])
     org_comp = gdalos_util.get_image_structure_metadata(ds, "COMPRESSION")
     src_is_lossy = (org_comp is not None) and ("JPEG" in org_comp)
     if lossy in [None, ...]:
@@ -557,7 +557,7 @@ def gdalos_trans(
                 out_res = float(out_res)
             if not isinstance(out_res, Sequence):
                 out_res = [out_res, -out_res]
-        elif warp_CRS is not None:
+        elif warp_srs is not None:
             transform_src_tgt = projdef.get_transform(pjstr_src_srs, pjstr_tgt_srs)
             if transform_src_tgt is not None:
                 out_res = gdalos_extent.transform_resolution(transform_src_tgt, input_res, out_extent_in_src_srs)

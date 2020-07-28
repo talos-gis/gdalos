@@ -33,9 +33,9 @@ def gdalos_rasterize(
         None - use the extent of the input raster
         ... - use the extent of the input vector layer
         GeoRectangle - custom extent
-    warp_CRS: Real
+    out_res: Real
         output resolution (if None then auto select)
-    warp_CRS: str=None
+    warp_srs: str=None
         output srs
     overwrite: bool=True
         what to do if the output exists (fail of overwrite)
@@ -109,7 +109,7 @@ if __name__ == '__main__':
         input_raster,
         shp_filename_or_ds=shp_filename_or_ds, out_filename=out_filename,
         add=do_add, extent=out_extent,
-        warp_CRS=my_out_srs, out_res=out_res, overwrite=do_overwrite)
+        warp_srs=my_out_srs, out_res=out_res, overwrite=do_overwrite)
 
     if do_cog:
         if out_filename is None:
