@@ -179,9 +179,11 @@ def gdalos_trans(
         extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None,
         extent_in_4326: bool = True,
         src_win=None,
-        warp_CRS: MaybeSequence[Warp_crs_base] = None,
         cutline: Optional[Union[str, List[str]]] = None,
-        out_res: Union[Real, Tuple[Real, Real]] = None,
+        out_res: Optional[Union[type(...), Real, Tuple[Real, Real]]] = None,  # None: gdalos decides; ...: gdal decides
+        warp_CRS: MaybeSequence[Warp_crs_base] = None,
+        warp_scale: Union[Real, Tuple[Real, Real]] = 1,  # https://github.com/OSGeo/gdal/issues/2810
+        warp_error_threshold: Optional[Real] = 0,  # [None|0]: [linear approximator|exact] coordinate reprojection
         ovr_type: Optional[OvrType] = OvrType.auto_select,
         src_ovr: Optional[int] = None,
         keep_src_ovr_suffixes: bool = True,
@@ -224,8 +226,6 @@ def gdalos_trans(
         ovr_type = OvrType[ovr_type]
     elif ovr_type is ...:
         ovr_type = OvrType.auto_select
-    if isinstance(out_res, str):
-        out_res = float(out_res)
 
     if isinstance(partition, int):
         partition = [
@@ -412,7 +412,7 @@ def gdalos_trans(
                 else:
                     extent = zone_extent.intersect(extent)
                 extent_was_cropped = True
-            out_suffixes.append(projdef.get_canonic_name(tgt_datum, tgt_zone))
+        out_suffixes.append(projdef.get_canonic_name(tgt_datum, tgt_zone))
         if kind == RasterKind.dtm:
             common_options["outputType"] = gdal.GDT_Float32  # 'Float32'
         warp_options["dstSRS"] = pjstr_tgt_srs
@@ -430,7 +430,7 @@ def gdalos_trans(
     do_warp = warp_CRS is not None or cutline is not None
 
     # region compression
-    resample_is_needed = warp_CRS is not None or (out_res is not None)
+    resample_is_needed = warp_CRS is not None or (out_res not in [..., None])
     org_comp = gdalos_util.get_image_structure_metadata(ds, "COMPRESSION")
     src_is_lossy = (org_comp is not None) and ("JPEG" in org_comp)
     if lossy in [None, ...]:
@@ -541,22 +541,32 @@ def gdalos_trans(
         translate_options["srcWin"] = src_win
     # endregion
 
+    if do_warp and warp_error_threshold is not None:
+        warp_options['errorThreshold'] = warp_error_threshold
+    if do_warp and warp_scale:
+        if isinstance(warp_scale, str):
+            warp_scale = float(warp_scale)
+        if not isinstance(warp_scale, Sequence):
+            warp_scale = [warp_scale, warp_scale]
+        warp_options["warpOptions"] = ['XSCALE={}'.format(warp_scale[0]), 'YSCALE={}'.format(warp_scale[1])]
+
     # region out_res
-    if out_res is not None:
-        if not isinstance(out_res, Sequence):
-            out_res = [out_res, -out_res]
-    elif warp_CRS is not None:
-        transform_src_tgt = projdef.get_transform(pjstr_src_srs, pjstr_tgt_srs)
-        if transform_src_tgt is not None:
-            out_res = gdalos_extent.transform_resolution(
-                transform_src_tgt, input_res, out_extent_in_src_srs
-            )
-    if out_res is not None:
-        common_options["xRes"], common_options["yRes"] = out_res
-        warp_options["targetAlignedPixels"] = True
-        out_suffixes.append(str(out_res))
-    elif src_ovr >= 0:
-        out_res = input_res
+    if out_res is not ...:
+        if out_res is not None:
+            if isinstance(out_res, str):
+                out_res = float(out_res)
+            if not isinstance(out_res, Sequence):
+                out_res = [out_res, -out_res]
+        elif warp_CRS is not None:
+            transform_src_tgt = projdef.get_transform(pjstr_src_srs, pjstr_tgt_srs)
+            if transform_src_tgt is not None:
+                out_res = gdalos_extent.transform_resolution(transform_src_tgt, input_res, out_extent_in_src_srs)
+        if out_res is not None:
+            common_options["xRes"], common_options["yRes"] = out_res
+            warp_options["targetAlignedPixels"] = True
+            out_suffixes.append(str(out_res))
+        elif src_ovr >= 0:
+            out_res = input_res
     # endregion
 
     # region decide ovr_type
@@ -847,7 +857,7 @@ def gdalos_trans(
                         out_filename, ".ovr" * (ovr_index - src_ovr)
                     )
                     all_args_new["src_ovr"] = ovr_index
-                    if out_res is not None:
+                    if out_res not in [None, ...]:
                         res_factor = 2 ** (ovr_index - src_ovr)
                         all_args_new["out_res"] = [r * res_factor for r in out_res]
                     all_args_new["write_info"] = (

@@ -94,7 +94,7 @@ def get_canonic_name(datum, zone):
         res = "e50"
     else:
         res = "w84"
-    if zone != 0:
+    if zone:
         res = res + "u" + str(zone)
     else:
         res = res + "geo"
