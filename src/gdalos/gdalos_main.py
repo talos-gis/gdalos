@@ -30,8 +30,10 @@ class GdalOutputFormat(Enum):
 
 
 class OvrType(Enum):
-    # existing_auto or create_external_auto (by existance of src overviews)
+    # existing_reuse or create_external_auto (by existance of src overviews)
     auto_select = auto()
+    # work with existing overviews
+    existing_reuse = auto()
     # create_external_single or create_external_multi (by size)
     create_external_auto = auto()
     # create a single .ovr file with all the overviews
@@ -40,10 +42,6 @@ class OvrType(Enum):
     create_external_multi = auto()
     # create overviews inside the main dataset file
     create_internal = auto()
-    # existing_reuse or create cog
-    existing_auto = auto()
-    # work with existing overviews
-    existing_reuse = auto()
 
 
 # these are the common resamplers for translate, warp, addo, buildvrt.
@@ -163,6 +161,7 @@ def gdalos_trans(
         out_path_with_src_folders: str = True,
         overwrite=False,
         cog: Union[type(...), bool] = ...,
+        prefer_2_step_cog: Union[type(...), bool] = ...,
         write_info: bool = True,
         write_spec: bool = True,
         multi_file_as_vrt: bool = False,
@@ -223,6 +222,8 @@ def gdalos_trans(
         kind = RasterKind[kind]
     if isinstance(ovr_type, str):
         ovr_type = OvrType[ovr_type]
+    elif ovr_type is ...:
+        ovr_type = OvrType.auto_select
     if isinstance(out_res, str):
         out_res = float(out_res)
 
@@ -317,8 +318,11 @@ def gdalos_trans(
         cog = not filename_is_ds
     if ovr_type is None:
         cog = False
+    if return_ds is ...:
+        return_ds = of == GdalOutputFormat.mem
     if of is ... or of is None:
-        of = GdalOutputFormat.cog if (cog and support_of_cog) else GdalOutputFormat.gtiff
+        of = GdalOutputFormat.mem if return_ds else GdalOutputFormat.cog if (
+                    cog and support_of_cog) else GdalOutputFormat.gtiff
     elif isinstance(of, str):
         of = of.lower()
         try:
@@ -331,8 +335,6 @@ def gdalos_trans(
     if of == GdalOutputFormat.mem:
         write_info = False
         write_spec = False
-    if return_ds is ...:
-        return_ds = of == GdalOutputFormat.mem
     if filename_is_ds:
         input_ext = None
     else:
@@ -393,25 +395,24 @@ def gdalos_trans(
     pjstr_tgt_srs = None
     tgt_zone = None
     if warp_CRS is not None:
-        pjstr_tgt_srs, tgt_zone = projdef.parse_proj_string_and_zone(warp_CRS)
+        pjstr_tgt_srs, tgt_zone1 = projdef.parse_proj_string_and_zone(warp_CRS)
+        tgt_datum, tgt_zone = projdef.get_datum_and_zone_from_projstring(pjstr_tgt_srs)
+        if tgt_zone1:
+            tgt_zone = tgt_zone1
         if projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs):
             warp_CRS = None  # no warp is really needed here
-
-    do_warp = warp_CRS is not None or cutline is not None
     if warp_CRS is not None:
         extent_aligned = False
         if tgt_zone is not None and extent_in_4326:
             if tgt_zone != 0:
                 # cropping according to tgt_zone bounds
-                zone_extent = GeoRectangle.from_points(
-                    projdef.get_utm_zone_extent_points(tgt_zone)
-                )
+                zone_extent = GeoRectangle.from_points(projdef.get_utm_zone_extent_points(tgt_zone))
                 if extent is None:
                     extent = zone_extent
                 else:
                     extent = zone_extent.intersect(extent)
                 extent_was_cropped = True
-            out_suffixes.append(projdef.get_canonic_name(warp_CRS, tgt_zone))
+            out_suffixes.append(projdef.get_canonic_name(tgt_datum, tgt_zone))
         if kind == RasterKind.dtm:
             common_options["outputType"] = gdal.GDT_Float32  # 'Float32'
         warp_options["dstSRS"] = pjstr_tgt_srs
@@ -425,6 +426,8 @@ def gdalos_trans(
             temp_files.append(cutline_filename)
             gdalos_util.wkt_write_ogr(cutline_filename, cutline, of='GPKG')
         warp_options['cutlineDSName'] = cutline_filename
+
+    do_warp = warp_CRS is not None or cutline is not None
 
     # region compression
     resample_is_needed = warp_CRS is not None or (out_res is not None)
@@ -557,13 +560,6 @@ def gdalos_trans(
     # endregion
 
     # region decide ovr_type
-    if ovr_type in [..., OvrType.auto_select]:
-        if overview_count > 0 or (of == GdalOutputFormat.cog):
-            # if the raster has overviews then use them, otherwise create overviews
-            ovr_type = OvrType.existing_auto
-        else:
-            ovr_type = OvrType.create_external_auto
-
     trans_or_warp_is_needed = bool(
         do_warp
         or extent
@@ -573,11 +569,27 @@ def gdalos_trans(
         or translate_options
     )
 
-    if ovr_type == OvrType.existing_auto:
-        ovr_type = OvrType.existing_reuse
-    cog_2_steps = cog and \
-                  (of != GdalOutputFormat.cog) and \
-                  (trans_or_warp_is_needed or (ovr_type not in [None, OvrType.existing_reuse, OvrType.existing_auto]))
+    if ovr_type == OvrType.auto_select:
+        if overview_count > 0 or (of == GdalOutputFormat.cog):
+            # if the raster has overviews then use them, otherwise create overviews
+            ovr_type = OvrType.existing_reuse
+        else:
+            ovr_type = OvrType.create_external_auto
+
+    cog_2_steps = \
+        cog and \
+        (trans_or_warp_is_needed or
+        ovr_type in [OvrType.create_external_auto, OvrType.create_external_single,
+                     OvrType.create_external_multi, OvrType.create_internal])
+
+    if cog_2_steps:
+        if of == GdalOutputFormat.cog:
+            if prefer_2_step_cog is ...:
+                prefer_2_step_cog = trans_or_warp_is_needed and (ovr_type == OvrType.existing_reuse)
+            if prefer_2_step_cog:
+                of = GdalOutputFormat.gtiff
+            else:
+                cog_2_steps = False
     # endregion
 
     # region make out_filename
@@ -868,7 +880,7 @@ def gdalos_trans(
                             )
                     aux_files.extend(all_args_new["aux_files"])
                 write_info = write_info and cog
-            elif not filename_is_ds and ovr_type not in [None, OvrType.existing_reuse, OvrType.existing_auto]:
+            elif not filename_is_ds and ovr_type not in [None, OvrType.existing_reuse]:
                 # create overviews from dataset (internal or external)
                 ret_code = gdalos_ovr(
                     out_filename,
@@ -893,7 +905,7 @@ def gdalos_trans(
                 out_filename,
                 out_filename=final_filename,
                 cog=True,
-                ovr_type=OvrType.existing_auto,
+                ovr_type=OvrType.existing_reuse,
                 of=of,
                 outext=outext,
                 tiled=tiled,
@@ -1043,7 +1055,11 @@ def gdalos_ovr(
     if ovr_files is None:
         ovr_files = []
 
-    if ovr_type in [..., OvrType.auto_select, OvrType.create_external_auto]:
+    if isinstance(ovr_type, str):
+        ovr_type = OvrType[ovr_type]
+    elif ovr_type is ...:
+        ovr_type = OvrType.auto_select
+    if ovr_type in [OvrType.auto_select, OvrType.create_external_auto]:
         file_size = os.path.getsize(filename)
         max_ovr_gb = 1
         if file_size > max_ovr_gb * 1024 ** 3:

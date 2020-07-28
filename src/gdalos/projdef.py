@@ -1,3 +1,4 @@
+import math
 from numbers import Real
 
 from osgeo import osr, ogr
@@ -64,6 +65,28 @@ def get_zone_center(float_zone):
     elif zone_center > 180:
         zone_center -= 360
     return zone_center
+
+
+def get_zone_by_lon(xdeg: Real, allow_float_zone: bool = False):
+    if allow_float_zone:
+        return xdeg / 6 + 30.5
+    else:
+        zone = math.floor(xdeg / 6) + 31
+        if zone > 60:
+            zone = zone - 60  # Zones 1 - 30
+        return zone
+
+
+def get_datum_and_zone_from_projstring(pjstr):
+    srs: osr.SpatialReference = osr.SpatialReference()
+    srs.ImportFromProj4(pjstr)
+    datum = srs.GetAttrValue('DATUM')
+    central_meridian = srs.GetProjParm('central_meridian');
+    if central_meridian:
+        zone = get_zone_by_lon(central_meridian)
+    else:
+        zone = None
+    return datum, zone
 
 
 def get_canonic_name(datum, zone):
