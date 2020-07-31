@@ -110,7 +110,9 @@ class GeoRectangle:
         return ret
 
     @classmethod
-    def from_center_and_radius(cls, cent_x, cent_y, rad_x, rad_y):
+    def from_center_and_radius(cls, cent_x, cent_y, rad_x, rad_y=None):
+        if rad_y is None:
+            rad_y = rad_x
         x = cent_x - rad_x
         y = cent_y - rad_y
         w = rad_x * 2

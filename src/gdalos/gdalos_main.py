@@ -185,7 +185,7 @@ def gdalos_trans(
         warp_scale: Union[Real, Tuple[Real, Real]] = 1,  # https://github.com/OSGeo/gdal/issues/2810
         warp_error_threshold: Optional[Real] = 0,  # [None|0]: [linear approximator|exact] coordinate reprojection
         ovr_type: Optional[OvrType] = OvrType.auto_select,
-        src_ovr: Optional[int] = None,
+        src_ovr: Optional[Union[type(...), int]] = None,
         keep_src_ovr_suffixes: bool = True,
         dst_ovr_count: Optional[int] = None,
         dst_nodatavalue: Optional[Union[type(...), Real]] = None,  # None -> don't change; ... -> change only for DTM
@@ -365,22 +365,24 @@ def gdalos_trans(
     input_is_vrt = input_ext == ".vrt"
 
     # region decide which overviews to make
-    if src_ovr is None:
-        src_ovr = -1  # base raster
-    overview_count = gdalos_util.get_ovr_count(ds)
-    src_ovr_last = overview_count - 1
-    if dst_ovr_count is not None:
-        if dst_ovr_count >= 0:
-            src_ovr_last = min(overview_count - 1, src_ovr + dst_ovr_count)
-        else:
-            # in this case we'll reopen the ds with a new src_ovr, because we want only the last overviews
-            new_src_ovr = max(-1, overview_count + dst_ovr_count)
-            if new_src_ovr != src_ovr:
-                src_ovr = new_src_ovr
-                del ds
-                ds = gdalos_util.open_ds(
-                    filename, src_ovr=src_ovr, open_options=open_options, logger=logger
-                )
+    if src_ovr is not ...:
+        warp_options['overviewLevel'] = 'None'  # force gdal to use the selected src_ovr
+        if src_ovr is None:
+            src_ovr = -1  # base raster
+        overview_count = gdalos_util.get_ovr_count(ds)
+        src_ovr_last = overview_count - 1
+        if dst_ovr_count is not None:
+            if dst_ovr_count >= 0:
+                src_ovr_last = min(overview_count - 1, src_ovr + dst_ovr_count)
+            else:
+                # in this case we'll reopen the ds with a new src_ovr, because we want only the last overviews
+                new_src_ovr = max(-1, overview_count + dst_ovr_count)
+                if new_src_ovr != src_ovr:
+                    src_ovr = new_src_ovr
+                    del ds
+                    ds = gdalos_util.open_ds(
+                        filename, src_ovr=src_ovr, open_options=open_options, logger=logger
+                    )
     # endregion
 
     geo_transform = ds.GetGeoTransform()
@@ -560,12 +562,14 @@ def gdalos_trans(
         elif warp_srs is not None:
             transform_src_tgt = projdef.get_transform(pjstr_src_srs, pjstr_tgt_srs)
             if transform_src_tgt is not None:
+                #  out_res is None and warp
                 out_res = gdalos_extent.transform_resolution(transform_src_tgt, input_res, out_extent_in_src_srs)
         if out_res is not None:
             common_options["xRes"], common_options["yRes"] = out_res
             warp_options["targetAlignedPixels"] = True
             out_suffixes.append(str(out_res))
-        elif src_ovr >= 0:
+        elif src_ovr is not ...:
+            #  out_res is None and no warp
             out_res = input_res
     # endregion
 
@@ -580,11 +584,13 @@ def gdalos_trans(
     )
 
     if ovr_type == OvrType.auto_select:
-        if overview_count > 0 or (of == GdalOutputFormat.cog):
+        if (src_ovr is not ...) and overview_count > 0 or (of == GdalOutputFormat.cog):
             # if the raster has overviews then use them, otherwise create overviews
             ovr_type = OvrType.existing_reuse
         else:
             ovr_type = OvrType.create_external_auto
+    if (ovr_type == OvrType.existing_reuse) and (src_ovr is ...):
+        raise Exception('src_ovr = {} cannot be used with ovr_type == {}'.format(..., OvrType.existing_reuse))
 
     cog_2_steps = \
         cog and \
@@ -642,7 +648,7 @@ def gdalos_trans(
             out_filename = gdalos_util.concat_paths(
                 filename, out_suffixes + "." + outext
             )
-            if keep_src_ovr_suffixes:
+            if keep_src_ovr_suffixes and src_ovr is not ...:
                 out_filename = gdalos_util.concat_paths(
                     out_filename, ".ovr" * (src_ovr + 1)
                 )

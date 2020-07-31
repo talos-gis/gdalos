@@ -231,7 +231,8 @@ def make_ros_vrt(ros: List[RasterOverview], extent: GeoRectangle, vrt_filename: 
 
 def make_overviews_vrt(paths: List[Path], vrt_filename=None, **kwargs):
     if not paths:
-        raise Exception ('no files are given')
+        return None
+        # raise Exception ('no files are given')
     print(paths)
     if vrt_filename is None:
         first = paths[0]
@@ -252,7 +253,8 @@ def make_overviews_vrt_dir(path: Path, pattern='*.tif', **kwargs):
 if __name__ == '__main__':
     # parent_path = Path(r'd:\Maps.raw\osm')
     # parent_path = Path(r'd:\Maps\temp\x')
-    parent_path = Path(r'd:\Maps\w84geo\topo')
+    # parent_path = Path(r'd:\Maps\w84geo\topo')
+    parent_path = Path(r'd:\Maps.raw\osm')
     for path in parent_path.glob(pattern='*'):
         if path.is_dir():
             make_overviews_vrt_dir(path)

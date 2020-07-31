@@ -44,7 +44,7 @@ class OpenDS:
             logger=None,
     ):
         open_options = dict(open_options or dict())
-        if src_ovr is not None and src_ovr >= 0:
+        if src_ovr not in[..., None] and src_ovr >= 0:
             open_options["OVERVIEW_LEVEL"] = src_ovr
         if logger is not None:
             s = 'openning file: "{}"'.format(filename)
