@@ -155,6 +155,7 @@ default_multi_byte_nodata_value = -32768
 @with_param_dict("all_args")
 def gdalos_trans(
         filename: MaybeSequence[str],
+        filenames_expand: Union[type(...), bool] = ...,
         out_filename: str = None,
         out_path: str = None,
         return_ds: Union[type(...), bool] = ...,
@@ -178,6 +179,7 @@ def gdalos_trans(
         warp_options: dict = None,
         extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None,
         extent_in_4326: bool = True,
+        extent_crop_to_minimal: bool = True,
         src_win=None,
         cutline: Optional[Union[str, List[str]]] = None,
         out_res: Optional[Union[type(...), Real, Tuple[Real, Real]]] = None,  # None: gdalos decides; ...: gdal decides
@@ -246,11 +248,13 @@ def gdalos_trans(
     ]
     for key in key_list_arguments:
         val = all_args[key]
-        val = gdalos_util.flatten_and_expand_file_list(val, do_expand_glob=key == "filename")
+        do_expand_glob = filenames_expand if (key == "filename") else False
+        val = gdalos_util.flatten_and_expand_file_list(val, do_expand_glob=do_expand_glob)
         if key == "filename":
             if gdalos_util.is_list_like(val) and multi_file_as_vrt:
                 vrt_path = gdalos_vrt(
                     val,
+                    filenames_expand=False,
                     resampling_alg=resampling_alg,
                     kind=kind,
                     overwrite=overwrite,
@@ -322,7 +326,7 @@ def gdalos_trans(
         return_ds = of == GdalOutputFormat.mem
     if of is ... or of is None:
         of = GdalOutputFormat.mem if return_ds else GdalOutputFormat.cog if (
-                    cog and support_of_cog) else GdalOutputFormat.gtiff
+                cog and support_of_cog) else GdalOutputFormat.gtiff
     elif isinstance(of, str):
         of = of.lower()
         try:
@@ -411,8 +415,8 @@ def gdalos_trans(
                 zone_extent = GeoRectangle.from_points(projdef.get_utm_zone_extent_points(tgt_zone))
                 if extent is None:
                     extent = zone_extent
-                else:
-                    extent = zone_extent.intersect(extent)
+                elif extent_crop_to_minimal:
+                    extent = extent.intersect(zone_extent)
                 extent_was_cropped = True
         out_suffixes.append(projdef.get_canonic_name(tgt_datum, tgt_zone))
         if kind == RasterKind.dtm:
@@ -503,7 +507,7 @@ def gdalos_trans(
             raise Exception(f"no input extent: {filename} [{org_extent_in_tgt_srs}]")
 
         if extent_in_4326:
-            if src_srs_is_4326:
+            if extent_crop_to_minimal and src_srs_is_4326:
                 # we better intersect in 4326 then in a projected srs
                 # because the projected srs bounds might be wider then the 'valid' zone bounds
                 extent = extent.intersect(org_extent_in_src_srs)
@@ -511,7 +515,8 @@ def gdalos_trans(
             out_extent_in_tgt_srs = gdalos_extent.translate_extent(extent, transform)
         else:
             out_extent_in_tgt_srs = extent
-        out_extent_in_tgt_srs = out_extent_in_tgt_srs.intersect(org_extent_in_tgt_srs)
+        if extent_crop_to_minimal:
+            out_extent_in_tgt_srs = out_extent_in_tgt_srs.intersect(org_extent_in_tgt_srs)
 
         if out_extent_in_tgt_srs != org_extent_in_tgt_srs:
             extent_was_cropped = True
@@ -536,7 +541,8 @@ def gdalos_trans(
 
         transform = projdef.get_transform(pjstr_4326, pjstr_src_srs)
         out_extent_in_src_srs = gdalos_extent.translate_extent(extent, transform)
-        out_extent_in_src_srs = out_extent_in_src_srs.intersect(org_extent_in_src_srs)
+        if extent_crop_to_minimal:
+            out_extent_in_src_srs = out_extent_in_src_srs.intersect(org_extent_in_src_srs)
         if out_extent_in_src_srs.is_empty():
             raise Exception
     elif src_win is not None:
@@ -595,8 +601,8 @@ def gdalos_trans(
     cog_2_steps = \
         cog and \
         (trans_or_warp_is_needed or
-        ovr_type in [OvrType.create_external_auto, OvrType.create_external_single,
-                     OvrType.create_external_multi, OvrType.create_internal])
+         ovr_type in [OvrType.create_external_auto, OvrType.create_external_single,
+                      OvrType.create_external_multi, OvrType.create_internal])
 
     if cog_2_steps:
         if of == GdalOutputFormat.cog:
@@ -726,7 +732,7 @@ def gdalos_trans(
                     raise Exception(
                         "this mode is not supported: warp RGBA raster with JPEG output. "
                         "You could do it in two steps: "
-                        "1. warp with lossless ouput, "
+                        "1. warp with lossless output, "
                         "2. save as jpeg"
                     )
                 else:
@@ -1179,6 +1185,7 @@ def gdalos_info(filename_or_ds, overwrite=True, logger=None):
 
 def gdalos_vrt(
         filenames: MaybeSequence,
+        filenames_expand: Union[type(...), bool] = ...,
         vrt_path=None,
         kind=None,
         resampling_alg=...,
@@ -1186,7 +1193,7 @@ def gdalos_vrt(
         logger=None,
 ):
     if gdalos_util.is_list_like(filenames):
-        flatten_filenames = gdalos_util.flatten_and_expand_file_list(filenames)
+        flatten_filenames = gdalos_util.flatten_and_expand_file_list(filenames, do_expand_glob=filenames_expand)
     else:
         flatten_filenames = [filenames]
     flatten_filenames = [str(f) for f in flatten_filenames]

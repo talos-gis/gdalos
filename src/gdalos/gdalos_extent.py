@@ -164,7 +164,8 @@ def get_vec_extent(lyr):
     return result
 
 
-def get_extent(ds) -> GeoRectangle:
+def get_extent(filename_or_ds) -> GeoRectangle:
+    ds = gdalos_util.open_ds(filename_or_ds)
     gt, size = get_geotransform_and_size(ds)
     return GeoRectangle.from_geotransform_and_size(gt, size)
 

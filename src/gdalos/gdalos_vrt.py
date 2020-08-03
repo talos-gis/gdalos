@@ -233,6 +233,7 @@ def make_overviews_vrt(paths: List[Path], vrt_filename=None, **kwargs):
     if not paths:
         return None
         # raise Exception ('no files are given')
+    paths = [Path(path) for path in paths]
     print(paths)
     if vrt_filename is None:
         first = paths[0]
@@ -245,6 +246,7 @@ def make_overviews_vrt(paths: List[Path], vrt_filename=None, **kwargs):
 
 
 def make_overviews_vrt_dir(path: Path, pattern='*.tif', **kwargs):
+    path = Path(path)
     paths = list(path.glob(pattern=pattern))
     vrt_filename = path.with_suffix('.vrt')
     return make_overviews_vrt(paths=paths, vrt_filename=vrt_filename, **kwargs)

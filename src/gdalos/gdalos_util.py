@@ -1,7 +1,7 @@
 import glob
 import os
 from pathlib import Path
-from typing import Iterator, Sequence
+from typing import Iterator, Sequence, Union
 
 import gdal, ogr, osr
 
@@ -137,15 +137,19 @@ def expand_txt(filename):
         return f.read().splitlines()
 
 
-def flatten_and_expand_file_list(l, do_expand_txt=True, do_expand_glob=True):
+def check_expand_glob(val, filenames_expand):
+    return (filenames_expand is True) or ((filenames_expand is ...) and ('*' in str(val) or '?' in str(val)))
+
+
+def flatten_and_expand_file_list(l, do_expand_txt=True, do_expand_glob: Union[type(...), bool] = ...):
     if is_path_like(l):
         item = str(l).strip()
-        if do_expand_glob:
-            item1 = glob.glob(str(item).strip())
+        if check_expand_glob(item, do_expand_glob):
+            item1 = glob.glob(item)
             if len(item1) == 1:
                 item = item1[0]
             elif len(item1) > 1:
-                return flatten_and_expand_file_list(item1)
+                return flatten_and_expand_file_list(item1, do_expand_txt, do_expand_glob)
 
         if (
             do_expand_txt
@@ -153,7 +157,7 @@ def flatten_and_expand_file_list(l, do_expand_txt=True, do_expand_glob=True):
             and not os.path.isdir(item)
             and Path(item).suffix.lower() == ".txt"
         ):
-            return flatten_and_expand_file_list(expand_txt(item))
+            return flatten_and_expand_file_list(expand_txt(item), do_expand_txt, do_expand_glob)
         else:
             return item.strip()
 
@@ -161,7 +165,7 @@ def flatten_and_expand_file_list(l, do_expand_txt=True, do_expand_glob=True):
         return l
     flat_list = []
     for item in l:
-        item1 = flatten_and_expand_file_list(item)
+        item1 = flatten_and_expand_file_list(item, do_expand_txt, do_expand_glob)
         if is_list_like(item1):
             flat_list.extend(item1)
         else:
