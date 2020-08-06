@@ -165,6 +165,14 @@ class ColorPalette:
                 fp.write('{} {}\n'.format(key, cc))
         return color_filename
 
+    def to_mem_buffer(self):
+        s = ''
+        for key, color in self.pal.items():
+            cc = self.color_to_cc(color)
+            cc = ' '.join(str(c) for c in cc)
+            s = s + '{} {}\n'.format(key, cc)
+        return s
+
     def read_xml(self, xml_filename, type=None, tag_name=None):
         if tag_name is None:
             if type is None:
@@ -271,6 +279,35 @@ class ColorPalette:
         if isinstance(col, str):
             col = str(col).strip('$')
         return int(col, 16)
+
+    @staticmethod
+    def from_color_list(color_list):
+        res = ColorPalette()
+        res.pal.clear()
+        res._all_numeric = True
+        for key, color in enumerate(color_list):
+            res.pal[key] = color
+        return res
+
+    @staticmethod
+    def from_mcd(mcd_color_list):
+        color_list = [int(color.lstrip('#'), 16) for color in mcd_color_list]
+        return ColorPalette.from_color_list(color_list)
+
+    @staticmethod
+    def get_css4_palette():
+        from matplotlib._color_data import CSS4_COLORS as color_dict
+        return ColorPalette.from_mcd(color_dict.values())
+
+    @staticmethod
+    def get_tableau_palette():
+        from matplotlib._color_data import TABLEAU_COLORS as color_dict
+        return ColorPalette.from_mcd(color_dict.values())
+
+    @staticmethod
+    def get_xkcd_palette():
+        from matplotlib._color_data import XKCD_COLORS as color_dict
+        return ColorPalette.from_mcd(color_dict.values())
 
 
 def xml_to_color_file(xml_filename: Path, **kwargs) -> Path:

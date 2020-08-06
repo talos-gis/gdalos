@@ -13,56 +13,11 @@ from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef
 from gdalos.__util__ import with_param_dict
 from gdalos.rectangle import GeoRectangle
 from gdalos_data.__data__ import __version__
+from gdalos.gdalos_types import GdalOutputFormat, OvrType, enum_to_str, GdalResamplingAlg
 
 
 def print_time_now(logger):
     logger.info("Current time: {}".format(datetime.datetime.now()))
-
-
-def enum_to_str(enum_or_str):
-    return enum_or_str.name if isinstance(enum_or_str, Enum) else str(enum_or_str)
-
-
-class GdalOutputFormat(Enum):
-    gtiff = auto()
-    cog = auto()
-    mem = auto()
-
-
-class OvrType(Enum):
-    # existing_reuse or create_external_auto (by existance of src overviews)
-    auto_select = auto()
-    # work with existing overviews
-    existing_reuse = auto()
-    # create_external_single or create_external_multi (by size)
-    create_external_auto = auto()
-    # create a single .ovr file with all the overviews
-    create_external_single = auto()
-    # create one ovr file per overview: .ovr, .ovr.ovr, .ovr.ovr.orv ....
-    create_external_multi = auto()
-    # create overviews inside the main dataset file
-    create_internal = auto()
-
-
-# these are the common resamplers for translate, warp, addo, buildvrt.
-# there are some specific resamplers for warp and addo
-class GdalResamplingAlg(Enum):
-    # nearest applies a nearest neighbour (simple sampling) resampler. for warp it's called 'near'
-    nearest = auto()
-    # average computes the average of all non-NODATA contributing pixels.
-    # Starting with GDAL 3.1, this is a weighted average taking into account properly
-    # the weight of source pixels not contributing fully to the target pixel.
-    average = auto()
-    # bilinear applies a bilinear convolution kernel.
-    bilinear = auto()
-    # cubic applies a cubic convolution kernel.
-    cubic = auto()
-    # cubicspline applies a B-Spline convolution kernel.
-    cubicspline = auto()
-    # lanczos applies a Lanczos windowed sinc convolution kernel.
-    lanczos = auto()
-    # mode selects the value which appears most often of all the sampled points.
-    mode = auto()
 
 
 class RasterKind(Enum):
@@ -167,7 +122,7 @@ def gdalos_trans(
         write_spec: bool = True,
         multi_file_as_vrt: bool = False,
         of: MaybeSequence[Union[type(...), GdalOutputFormat, str]] = ...,
-        outext: str = "tif",
+        outext: str = ...,
         tiled: bool = True,
         block_size: int = ...,
         big_tiff: str = ...,
@@ -303,9 +258,13 @@ def gdalos_trans(
     all_args["logger"] = logger
     verbose = logger is not None and logger is not ...
     if verbose:
+        print_time_now(logger)
         logger.info(f'gdal version: {gdal.__version__}')
         logger.info(all_args)
     # endregion
+
+    if src_ovr not in [..., None]:
+        src_ovr = gdalos_util.get_src_ovr(filename, src_ovr)
 
     ds = gdalos_util.open_ds(filename, src_ovr=src_ovr, open_options=open_options, logger=logger)
     # filename_is_ds = not isinstance(filename, (str, Path))
@@ -377,7 +336,7 @@ def gdalos_trans(
         src_ovr_last = overview_count - 1
         if dst_ovr_count is not None:
             if dst_ovr_count >= 0:
-                src_ovr_last = min(overview_count - 1, src_ovr + dst_ovr_count)
+                src_ovr_last = src_ovr + min(overview_count, dst_ovr_count) - 1
             else:
                 # in this case we'll reopen the ds with a new src_ovr, because we want only the last overviews
                 new_src_ovr = max(-1, overview_count + dst_ovr_count)
@@ -615,6 +574,10 @@ def gdalos_trans(
     # endregion
 
     # region make out_filename
+    if outext in [..., None]:
+        outext = gdalos_util.get_ext_by_of(of)
+    elif not outext.startswith('.'):
+        outext = '.' + outext
     auto_out_filename = out_filename is None and of != GdalOutputFormat.mem
     if auto_out_filename:
         if filename_is_ds:
@@ -645,14 +608,14 @@ def gdalos_trans(
             if partition is not None:
                 out_suffixes.append("part_x[{},{}]_y[{},{}]".format(*partition.xwyh))
             if not out_suffixes:
-                if "." + outext.lower() == input_ext:
+                if outext.lower() == input_ext:
                     out_suffixes.append("new")
             if out_suffixes:
                 out_suffixes = "." + ".".join(out_suffixes)
             else:
                 out_suffixes = ""
             out_filename = gdalos_util.concat_paths(
-                filename, out_suffixes + "." + outext
+                filename, out_suffixes + outext
             )
             if keep_src_ovr_suffixes and src_ovr is not ...:
                 out_filename = gdalos_util.concat_paths(
@@ -675,13 +638,13 @@ def gdalos_trans(
 
     if cog:
         if auto_out_filename:
-            final_filename = out_filename.with_suffix(".cog" + "." + outext)
+            final_filename = out_filename.with_suffix(".cog" + outext)
             if not cog_2_steps:
                 out_filename = final_filename
         else:
             final_filename = out_filename
             if cog_2_steps:
-                out_filename = out_filename.with_suffix(".temp" + "." + outext)
+                out_filename = out_filename.with_suffix(".temp" + outext)
     else:
         final_filename = out_filename
     # endregion

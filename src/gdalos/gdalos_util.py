@@ -2,6 +2,7 @@ import glob
 import os
 from pathlib import Path
 from typing import Iterator, Sequence, Union
+from gdalos import gdalos_types
 
 import gdal, ogr, osr
 
@@ -9,6 +10,16 @@ import gdal, ogr, osr
 def open_ds(filename_or_ds, *args, **kwargs):
     ods = OpenDS(filename_or_ds, *args, **kwargs)
     return ods.__enter__()
+
+
+def get_src_ovr(filename_or_ds, src_ovr):
+    if src_ovr in [..., None]:
+        src_ovr = -1
+    if src_ovr < -1:
+        # -2 is the last overview; -3 is the one before the last
+        overview_count = get_ovr_count(open_ds(filename_or_ds))
+        src_ovr = max(-1, overview_count + src_ovr + 1)
+    return src_ovr
 
 
 class OpenDS:
@@ -44,7 +55,8 @@ class OpenDS:
             logger=None,
     ):
         open_options = dict(open_options or dict())
-        if src_ovr not in[..., None] and src_ovr >= 0:
+        src_ovr = get_src_ovr(filename, src_ovr)
+        if src_ovr >= 0:
             open_options["OVERVIEW_LEVEL"] = src_ovr
         if logger is not None:
             s = 'openning file: "{}"'.format(filename)
@@ -126,7 +138,7 @@ def get_image_structure_metadata(filename_or_ds, key: str, default=None):
             return default
         for metadata in metadata:
             if metadata.startswith(key):
-                return metadata[len(key) :]
+                return metadata[len(key):]
         return default
 
 
@@ -152,10 +164,10 @@ def flatten_and_expand_file_list(l, do_expand_txt=True, do_expand_glob: Union[ty
                 return flatten_and_expand_file_list(item1, do_expand_txt, do_expand_glob)
 
         if (
-            do_expand_txt
-            and os.path.isfile(item)
-            and not os.path.isdir(item)
-            and Path(item).suffix.lower() == ".txt"
+                do_expand_txt
+                and os.path.isfile(item)
+                and not os.path.isdir(item)
+                and Path(item).suffix.lower() == ".txt"
         ):
             return flatten_and_expand_file_list(expand_txt(item), do_expand_txt, do_expand_glob)
         else:
@@ -203,7 +215,46 @@ def wkt_write_ogr(path, wkt_list, of='ESRI Shapefile', epsg=4326):
 
 
 def get_ext_by_of(of: str):
-    ext = of.lower()
-    if ext == 'gtiff':
+    ext = gdalos_types.enum_to_str(of).lower()
+    if ext in ['gtiff', 'cog', 'mem']:
         ext = 'tif'
-    return '.'+ext
+    return '.' + ext
+
+
+def get_creation_options(creation_options=None,
+                         of: str = 'gtiff',
+                         sparse_ok: bool = True,
+                         tiled: bool = True,
+                         block_size: int = ...,
+                         big_tiff: str = ...,
+                         comp="DEFLATE"):
+    creation_options = dict(creation_options or dict())
+    no_yes = ("NO", "YES")
+    creation_options["SPARSE_OK"] = no_yes[bool(sparse_ok)]
+
+    of = of.lower()
+    if of in ['gtiff', 'cog']:
+        if not big_tiff:
+            big_tiff = False
+        elif big_tiff is ...:
+            big_tiff = "IF_SAFER"
+        elif not isinstance(big_tiff, str):
+            big_tiff = no_yes[bool(big_tiff)]
+
+        creation_options["BIGTIFF"] = big_tiff
+        creation_options["COMPRESS"] = comp
+
+    tiled = tiled.upper() != no_yes[False] if isinstance(tiled, str) else bool(tiled)
+    creation_options["TILED"] = no_yes[tiled]
+    if tiled and block_size is not ...:
+        if of == 'gtiff':
+            creation_options["BLOCKXSIZE"] = block_size
+            creation_options["BLOCKYSIZE"] = block_size
+        elif of == 'cog':
+            creation_options["BLOCKSIZE"] = block_size
+
+    creation_options_list = []
+    for k, v in creation_options.items():
+        creation_options_list.append("{}={}".format(k, v))
+
+    return creation_options_list

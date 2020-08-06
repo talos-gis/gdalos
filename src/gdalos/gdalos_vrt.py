@@ -252,12 +252,15 @@ def make_overviews_vrt_dir(path: Path, pattern='*.tif', **kwargs):
     return make_overviews_vrt(paths=paths, vrt_filename=vrt_filename, **kwargs)
 
 
-if __name__ == '__main__':
-    # parent_path = Path(r'd:\Maps.raw\osm')
-    # parent_path = Path(r'd:\Maps\temp\x')
-    # parent_path = Path(r'd:\Maps\w84geo\topo')
-    parent_path = Path(r'd:\Maps.raw\osm')
-    for path in parent_path.glob(pattern='*'):
+def make_overviews_vrt_super_dir(super_path: Path, **kwargs):
+    for path in Path(super_path).glob(pattern='*'):
         if path.is_dir():
-            make_overviews_vrt_dir(path)
+            make_overviews_vrt_dir(path, **kwargs)
+
+
+if __name__ == '__main__':
+    # make_overviews_vrt_super_dir(r'd:\Maps.raw\osm')
+    # make_overviews_vrt_super_dir(r'd:\Maps\temp\x')
+    # make_overviews_vrt_super_dir(r'd:\Maps\w84geo\topo')
+    # make_overviews_vrt_super_dir(r'd:\Maps.raw\osm')
     print('done!')
