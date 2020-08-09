@@ -12,14 +12,14 @@ def open_ds(filename_or_ds, *args, **kwargs):
     return ods.__enter__()
 
 
-def get_src_ovr(filename_or_ds, src_ovr):
-    if src_ovr in [..., None]:
-        src_ovr = -1
-    if src_ovr < -1:
-        # -2 is the last overview; -3 is the one before the last
+def get_ovr_idx(filename_or_ds, ovr_idx):
+    if ovr_idx in [..., None]:
+        ovr_idx = 0
+    if ovr_idx < 0:
+        # -1 is the last overview; -2 is the one before the last
         overview_count = get_ovr_count(open_ds(filename_or_ds))
-        src_ovr = max(-1, overview_count + src_ovr + 1)
-    return src_ovr
+        ovr_idx = max(0, overview_count + ovr_idx + 1)
+    return ovr_idx
 
 
 class OpenDS:
@@ -50,14 +50,14 @@ class OpenDS:
     def _open_ds(
             filename,
             access_mode=gdal.GA_ReadOnly,
-            src_ovr: int = None,
+            ovr_idx: int = None,
             open_options: dict = None,
             logger=None,
     ):
         open_options = dict(open_options or dict())
-        src_ovr = get_src_ovr(filename, src_ovr)
-        if src_ovr >= 0:
-            open_options["OVERVIEW_LEVEL"] = src_ovr
+        ovr_idx = get_ovr_idx(filename, ovr_idx)
+        if ovr_idx > 0:
+            open_options["OVERVIEW_LEVEL"] = ovr_idx - 1  # gdal overview 0 is the first overview (after the base layer)
         if logger is not None:
             s = 'openning file: "{}"'.format(filename)
             if open_options:

@@ -20,11 +20,11 @@ class AutoRepr(object):
 
 
 class RasterOverview(AutoRepr):
-    def __init__(self, path: Path, ovr=-1):
+    def __init__(self, path: Path, ovr_idx=0):
         self.path = path
-        if ovr is None:
-            ovr = -1
-        self.ovr = ovr
+        if ovr_idx is None:
+            ovr_idx = 0
+        self.ovr_idx = ovr_idx
         ds = self.get_ds()
         # self.bnd = self.ds.GetRasterBand(1)
         # self.ovr_count = self.bnd.GetOverviewCount()
@@ -41,7 +41,7 @@ class RasterOverview(AutoRepr):
         return level
 
     def get_ds(self):
-        return open_ds(self.path, src_ovr=self.ovr)
+        return open_ds(self.path, ovr_idx=self.ovr_idx)
 
     # def __repr__(self):
     #     return str([str(ovr) for ovr in self.o])
@@ -54,7 +54,7 @@ class RasterOverviewList(AutoRepr):
             bnd = ds.GetRasterBand(1)
             ovr_count = bnd.GetOverviewCount()
         self.o = []
-        for ovr in range(-1, ovr_count):
+        for ovr in range(0, ovr_count+1):
             self.o.append(RasterOverview(self.path, ovr))
 
     def __repr__(self):
@@ -124,11 +124,11 @@ def make_vrt_with_multiple_extent_overviews_from_raster_overview_list(ros: List[
         # if ro.ovr < 0:
         #     continue
         print('{}: {}'.format(idx, ro.path))
-        single_src_vrt = ro.path.with_suffix('.{}.vrt'.format(ro.ovr))
+        single_src_vrt = ro.path.with_suffix('.{}.vrt'.format(ro.ovr_idx))
         # single_src_vrt = (ro.path.with_name('vrt') / ro.path.name).with_suffix('.{}.vrt'.format(ro.ovr))
         make_ros_vrt([ro], extent, single_src_vrt)
         ro.path = single_src_vrt
-        ro.ovr = -1
+        ro.ovr_idx = 0
     return make_ros_vrt_overviews(ros, extent, vrt_filename, **kwargs)
 
 
@@ -178,18 +178,18 @@ def vrt_fix_openoptions(ros: List[RasterOverview], filename_in: Path, filename_o
                 #   <OpenOptions>
                 #       <OOI key="OVERVIEW_LEVEL">6</OOI>
                 #   </OpenOptions>
-                ovr = ...
+                ovr_idx = ...
                 for ro in ros:
                     if relative:
                         source_filename = (dir_name / source_filename).resolve()
                     if ro.path == source_filename:
-                        ovr = ro.ovr
-                        if ovr >= 0:
+                        ovr_idx = ro.ovr_idx
+                        if ovr_idx > 0:
                             f2.write(
                                 '\t<OpenOptions>\n\t\t<OOI key="OVERVIEW_LEVEL">{}</OOI>\n\t</OpenOptions>\n'.format(
-                                    ovr))
+                                    ovr_idx-1))
                         break
-                if ovr is ...:
+                if ovr_idx is ...:
                     raise Exception('SourceFilename: {} not found'.format(source_filename))
 
 

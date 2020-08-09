@@ -69,9 +69,9 @@ class GdalosWidget(FidgetConverter):
                 "overviews",
                 [
                     (
-                        "src_ovr",
+                        "ovr_idx",
                         FidgetOptional.template(
-                            FidgetInt.template("source ovr", placeholder=False),
+                            FidgetInt.template("source overview index", placeholder=False),
                             make_title=True,
                         ),
                     ),
