@@ -44,4 +44,5 @@ class GdalResamplingAlg(Enum):
 class GdalOutputFormat(Enum):
     gtiff = auto()
     cog = auto()
+    gpkg = auto()
     mem = auto()

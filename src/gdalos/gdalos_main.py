@@ -684,7 +684,9 @@ def gdalos_trans(
     if not skipped:
         # region jpeg
         if jpeg_compression:
-            if of != GdalOutputFormat.cog:
+            if of == GdalOutputFormat.gpkg:
+                creation_options["TILE_FORMAT"] = "JPEG"
+            elif of != GdalOutputFormat.cog:
                 creation_options["PHOTOMETRIC"] = "YCBCR"
             if quality and (quality is not ...):
                 creation_options["JPEG_QUALITY" if of == GdalOutputFormat.gtiff else 'QUALITY'] = str(quality)

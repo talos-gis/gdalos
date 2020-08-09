@@ -124,8 +124,8 @@ def make_vrt_with_multiple_extent_overviews_from_raster_overview_list(ros: List[
         # if ro.ovr < 0:
         #     continue
         print('{}: {}'.format(idx, ro.path))
-        # single_src_vrt = ro.path.with_suffix('.{}.vrt'.format(ro.ovr))
-        single_src_vrt = (ro.path.with_name('vrt') / ro.path.name).with_suffix('.{}.vrt'.format(ro.ovr))
+        single_src_vrt = ro.path.with_suffix('.{}.vrt'.format(ro.ovr))
+        # single_src_vrt = (ro.path.with_name('vrt') / ro.path.name).with_suffix('.{}.vrt'.format(ro.ovr))
         make_ros_vrt([ro], extent, single_src_vrt)
         ro.path = single_src_vrt
         ro.ovr = -1
@@ -155,6 +155,7 @@ def vrt_add_overviews(ros: List[RasterOverview], filename_in: Path, filename_out
                     for ro in ros:
                         ovr_filename = ro.path
                         ovr_path = (dir_name / Path(ovr_filename)).resolve()
+                        ovr_filename = os.path.relpath(ovr_path, dir_name)
                         if ovr_path.is_file():
                             f2.write('\t<Overview>\n')
                             f2.write('\t\t<SourceFilename relativeToVRT="1">{}</SourceFilename>\n'.format(str(ovr_filename)))
@@ -173,16 +174,15 @@ def vrt_fix_openoptions(ros: List[RasterOverview], filename_in: Path, filename_o
             m = p.search(line)
             if m:
                 relative = m.group(1)
-                SourceFilename = m.group(2)
-
+                source_filename = m.group(2)
                 #   <OpenOptions>
                 #       <OOI key="OVERVIEW_LEVEL">6</OOI>
                 #   </OpenOptions>
                 ovr = ...
                 for ro in ros:
                     if relative:
-                        SourceFilename = (dir_name / SourceFilename).resolve()
-                    if ro.path == SourceFilename:
+                        source_filename = (dir_name / source_filename).resolve()
+                    if ro.path == source_filename:
                         ovr = ro.ovr
                         if ovr >= 0:
                             f2.write(
@@ -190,7 +190,7 @@ def vrt_fix_openoptions(ros: List[RasterOverview], filename_in: Path, filename_o
                                     ovr))
                         break
                 if ovr is ...:
-                    raise Exception('SourceFilename: {} not found'.format(SourceFilename))
+                    raise Exception('SourceFilename: {} not found'.format(source_filename))
 
 
 def make_ros_vrt_overviews(ros: List[RasterOverview], extent: GeoRectangle, vrt_filename: Path, add_overviews=True, return_ds=False):
@@ -214,6 +214,8 @@ def make_ros_vrt_overviews(ros: List[RasterOverview], extent: GeoRectangle, vrt_
 
 def make_ros_vrt(ros: List[RasterOverview], extent: GeoRectangle, vrt_filename: Path, fix_open_options=True):
     options = gdal.BuildVRTOptions(outputBounds=(extent.min_x, extent.min_y, extent.max_x, extent.max_y))
+    # dir_name = Path(os.path.dirname(str(vrt_filename)))
+    # ds_list = [os.path.relpath(ro.path, dir_name) for ro in ros]
     ds_list = [ro.get_ds() for ro in ros]
     os.makedirs(os.path.dirname(str(vrt_filename)), exist_ok=True)
     vrt_ds = gdal.BuildVRT(str(vrt_filename), ds_list, options=options)
