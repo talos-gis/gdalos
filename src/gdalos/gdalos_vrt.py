@@ -247,11 +247,20 @@ def make_overviews_vrt(paths: List[Path], vrt_filename=None, **kwargs):
     return make_vrt_with_multiple_extent_overviews_from_raster_overview_list(o, vrt_filename=vrt_filename, **kwargs)
 
 
-def make_overviews_vrt_dir(path: Path, pattern='*.tif', **kwargs):
+def make_overviews_vrt_dir(path: Path, pattern='*.tif', outside=True, inside=True, **kwargs):
     path = Path(path)
     paths = list(path.glob(pattern=pattern))
-    vrt_filename = path.with_suffix('.vrt')
-    return make_overviews_vrt(paths=paths, vrt_filename=vrt_filename, **kwargs)
+
+    result = None
+    vrt_filenames=[]
+    if outside:
+        vrt_filenames.append(path.with_suffix('.vrt'))
+    if inside:
+        dir_name = Path(os.path.basename(str(path)))
+        vrt_filenames.append(path / dir_name.with_suffix('.vrt'))
+    for vrt_filename in vrt_filenames:
+        result = make_overviews_vrt(paths=paths, vrt_filename=vrt_filename, **kwargs)
+    return result
 
 
 def make_overviews_vrt_super_dir(super_path: Path, **kwargs):
