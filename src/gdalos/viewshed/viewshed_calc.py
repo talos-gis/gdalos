@@ -90,7 +90,7 @@ def viewshed_calc_to_ds(vp_array,
                         in_coords_crs_pj=None, out_crs=None,
                         color_palette=None,
                         discrete_mode:DiscreteMode=DiscreteMode.interp,
-                        bi=1, co=None,
+                        bi=1, ovr_idx=0, co=None,
                         vp_slice=None,
                         backend:ViewshedBackend=None,
                         temp_files=None,
@@ -119,7 +119,7 @@ def viewshed_calc_to_ds(vp_array,
     if input_filename is not None:
         input_filename = Path(input_filename).resolve()
         if input_ds is None:
-            input_ds = gdalos_util.open_ds(input_filename)
+            input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
     if input_ds is None:
         if not files:
             raise Exception('ds is None')
@@ -221,6 +221,8 @@ def viewshed_calc_to_ds(vp_array,
                     # print('GS_SetCacheSize ', talos.GS_SetCacheSize(cache_size_mb))
 
                 dtm_open_err = talos.GS_DtmOpenDTM(str(input_filename))
+                if ovr_idx:
+                    talos.GS_DtmSelectOvle(ovr_idx)
                 if dtm_open_err != 0:
                     raise Exception('talos could not open input file {}'.format(input_filename))
                 talos.GS_SetRefractionCoeff(vp.refraction_coeff)

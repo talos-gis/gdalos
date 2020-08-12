@@ -65,7 +65,7 @@ def vs_unique(a, threshold=viewshed_thresh, multiple_nz=viewshed_comb_multi_val,
     ret[nz_count > 1] = multiple_nz
     singular = nz_count == 1
     for i, arr in enumerate(a):
-        ret[(arr != 0) & singular] = i
+        ret[(arr > threshold) & singular] = i
     return ret
 
 
