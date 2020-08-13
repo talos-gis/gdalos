@@ -6,9 +6,8 @@ from collections import OrderedDict
 from pathlib import Path
 import glob
 import tempfile
-from typing import Sequence
+from typing import Sequence, Union
 import math
-import copy
 
 
 def to_number(s):
@@ -20,6 +19,10 @@ def to_number(s):
 
 def byte(number, i):
     return (number & (0xff << (i * 8))) >> (i * 8)
+
+
+PathOrStrings = Union[Path, str, Sequence[str]]
+ColorPaletteOrPathOrStrings = Union['ColorPalette', PathOrStrings]
 
 
 class ColorPalette:
@@ -92,11 +95,17 @@ class ColorPalette:
             self._all_numeric = True
         self.pal = new_pal
 
-    def read(self, filename):
-        if Path(filename).suffix.lower() == '.qlr':
-            self.read_qlr(filename)
+    def read(self, filename_or_strings: ColorPaletteOrPathOrStrings):
+        if isinstance(filename_or_strings, ColorPalette):
+            self = filename_or_strings.copy()
         else:
-            self.read_color_file(filename)
+            filename, temp_filename = get_file_from_strings(filename_or_strings)
+            if Path(filename).suffix.lower() == '.qlr':
+                self.read_qlr(filename)
+            else:
+                self.read_color_file(filename)
+            if temp_filename:
+                os.remove(temp_filename)
 
     def read_talos_palette(self, s: str):
         self.pal.clear()
@@ -327,7 +336,7 @@ def talos_to_color_file(talos_pal: str, color_filename: Path) -> Path:
     return pal, color_filename
 
 
-def get_file_from_strings(color_palette):
+def get_file_from_strings(color_palette: ColorPaletteOrPathOrStrings):
     temp_color_filename = None
     if isinstance(color_palette, ColorPalette):
         temp_color_filename = tempfile.mktemp(suffix='.txt')
@@ -346,15 +355,22 @@ def get_file_from_strings(color_palette):
     return color_filename, temp_color_filename
 
 
-def get_color_table(color_palette):
-    if color_palette is None:
+def get_color_palette(color_palette_or_path_or_strings: ColorPaletteOrPathOrStrings):
+    if color_palette_or_path_or_strings is None:
         return None
-    color_filename, temp_color_filename = get_file_from_strings(color_palette)
-    pal = ColorPalette()
-    pal.read(color_filename)
+    if isinstance(color_palette_or_path_or_strings, ColorPalette):
+        pal = color_palette_or_path_or_strings
+    else:
+        pal = ColorPalette()
+        pal.read(color_palette_or_path_or_strings)
+    return pal
+
+
+def get_color_table(color_palette_or_path_or_strings: ColorPaletteOrPathOrStrings):
+    pal = get_color_palette(color_palette_or_path_or_strings)
+    if pal is None:
+        return None
     color_table = pal.get_color_table()
-    if temp_color_filename:
-        os.remove(temp_color_filename)
     return color_table
 
 
@@ -383,5 +399,3 @@ def test_xml():
 if __name__ == "__main__":
     test_talos_pal()
     test_xml()
-
-

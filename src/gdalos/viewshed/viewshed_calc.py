@@ -8,8 +8,10 @@ import time
 from pathlib import Path
 from enum import Enum
 import copy
+from typing import Union
 
 from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans
+from gdalos.gdalos_color import ColorPalette, ColorPaletteOrPathOrStrings
 from gdalos.calc import gdal_calc, gdal_to_czml, dict_util, gdalos_combine
 from gdalos.viewshed import viewshed_params
 from gdalos.viewshed.viewshed_params import ViewshedParams
@@ -88,8 +90,8 @@ def viewshed_calc_to_ds(vp_array,
                         input_filename=None,
                         extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
                         in_coords_crs_pj=None, out_crs=None,
-                        color_palette=None,
-                        discrete_mode:DiscreteMode=DiscreteMode.interp,
+                        color_palette: ColorPaletteOrPathOrStrings=None,
+                        discrete_mode: DiscreteMode=DiscreteMode.interp,
                         bi=1, ovr_idx=0, co=None,
                         vp_slice=None,
                         backend:ViewshedBackend=None,
@@ -97,6 +99,7 @@ def viewshed_calc_to_ds(vp_array,
                         files=None):
     is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
 
+    color_palette = gdalos_color.get_color_palette(color_palette)
     color_table = gdalos_color.get_color_table(color_palette)
     if operation == CalcOperation.viewshed:
         operation = None
