@@ -1,4 +1,3 @@
-import sys
 from functools import partial
 import gdal, osr, ogr
 import glob
@@ -8,10 +7,9 @@ import time
 from pathlib import Path
 from enum import Enum
 import copy
-from typing import Union
 
 from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans
-from gdalos.gdalos_color import ColorPalette, ColorPaletteOrPathOrStrings
+from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
 from gdalos.calc import gdal_calc, gdal_to_czml, dict_util, gdalos_combine
 from gdalos.viewshed import viewshed_params
 from gdalos.viewshed.viewshed_params import ViewshedParams
@@ -213,7 +211,6 @@ def viewshed_calc_to_ds(vp_array,
                     print('GS_GetDLLVersion ', talos.GS_GetDLLVersion())
 
                     gdal_path = get_talos_gdal_path()
-                    # gdal_path = r'd:\OSGeo4W64-20200613\bin\gdal204.dll'
                     talos.GS_SetGDALPath(gdal_path)
                     # print('GS_GetGDALPath ', talos.GS_GetGDALPath())
                     print('GS_talosInit ', talos.GS_talosInit())
@@ -362,7 +359,7 @@ def viewshed_calc_to_ds(vp_array,
     return ds
 
 
-def test_calcz(inputs, raster_filename, input_ds):
+def test_calcz(inputs, raster_filename, input_ds, dir_path, files):
     cwd = Path.cwd()
     backend = ViewshedBackend.talos
     for color_palette in [..., None]:
@@ -446,7 +443,7 @@ def test_simple_viewshed(inputs, raster_filename, input_ds, dir_path, files=None
                           files=files)
 
 
-if __name__ == "__main__":
+def main_test():
     # dir_path = Path('/home/idan/maps')
     dir_path = Path(r'd:\dev\gis\maps')
     raster_filename = Path(dir_path) / Path('srtm1_36_sample.tif')
@@ -466,8 +463,12 @@ if __name__ == "__main__":
         vp1 = copy.copy(vp)
         vp1.tz = None
         inputs = vp1.get_array()
-        test_calcz(inputs=inputs, raster_filename=raster_filename, input_ds=input_ds)
+        test_calcz(inputs=inputs, raster_filename=raster_filename, input_ds=input_ds, dir_path=dir_path, files=files)
     if True:
         inputs = vp.get_array()
         test_simple_viewshed(inputs=inputs, run_comb_with_post=False, files=files,
                              dir_path=dir_path, raster_filename=raster_filename, input_ds=input_ds)
+
+
+if __name__ == "__main__":
+    main_test()
