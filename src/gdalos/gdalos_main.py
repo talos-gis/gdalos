@@ -106,6 +106,7 @@ MaybeSequence = Union[T, Sequence[T]]
 warp_srs_base = Union[str, int, Real]
 default_multi_byte_nodata_value = -32768
 
+
 # overviews numbers explained:
 # overview_count=n means that the raster has n+1 rasters inside it. the base raster + n overviews.
 # gdal numbers the overviews as 0..n-1, first overview as 0 meaning the base raster has no overview number
@@ -669,9 +670,11 @@ def gdalos_trans(
 
     # for OvrType.existing_reuse we'll create the files in backwards order in the overview creation step
     skipped = (final_output_exists or
-               (not filename_is_ds) and
-               ((ovr_type == OvrType.existing_reuse and (not cog or cog_2_steps)) or
-                ((not trans_or_warp_is_needed) and (filename == out_filename))))
+               ((not filename_is_ds) and
+                (ovr_type == OvrType.existing_reuse) and
+                (not cog or cog_2_steps) and
+                (not trans_or_warp_is_needed) and
+                (filename == out_filename)))
 
     if final_output_exists:
         final_files.append(final_filename)

@@ -4,8 +4,9 @@ python -m pip install twine wheel
 # uploade to twine
 
 ## delete old dists
-rm dist/*.*
-del dist\*.* /q
+rm dist/*.* build/*.*
+rmdir /s/q dist
+rmdir /s/q build
 
 ## creating the package
 python setup.py sdist bdist_wheel

@@ -447,10 +447,9 @@ def main_test():
     # dir_path = Path('/home/idan/maps')
     dir_path = Path(r'd:\dev\gis\maps')
     raster_filename = Path(dir_path) / Path('srtm1_36_sample.tif')
-    input_ds = ds = gdalos_util.open_ds(raster_filename)
+    input_ds = gdalos_util.open_ds(raster_filename)
 
     vp = ViewshedGridParams()
-    inputs = vp.get_array()
 
     use_input_files = False
     if use_input_files:
