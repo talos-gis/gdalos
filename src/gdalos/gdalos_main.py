@@ -195,7 +195,7 @@ def gdalos_trans(
         ovr_type = OvrType.auto_select
 
     if isinstance(partition, int):
-        partition = None if partition <= 1 else make_partitions(partition, partition)
+        partition = None if partition <= 1 else make_partitions(partition)
         all_args["partition"] = partition
 
     key_list_arguments = [
