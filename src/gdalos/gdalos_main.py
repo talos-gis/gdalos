@@ -11,7 +11,7 @@ from typing import List, Optional, Sequence, Tuple, TypeVar, Union
 from osgeo import gdal
 from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef
 from gdalos.__util__ import with_param_dict
-from gdalos.rectangle import GeoRectangle
+from gdalos.rectangle import GeoRectangle, make_partitions
 from gdalos_data.__data__ import __version__
 from gdalos.gdalos_types import GdalOutputFormat, OvrType, enum_to_str, GdalResamplingAlg
 
@@ -195,11 +195,7 @@ def gdalos_trans(
         ovr_type = OvrType.auto_select
 
     if isinstance(partition, int):
-        partition = [
-            GeoRectangle(i, j, partition, partition)
-            for i in range(partition)
-            for j in range(partition)
-        ]
+        partition = None if partition <= 1 else make_partitions(partition, partition)
         all_args["partition"] = partition
 
     key_list_arguments = [
@@ -273,10 +269,40 @@ def gdalos_trans(
         logger.info(all_args)
     # endregion
 
+    # creating a copy of the input dictionaries, as I don't want to change the input
+    no_yes = ("NO", "YES")
+    config_options = dict(config_options or dict())
+    common_options = dict(common_options or dict())
+    creation_options = dict(creation_options or dict())
+    translate_options = dict(translate_options or dict())
+    warp_options = dict(warp_options or dict())
+    out_suffixes = []
+
     if ovr_idx not in [..., None]:
         ovr_idx = gdalos_util.get_ovr_idx(filename, ovr_idx)
 
     ds = gdalos_util.open_ds(filename, ovr_idx=ovr_idx, open_options=open_options, logger=logger)
+    # region decide which overviews to make
+    if ovr_idx is not ...:
+        warp_options['overviewLevel'] = 'None'  # force gdal to use the selected ovr_idx
+        if ovr_idx is None:
+            ovr_idx = 0  # base raster
+        overview_count = gdalos_util.get_ovr_count(ds)
+        src_ovr_last = ovr_idx + overview_count
+        if dst_ovr_count is not None:
+            if dst_ovr_count >= 0:
+                src_ovr_last = ovr_idx + min(overview_count, dst_ovr_count)
+            else:
+                # in this case we'll reopen the ds with a new ovr_idx, because we want only the last overviews
+                new_src_ovr = max(0, overview_count + dst_ovr_count + 1)
+                if new_src_ovr != ovr_idx:
+                    ovr_idx = new_src_ovr
+                    del ds
+                    ds = gdalos_util.open_ds(filename, ovr_idx=ovr_idx, open_options=open_options, logger=logger)
+                    overview_count = gdalos_util.get_ovr_count(ds)
+                    src_ovr_last = ovr_idx + overview_count
+    # endregion
+
     # filename_is_ds = not isinstance(filename, (str, Path))
     filename_is_ds = ds == filename
 
@@ -320,14 +346,6 @@ def gdalos_trans(
 
     if extent is None:
         extent_in_4326 = True
-    # creating a copy of the input dictionaries, as I don't want to change the input
-    no_yes = ("NO", "YES")
-    config_options = dict(config_options or dict())
-    common_options = dict(common_options or dict())
-    creation_options = dict(creation_options or dict())
-    translate_options = dict(translate_options or dict())
-    warp_options = dict(warp_options or dict())
-    out_suffixes = []
 
     if sparse_ok is ...:
         sparse_ok = not filename_is_ds and str(Path(filename).suffix).lower() == '.vrt'
@@ -336,27 +354,6 @@ def gdalos_trans(
     extent_was_cropped = False
     extent_aligned = True
     input_is_vrt = input_ext == ".vrt"
-
-    # region decide which overviews to make
-    if ovr_idx is not ...:
-        warp_options['overviewLevel'] = 'None'  # force gdal to use the selected ovr_idx
-        if ovr_idx is None:
-            ovr_idx = 0  # base raster
-        overview_count = gdalos_util.get_ovr_count(ds)
-        src_ovr_last = overview_count - 1
-        if dst_ovr_count is not None:
-            if dst_ovr_count >= 0:
-                src_ovr_last = ovr_idx + min(overview_count, dst_ovr_count)
-            else:
-                # in this case we'll reopen the ds with a new ovr_idx, because we want only the last overviews
-                new_src_ovr = max(0, overview_count + dst_ovr_count + 1)
-                if new_src_ovr != ovr_idx:
-                    ovr_idx = new_src_ovr
-                    del ds
-                    ds = gdalos_util.open_ds(
-                        filename, ovr_idx=ovr_idx, open_options=open_options, logger=logger
-                    )
-    # endregion
 
     geo_transform = ds.GetGeoTransform()
     input_res = (geo_transform[1], geo_transform[5])
@@ -616,7 +613,12 @@ def gdalos_trans(
             elif src_win is not None:
                 out_suffixes.append("off[{},{}]_size[{},{}]".format(*src_win))
             if partition is not None:
-                out_suffixes.append("part_x[{},{}]_y[{},{}]".format(*partition.xwyh))
+                partition_str = "part_"
+                if partition.w > 1:
+                    partition_str += "x[{},{}]".format(partition.x, partition.w)
+                if partition.h > 1:
+                    partition_str += "y[{},{}]".format(partition.y, partition.h)
+                out_suffixes.append(partition_str)
             if not out_suffixes:
                 if outext.lower() == input_ext:
                     out_suffixes.append("new")
@@ -671,10 +673,8 @@ def gdalos_trans(
     # for OvrType.existing_reuse we'll create the files in backwards order in the overview creation step
     skipped = (final_output_exists or
                ((not filename_is_ds) and
-                (ovr_type == OvrType.existing_reuse) and
-                (not cog or cog_2_steps) and
-                (not trans_or_warp_is_needed) and
-                (filename == out_filename)))
+                ((ovr_type == OvrType.existing_reuse and (not cog or cog_2_steps)) or
+                 ((filename == out_filename) and (not trans_or_warp_is_needed)))))
 
     if final_output_exists:
         final_files.append(final_filename)

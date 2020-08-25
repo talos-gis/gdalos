@@ -240,3 +240,11 @@ def get_points_extent(gt, cols, rows):
         transform_point(cols, rows),
         transform_point(cols, 0),
     ]
+
+
+def make_partitions(x_parts, y_parts):
+    return list(
+        GeoRectangle(i, j, x_parts, y_parts)
+        for i in range(x_parts)
+        for j in range(y_parts)
+    )
