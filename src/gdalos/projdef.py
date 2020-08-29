@@ -1,6 +1,6 @@
 import math
 from numbers import Real
-
+from typing import Union, Sequence
 from osgeo import osr, ogr
 
 
@@ -114,9 +114,14 @@ def get_utm_zone_extent_points(float_zone, width=10):
     return extent_points
 
 
-def get_srs_pj_from_ds(ds):
+def get_osr(ds) -> osr.SpatialReference:
     srs = osr.SpatialReference()
     srs.ImportFromWkt(ds.GetProjection())
+    return srs
+
+
+def get_srs_pj_from_ds(ds) -> str:
+    srs = get_osr(ds)
     srs_pj4 = srs.ExportToProj4()
     return srs_pj4
 
@@ -140,7 +145,7 @@ def proj_is_equivalent(pj1, pj2):
     return srs1.IsSame(srs2)
 
 
-def _srs(srs):
+def _srs(srs: Union[str, osr.SpatialReference]):
     if isinstance(srs, str):
         srs_ = osr.SpatialReference()
         if srs_.ImportFromProj4(srs) != ogr.OGRERR_NONE:
@@ -149,7 +154,8 @@ def _srs(srs):
     return srs
 
 
-def reproject_coordinates(coords, src_srs, tgt_srs):
+def reproject_coordinates(coords: Sequence[Sequence[Real]],
+                          src_srs: Union[str, osr.SpatialReference], tgt_srs: Union[str, osr.SpatialReference]):
     src_srs = _srs(src_srs)
     tgt_srs = _srs(tgt_srs)
 
@@ -157,7 +163,7 @@ def reproject_coordinates(coords, src_srs, tgt_srs):
     return [transform.TransformPoint(src_x, src_y)[:2] for src_x, src_y in coords]
 
 
-def get_transform(src_srs, tgt_srs):
+def get_transform(src_srs: Union[str, osr.SpatialReference], tgt_srs: Union[str, osr.SpatialReference]):
     src_srs = _srs(src_srs)
     tgt_srs = _srs(tgt_srs)
     if src_srs.IsSame(tgt_srs):

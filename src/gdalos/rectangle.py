@@ -2,6 +2,8 @@ import math
 
 
 class GeoRectangle:
+    __slots__ = ['x', 'y', 'w', 'h']
+
     def __init__(self, x, y, w, h, allow_negative_size=False):
         if w <= 0:
             if allow_negative_size:
@@ -225,8 +227,14 @@ class GeoRectangle:
     def min_max(self):
         return self.min_x, self.max_x, self.min_y, self.max_y
 
+    def __str__(self):
+        return f"Rectangle(x[{self.min_x},{self.max_x}], y[{self.min_y},:{self.max_y}] wh[{self.w},:{self.h}])"
+
     def __repr__(self):
-        return f"Rectangle({self.min_x}, {self.max_x}, {self.min_y}, {self.max_y}) wh({self.w}, {self.h}))"
+        return f"Rectangle(x:{self.x}, y:{self.y}, w:{self.w}, h:{self.h})"
+
+    def __hash__(self):
+        return hash(self.xywh)
 
 
 def get_points_extent(gt, cols, rows):

@@ -16,8 +16,12 @@ from gdalos_data.__data__ import __version__
 from gdalos.gdalos_types import GdalOutputFormat, OvrType, enum_to_str, GdalResamplingAlg
 
 
+def get_cuttent_time_string():
+    return "Current time: {}".format(datetime.datetime.now())
+
+
 def print_time_now(logger):
-    logger.info("Current time: {}".format(datetime.datetime.now()))
+    logger.info(get_cuttent_time_string())
 
 
 class RasterKind(Enum):
@@ -120,6 +124,7 @@ default_multi_byte_nodata_value = -32768
 @with_param_dict("all_args")
 def gdalos_trans(
         filename: MaybeSequence[str],
+        reference_filename: MaybeSequence[str] = None,
         filenames_expand: Union[type(...), bool] = ...,
         out_filename: str = None,
         out_path: str = None,
@@ -173,6 +178,7 @@ def gdalos_trans(
         partition=None,
         print_progress=...,
         logger=...,
+        console_logger_level=logging.INFO,
         *,
         all_args: dict = None,
 ):
@@ -254,12 +260,13 @@ def gdalos_trans(
     if not filename:
         return None
     start_time = time.time()
+    ref_filename = reference_filename or filename
 
     # region console logger initialization
     logger_handlers = []
     if logger is ...:
         logger = logging.getLogger(__name__)
-        logger_handlers.append(gdalos_logger.set_logger_console(logger))
+        logger_handlers.append(gdalos_logger.set_logger_console(logger, level=console_logger_level))
         logger.debug("console handler added")
     all_args["logger"] = logger
     verbose = logger is not None and logger is not ...
@@ -587,7 +594,7 @@ def gdalos_trans(
         outext = '.' + outext
     auto_out_filename = out_filename is None and of != GdalOutputFormat.mem
     if auto_out_filename:
-        if filename_is_ds:
+        if filename_is_ds and reference_filename is None:
             raise Exception('input is ds and no output filename is given')
         if (
                 cog_2_steps
@@ -596,7 +603,7 @@ def gdalos_trans(
                 and not input_is_vrt
         ):
             # create overviews for the input file then create a cog
-            out_filename = filename
+            out_filename = ref_filename
         else:
             out_extent_in_4326 = extent
             if extent_was_cropped and (out_extent_in_src_srs is not None):
@@ -627,7 +634,7 @@ def gdalos_trans(
             else:
                 out_suffixes = ""
             out_filename = gdalos_util.concat_paths(
-                filename, out_suffixes + outext
+                ref_filename, out_suffixes + outext
             )
             if keep_src_ovr_suffixes and ovr_idx is not ...:
                 out_filename = gdalos_util.concat_paths(
@@ -807,8 +814,10 @@ def gdalos_trans(
             )
 
     if verbose:
-        logger.debug('closing file: "{}"'.format(filename))
+        logger.debug(get_cuttent_time_string() + ' closing ds for file: "{}"'.format(filename))
     ds = None  # close input ds if filename was input
+    if verbose:
+        logger.debug(get_cuttent_time_string() + ' ds is now closed for file: "{}"'.format(filename))
     # end region
 
     # region create overviews, cog, info
