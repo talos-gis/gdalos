@@ -129,7 +129,7 @@ def gdalos_trans(
         out_filename: str = None,
         out_path: str = None,
         return_ds: Union[type(...), bool] = ...,
-        out_path_with_src_folders: str = True,
+        out_path_with_src_folders: bool = True,
         overwrite=False,
         cog: Union[type(...), bool] = ...,
         prefer_2_step_cog: Union[type(...), bool] = ...,
@@ -157,7 +157,7 @@ def gdalos_trans(
         warp_scale: Union[Real, Tuple[Real, Real]] = 1,  # https://github.com/OSGeo/gdal/issues/2810
         warp_error_threshold: Optional[Real] = 0,  # [None|0]: [linear approximator|exact] coordinate reprojection
         ovr_type: Optional[OvrType] = OvrType.auto_select,
-        ovr_idx: Optional[Union[type(...), int]] = None,  # ovr_idx=0 is the base raster; 1 is the first overview
+        ovr_idx: Optional[Union[type(...), int]] = 0,  # ovr_idx=0 is the base raster; 1 is the first overview
         keep_src_ovr_suffixes: bool = True,
         dst_ovr_count: Optional[int] = None,
         dst_nodatavalue: Optional[Union[type(...), Real]] = None,  # None -> don't change; ... -> change only for DTM
@@ -546,7 +546,8 @@ def gdalos_trans(
         if out_res is not None:
             common_options["xRes"], common_options["yRes"] = out_res
             warp_options["targetAlignedPixels"] = True
-            out_suffixes.append(str(out_res))
+            base_out_res = [r / 2 ** ovr_idx for r in out_res]
+            out_suffixes.append('r'+str(base_out_res if keep_src_ovr_suffixes else out_res))
         elif ovr_idx is not ...:
             #  out_res is None and no warp
             out_res = input_res

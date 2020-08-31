@@ -40,7 +40,7 @@ def scale_np_array(arr, factor: Real, in_ndv, out_ndv, dtype):
 
 
 def scale_raster(filename_or_ds, d_path, gdal_dt=gdal.GDT_Int16,
-                 hide_nodata = True, in_ndv=..., out_ndv=..., scale=0, **kwargs):
+                 hide_nodata=True, in_ndv=..., out_ndv=..., scale=0, **kwargs):
     ds = gdalos_util.open_ds(filename_or_ds)
     if in_ndv is ...:
         in_ndv = gdalos_util.get_nodatavalue(ds)
@@ -56,8 +56,7 @@ def scale_raster(filename_or_ds, d_path, gdal_dt=gdal.GDT_Int16,
     creation_options = gdalos_util.get_creation_options()
 
     ds = gdal_calc.Calc(
-        calc_expr, outfile=str(d_path), hideNodata=hide_nodata, NoDataValue=out_ndv,
-        overwrite=True, return_ds=True,
+        calc_expr, outfile=str(d_path), hideNodata=hide_nodata, NoDataValue=out_ndv, return_ds=True,
         user_namespace=user_namespace, creation_options=creation_options, **kwargs, **calc_kwargs)
 
     for i in range(ds.RasterCount):
