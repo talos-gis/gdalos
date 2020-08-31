@@ -356,13 +356,17 @@ def doit(opts, args):
         myOut.SetProjection(ProjectionCheck)
 
         if opts.NoDataValue is not None:
-            myOutNDV = opts.NoDataValue
+            if opts.NoDataValue is ...:
+                myOutNDV = None
+            else:
+                myOutNDV = opts.NoDataValue
         else:
             myOutNDV = DefaultNDVLookup[myOutType]
 
         for i in range(1, allBandsCount + 1):
             myOutB = myOut.GetRasterBand(i)
-            myOutB.SetNoDataValue(myOutNDV)
+            if myOutNDV is not None:
+                myOutB.SetNoDataValue(myOutNDV)
             if opts.color_table:
                 # set color table and color interpretation
                 if isinstance(opts.color_table, str):
@@ -491,7 +495,7 @@ def doit(opts, args):
 
                 # Propagate nodata values (set nodata cells to zero
                 # then add nodata value to these cells).
-                if myNDVs is not None:
+                if myNDVs is not None and myOutNDV is not None:
                     myResult = ((1 * (myNDVs == 0)) * myResult) + (myOutNDV * myNDVs)
                 elif not isinstance(myResult, numpy.ndarray):
                     myResult = numpy.ones((nYValid, nXValid)) * myResult

@@ -14,6 +14,7 @@ from gdalos.__util__ import with_param_dict
 from gdalos.rectangle import GeoRectangle, make_partitions
 from gdalos_data.__data__ import __version__
 from gdalos.gdalos_types import GdalOutputFormat, OvrType, enum_to_str, GdalResamplingAlg
+from gdalos.calc.scale_raster import scale_raster
 
 
 def get_cuttent_time_string():
@@ -164,6 +165,7 @@ def gdalos_trans(
         src_nodatavalue: Optional[Union[type(...), Real]] = ...,  # None -> use minimum; ... -> use original
         hide_nodatavalue: bool = False,
         kind: RasterKind = None,
+        scale: Optional[Union[Real, type(...)]] = None,
         resampling_alg: Union[type(...), None, GdalResamplingAlg, str] = ...,
         lossy: bool = None,
         expand_rgb: bool = False,
@@ -368,6 +370,8 @@ def gdalos_trans(
     band_types = gdalos_util.get_band_types(ds)
     if kind in [None, ...]:
         kind = RasterKind.guess(band_types)
+    if kind != RasterKind.dtm and scale:
+        scale = None
 
     # region warp CRS handling
     pjstr_src_srs = projdef.get_srs_pj_from_ds(ds)
@@ -574,7 +578,7 @@ def gdalos_trans(
 
     cog_2_steps = \
         cog and \
-        (trans_or_warp_is_needed or
+        (trans_or_warp_is_needed or scale or
          ovr_type in [OvrType.create_external_auto, OvrType.create_external_single,
                       OvrType.create_external_multi, OvrType.create_internal])
 
@@ -627,6 +631,8 @@ def gdalos_trans(
                 if partition.h > 1:
                     partition_str += "y[{},{}]".format(partition.y, partition.h)
                 out_suffixes.append(partition_str)
+            if scale:
+                out_suffixes.append("int")
             if not out_suffixes:
                 if outext.lower() == input_ext:
                     out_suffixes.append("new")
@@ -667,6 +673,7 @@ def gdalos_trans(
                 out_filename = out_filename.with_suffix(".temp" + outext)
     else:
         final_filename = out_filename
+    trans_filename = out_filename.with_suffix(".float" + outext)  if scale else out_filename
     # endregion
 
     if cog_2_steps:
@@ -773,7 +780,7 @@ def gdalos_trans(
                 common_options["resampleAlg"] = enum_to_str(resampling_alg)
 
         if verbose:
-            logger.info('filename: "' + str(out_filename) + '" ...')
+            logger.info('filename: "' + str(trans_filename) + '" ...')
             if common_options:
                 logger.info("common options: " + str(common_options))
 
@@ -790,11 +797,20 @@ def gdalos_trans(
             if do_warp:
                 if verbose and warp_options:
                     logger.info("warp options: " + str(warp_options))
-                out_ds = gdal.Warp(str(out_filename), ds, **common_options, **warp_options)
+                out_ds = gdal.Warp(str(trans_filename), ds, **common_options, **warp_options)
             else:
                 if verbose and translate_options:
                     logger.info("translate options: " + str(translate_options))
-                out_ds = gdal.Translate(str(out_filename), ds, **common_options, **translate_options)
+                out_ds = gdal.Translate(str(trans_filename), ds, **common_options, **translate_options)
+            if scale:
+                temp_files.append(trans_filename)
+                if verbose:
+                    logger.info(f'scaling {out_filename}..."')
+                out_ds = scale_raster(
+                    out_ds, out_filename,
+                    scale=scale, format=enum_to_str(of),
+                    hide_nodata=hide_nodatavalue,
+                    creation_options_list=creation_options_list, overwrite=overwrite)
             ret_code = out_ds is not None
             if not return_ds:
                 out_ds = None  # close output ds
