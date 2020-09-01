@@ -155,7 +155,7 @@ def gdalos_trans(
         cutline: Optional[Union[str, List[str]]] = None,
         out_res: Optional[Union[type(...), Real, Tuple[Real, Real]]] = None,  # None: gdalos decides; ...: gdal decides
         warp_srs: MaybeSequence[warp_srs_base] = None,
-        warp_scale: Union[Real, Tuple[Real, Real]] = 1,  # https://github.com/OSGeo/gdal/issues/2810
+        warp_scale: Optional[Union[Real, Tuple[Real, Real]]] = 1,  # https://github.com/OSGeo/gdal/issues/2810
         warp_error_threshold: Optional[Real] = 0,  # [None|0]: [linear approximator|exact] coordinate reprojection
         ovr_type: Optional[OvrType] = OvrType.auto_select,
         ovr_idx: Optional[Union[type(...), int]] = 0,  # ovr_idx=0 is the base raster; 1 is the first overview
@@ -165,7 +165,7 @@ def gdalos_trans(
         src_nodatavalue: Optional[Union[type(...), Real]] = ...,  # None -> use minimum; ... -> use original
         hide_nodatavalue: bool = False,
         kind: RasterKind = None,
-        scale: Optional[Union[Real, type(...)]] = None,
+        value_scale: Optional[Union[Real, type(...)]] = None,
         resampling_alg: Union[type(...), None, GdalResamplingAlg, str] = ...,
         lossy: bool = None,
         expand_rgb: bool = False,
@@ -370,8 +370,8 @@ def gdalos_trans(
     band_types = gdalos_util.get_band_types(ds)
     if kind in [None, ...]:
         kind = RasterKind.guess(band_types)
-    if kind != RasterKind.dtm and scale:
-        scale = None
+    if kind != RasterKind.dtm and value_scale:
+        value_scale = None
 
     # region warp CRS handling
     pjstr_src_srs = projdef.get_srs_pj_from_ds(ds)
@@ -578,7 +578,7 @@ def gdalos_trans(
 
     cog_2_steps = \
         cog and \
-        (trans_or_warp_is_needed or scale or
+        (trans_or_warp_is_needed or value_scale or
          ovr_type in [OvrType.create_external_auto, OvrType.create_external_single,
                       OvrType.create_external_multi, OvrType.create_internal])
 
@@ -631,7 +631,7 @@ def gdalos_trans(
                 if partition.h > 1:
                     partition_str += "y[{},{}]".format(partition.y, partition.h)
                 out_suffixes.append(partition_str)
-            if scale:
+            if value_scale:
                 out_suffixes.append("int")
             if not out_suffixes:
                 if outext.lower() == input_ext:
@@ -673,7 +673,7 @@ def gdalos_trans(
                 out_filename = out_filename.with_suffix(".temp" + outext)
     else:
         final_filename = out_filename
-    trans_filename = out_filename.with_suffix(".float" + outext)  if scale else out_filename
+    trans_filename = out_filename.with_suffix(".float" + outext) if value_scale else out_filename
     # endregion
 
     if cog_2_steps:
@@ -802,13 +802,13 @@ def gdalos_trans(
                 if verbose and translate_options:
                     logger.info("translate options: " + str(translate_options))
                 out_ds = gdal.Translate(str(trans_filename), ds, **common_options, **translate_options)
-            if scale:
+            if value_scale:
                 temp_files.append(trans_filename)
                 if verbose:
                     logger.info(f'scaling {out_filename}..."')
                 out_ds = scale_raster(
                     out_ds, out_filename,
-                    scale=scale, format=enum_to_str(of),
+                    scale=value_scale, format=enum_to_str(of),
                     hide_nodata=hide_nodatavalue,
                     creation_options_list=creation_options_list, overwrite=overwrite)
             ret_code = out_ds is not None
