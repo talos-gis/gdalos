@@ -32,14 +32,14 @@ class RasterKind(Enum):
 
     @classmethod
     def guess(cls, band_types_or_filename_or_ds):
-        if isinstance(band_types_or_filename_or_ds, list):
-            band_types = band_types_or_filename_or_ds
+        if isinstance(band_types_or_filename_or_ds, (list, tuple)):
+            band_types = list(gdalos_util.get_data_type(band) for band in band_types_or_filename_or_ds)
         else:
             band_types = gdalos_util.get_band_types(band_types_or_filename_or_ds)
         if len(band_types) == 0:
             raise Exception("no bands in raster")
 
-        if band_types[0] == "Byte":
+        if band_types[0] == gdal.GDT_Byte:
             if len(band_types) in (3, 4):
                 return cls.photo
             elif len(band_types) == 1:
@@ -139,6 +139,9 @@ def gdalos_trans(
         multi_file_as_vrt: bool = False,
         of: MaybeSequence[Union[type(...), GdalOutputFormat, str]] = ...,
         outext: str = ...,
+        ot: Optional[Union[str, int]] = None,
+        value_scale: Optional[Union[Real, type(...)]] = None,
+        kind: RasterKind = None,
         tiled: bool = True,
         block_size: int = ...,
         big_tiff: str = ...,
@@ -164,8 +167,6 @@ def gdalos_trans(
         dst_nodatavalue: Optional[Union[type(...), Real]] = None,  # None -> don't change; ... -> change only for DTM
         src_nodatavalue: Optional[Union[type(...), Real]] = ...,  # None -> use minimum; ... -> use original
         hide_nodatavalue: bool = False,
-        kind: RasterKind = None,
-        value_scale: Optional[Union[Real, type(...)]] = None,
         resampling_alg: Union[type(...), None, GdalResamplingAlg, str] = ...,
         lossy: bool = None,
         expand_rgb: bool = False,
@@ -366,7 +367,7 @@ def gdalos_trans(
 
     geo_transform = ds.GetGeoTransform()
     input_res = (geo_transform[1], geo_transform[5])
-
+    ot = gdalos_util.get_data_type(ot)
     band_types = gdalos_util.get_band_types(ds)
     if kind in [None, ...]:
         kind = RasterKind.guess(band_types)
@@ -396,8 +397,8 @@ def gdalos_trans(
                     extent = extent.intersect(zone_extent)
                 extent_was_cropped = True
         out_suffixes.append(projdef.get_canonic_name(tgt_datum, tgt_zone))
-        if kind == RasterKind.dtm:
-            common_options["outputType"] = gdal.GDT_Float32  # 'Float32'
+        if kind == RasterKind.dtm and ot is None:
+            ot = gdal.GDT_Float32
         warp_options["dstSRS"] = pjstr_tgt_srs
     # endregion
 
@@ -551,7 +552,7 @@ def gdalos_trans(
             common_options["xRes"], common_options["yRes"] = out_res
             warp_options["targetAlignedPixels"] = True
             base_out_res = [r / 2 ** ovr_idx for r in out_res]
-            out_suffixes.append('r'+str(base_out_res if keep_src_ovr_suffixes else out_res))
+            out_suffixes.append('r' + str(base_out_res if keep_src_ovr_suffixes else out_res))
         elif ovr_idx is not ...:
             #  out_res is None and no warp
             out_res = input_res
@@ -779,6 +780,9 @@ def gdalos_trans(
             if resampling_alg is not None:
                 common_options["resampleAlg"] = enum_to_str(resampling_alg)
 
+        if ot is not None:
+            common_options["outputType"] = ot
+
         if verbose:
             logger.info('filename: "' + str(trans_filename) + '" ...')
             if common_options:
@@ -972,6 +976,10 @@ def gdalos_trans(
                 aux_files.append(info)
     # endregion
 
+    missing_final_files = (f for f in final_files if not os.path.exists(f))
+    if missing_final_files:
+        logger.error("output files are missing: {}".format(final_files))
+    do_delete_temp_files = delete_temp_files and not missing_final_files
     # region log file lists
     if verbose:
         if final_files:
@@ -979,25 +987,15 @@ def gdalos_trans(
         if aux_files:
             logger.info("aux_files: {}".format(aux_files))
         if temp_files:
-            if delete_temp_files:
-                deleted = ""
-            else:
-                deleted = "not "
-            logger.info(
-                "temp_files (will {}be deleted): {}".format(deleted, temp_files)
-            )
+            logger.info(f'temp_files (will {"" if do_delete_temp_files else "not "}be deleted): {temp_files}')
     # endregion
 
     # region delete temp files
-    if delete_temp_files and temp_files:
+    if do_delete_temp_files and temp_files:
         for f in temp_files:
             if f == filename:
                 if verbose:
-                    logger.error(
-                        'somehow the input file was set as a temp file for deletion: "{}")'.format(
-                            f
-                        )
-                    )
+                    logger.error(f'somehow the input file was set as a temp file for deletion: "{f}")')
             elif os.path.isfile(f):
                 try:
                     os.remove(f)

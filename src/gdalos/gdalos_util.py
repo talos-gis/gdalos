@@ -85,8 +85,15 @@ def _band_getmin(band):
 
 def get_band_types(filename_or_ds):
     with OpenDS(filename_or_ds) as ds:
-        return [gdal.GetDataTypeName(band.DataType) for band in _get_bands(ds)]
+        return [band.DataType for band in _get_bands(ds)]
 
+def get_data_type(bandtype: Union[str, int]):
+    if bandtype in [None, ...]:
+        return None
+    if isinstance(bandtype, str):
+        return gdal.GetDataTypeName(bandtype)
+    else:
+        return bandtype
 
 def get_raster_band(filename_or_ds, bnd_index=1, ovr_index=None):
     with OpenDS(filename_or_ds) as ds:
