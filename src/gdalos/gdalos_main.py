@@ -976,9 +976,9 @@ def gdalos_trans(
                 aux_files.append(info)
     # endregion
 
-    missing_final_files = (f for f in final_files if not os.path.exists(f))
+    missing_final_files = list(f for f in final_files if not os.path.exists(f))
     if missing_final_files:
-        logger.error("output files are missing: {}".format(final_files))
+        logger.error("output files are missing: {}".format(missing_final_files))
     do_delete_temp_files = delete_temp_files and not missing_final_files
     # region log file lists
     if verbose:

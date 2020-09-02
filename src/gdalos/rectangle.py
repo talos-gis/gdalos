@@ -228,7 +228,7 @@ class GeoRectangle:
         return self.min_x, self.max_x, self.min_y, self.max_y
 
     def __str__(self):
-        return f"Rectangle(x[{self.min_x},{self.max_x}], y[{self.min_y},:{self.max_y}] wh[{self.w},:{self.h}])"
+        return f"Rectangle(x[{self.min_x},{self.max_x}], y[{self.min_y},{self.max_y}] wh[{self.w},{self.h}])"
 
     def __repr__(self):
         return f"Rectangle(x:{self.x}, y:{self.y}, w:{self.w}, h:{self.h})"
