@@ -2,9 +2,12 @@ import glob
 import os
 from pathlib import Path
 from typing import Iterator, Sequence, Union
-from gdalos import gdalos_types
 
-import gdal, ogr, osr
+import gdal
+import ogr
+import osr
+
+from gdalos import gdalos_types
 
 
 def open_ds(filename_or_ds, *args, **kwargs):
@@ -87,6 +90,7 @@ def get_band_types(filename_or_ds):
     with OpenDS(filename_or_ds) as ds:
         return [band.DataType for band in _get_bands(ds)]
 
+
 def get_data_type(bandtype: Union[str, int]):
     if bandtype in [None, ...]:
         return None
@@ -94,6 +98,7 @@ def get_data_type(bandtype: Union[str, int]):
         return gdal.GetDataTypeName(bandtype)
     else:
         return bandtype
+
 
 def get_raster_band(filename_or_ds, bnd_index=1, ovr_index=None):
     with OpenDS(filename_or_ds) as ds:
