@@ -1,4 +1,6 @@
 from functools import partial
+from numbers import Real
+
 import gdal, osr, ogr
 import glob
 import tempfile
@@ -6,9 +8,11 @@ import os
 import time
 from pathlib import Path
 from enum import Enum
+
 import copy
 
-from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans
+from gdalos.rectangle import GeoRectangle
+from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans, gdalos_extent
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
 from gdalos.calc import gdal_calc, gdal_to_czml, dict_util, gdalos_combine
 from gdalos.viewshed import viewshed_params
@@ -18,6 +22,7 @@ from gdalos.talos.ogr_util import create_layer_from_geometries
 from gdalos.talos.geom_arc import PolygonizeSector
 from gdalos.calc.discrete_mode import DiscreteMode
 from gdalos.calc.gdalos_raster_color import gdalos_raster_color
+from gdalos.gdalos_selector import get_projected_pj, DataSetSelector
 
 talos = None
 
@@ -86,6 +91,7 @@ def viewshed_calc(output_filename, of='GTiff', **kwargs):
 def viewshed_calc_to_ds(vp_array,
                         input_ds,
                         input_filename=None,
+                        input_selector:DataSetSelector=None,
                         extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
                         in_coords_crs_pj=None, out_crs=None,
                         color_palette: ColorPaletteOrPathOrStrings=None,
@@ -117,22 +123,6 @@ def viewshed_calc_to_ds(vp_array,
     else:
         files = files.copy()[vp_slice]
 
-    if input_filename is not None:
-        input_filename = Path(input_filename).resolve()
-        if input_ds is None:
-            input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
-    if input_ds is None:
-        if not files:
-            raise Exception('ds is None')
-    else:
-        input_band: gdal.Band = input_ds.GetRasterBand(bi)
-        if input_band is None:
-            raise Exception('band number out of range')
-
-        pjstr_src_srs = projdef.get_srs_pj_from_ds(input_ds)
-        pjstr_tgt_srs = projdef.get_proj_string(out_crs) if out_crs is not None else pjstr_src_srs
-        combined_post_process_needed = cutline or not projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs)
-
     if not files:
         if isinstance(vp_array, ViewshedParams):
             vp_array = [vp_array]
@@ -153,21 +143,63 @@ def viewshed_calc_to_ds(vp_array,
         if len(vp_array) > max_rasters_count:
             vp_array = vp_array[0:max_rasters_count]
 
-        # in_raster_srs = projdef.get_srs_pj_from_ds(input_ds)
-        in_raster_srs = osr.SpatialReference()
-        in_raster_srs.ImportFromWkt(input_ds.GetProjection())
-        if not in_raster_srs.IsProjected:
-            raise Exception(f'input raster has to be projected')
+        srs_4326 = osr.SpatialReference()
+        srs_4326.ImportFromEPSG(4326)
+
+        first_vs = True
 
         if in_coords_crs_pj is not None:
             in_coords_crs_pj = projdef.get_proj_string(in_coords_crs_pj)
-            transform_coords_to_raster = projdef.get_transform(in_coords_crs_pj, in_raster_srs)
-        else:
-            transform_coords_to_raster = None
 
         for vp in vp_array:
-            if transform_coords_to_raster:
+            if first_vs or input_selector is not None:
+                first_vs = False
+                if input_selector is None:
+                    if in_coords_crs_pj is None:
+                        in_coords_crs_pj = projdef.get_osr(input_ds)
+                else:
+                    if in_coords_crs_pj is None:
+                        in_coords_crs_pj = srs_4326
+                    input_filename, input_ds = input_selector.get_item_projected()
+
+                transform_coords_to_4326 = projdef.get_transform(in_coords_crs_pj, srs_4326)
+
+                if input_filename is not None:
+                    input_filename = Path(input_filename).resolve()
+                    if input_ds is None:
+                        input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
+                if input_ds is None:
+                    raise Exception('ds is None')
+
+                in_raster_srs = projdef.get_osr(input_ds)
+                input_raster_is_projected = in_raster_srs.IsProjected()
+                if input_raster_is_projected:
+                    transform_coords_to_raster = projdef.get_transform(in_coords_crs_pj, in_raster_srs)
+                else:
+                    raise Exception(f'input raster has to be projected')
+
+            if input_raster_is_projected:
+                projected_filename = input_filename
+                if transform_coords_to_raster:
+                    vp.ox, vp.oy, _ = transform_coords_to_raster.TransformPoint(vp.ox, vp.oy)
+            else:
+                if transform_coords_to_4326:
+                    geo_x, geo_y, _ = transform_coords_to_4326.TransformPoint(vp.ox, vp.oy)
+                else:
+                    geo_x, geo_y = vp.ox, vp.oy
+                projected_pj = get_projected_pj(geo_x, geo_y)
+                transform_coords_to_raster = projdef.get_transform(in_coords_crs_pj, projected_pj)
                 vp.ox, vp.oy, _ = transform_coords_to_raster.TransformPoint(vp.ox, vp.oy)
+                d = gdalos_extent.transform_resolution_p(transform_coords_to_raster, 10, 10, vp.ox, vp.oy)
+                extent = GeoRectangle.from_center_and_radius(vp.ox, vp.os, vp.max_r + d, vp.max_r + d)
+
+                projected_filename = tempfile.mktemp('.tif')
+                projected_ds = gdalos_trans(
+                    input_ds, out_filename=projected_filename, warp_srs=projected_pj,
+                    extent=extent, return_ds=True)
+                if not projected_ds:
+                    raise Exception('input raster projection faild')
+                input_ds = projected_ds
 
             if backend is None:
                 backend = default_ViewshedBackend
@@ -178,21 +210,24 @@ def viewshed_calc_to_ds(vp_array,
             is_base_calc = True
             if backend == ViewshedBackend.gdal:
                 # TypeError: '>' not supported between instances of 'NoneType' and 'int'
-                is_temp_file = True
-                d_path = tempfile.mktemp(suffix='.tif')
-
                 bnd_type = gdal.GDT_Byte
                 # todo: why dosn't it work without it?
                 is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
 
                 inputs = vp.get_as_gdal_params()
                 print(inputs)
+
+                input_band: gdal.Band = input_ds.GetRasterBand(bi)
+                if input_band is None:
+                    raise Exception('band number out of range')
                 ds = gdal.ViewshedGenerate(input_band, gdal_out_format, str(d_path), co, **inputs)
+                input_band = None  # close band
+
                 if not ds:
                     raise Exception('Viewshed calculation failed')
             elif backend == ViewshedBackend.talos:
                 # is_temp_file = True  # output is file, not ds
-                if not input_filename:
+                if not projected_filename:
                     raise Exception('to use talos backend you need to provide an input filename')
                 # if 'talosgis.talos' not in sys.modules:
                 global talos
@@ -220,11 +255,11 @@ def viewshed_calc_to_ds(vp_array,
 
                     # print('GS_SetCacheSize ', talos.GS_SetCacheSize(cache_size_mb))
 
-                dtm_open_err = talos.GS_DtmOpenDTM(str(input_filename))
+                dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
                 if ovr_idx:
                     talos.GS_DtmSelectOvle(ovr_idx)
                 if dtm_open_err != 0:
-                    raise Exception('talos could not open input file {}'.format(input_filename))
+                    raise Exception('talos could not open input file {}'.format(projected_filename))
                 talos.GS_SetRefractionCoeff(vp.refraction_coeff)
                 inputs = vp.get_as_talos_params()
                 ras = talos.GS_Viewshed_Calc1(**inputs)
@@ -244,7 +279,6 @@ def viewshed_calc_to_ds(vp_array,
                 raise Exception('unknown backend {}'.format(backend))
 
             input_ds = None
-            input_band = None
 
             set_nodata = backend == ViewshedBackend.gdal
             # set_nodata = is_base_calc
@@ -274,7 +308,7 @@ def viewshed_calc_to_ds(vp_array,
                 temp_files.append(calc_cutline)
                 create_layer_from_geometries([ring], calc_cutline)
 
-                ds = gdalos_trans(ds, out_filename=d_path, #warp_srs=pjstr_tgt_srs,
+                ds = gdalos_trans(ds, out_filename=d_path,
                                   cutline=calc_cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
                 if not ds:
                     raise Exception('Viewshed calculation failed to cut')
@@ -334,6 +368,9 @@ def viewshed_calc_to_ds(vp_array,
         for i in range(len(files)):
             files[i] = None  # close calc input ds(s)
 
+    pjstr_src_srs = projdef.get_srs_pj_from_ds(input_ds)
+    pjstr_tgt_srs = projdef.get_proj_string(out_crs) if out_crs is not None else pjstr_src_srs
+    combined_post_process_needed = cutline or not projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs)
     if combined_post_process_needed:
         ds = gdalos_trans(ds, out_filename=d_path, warp_srs=pjstr_tgt_srs,
                           cutline=cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
@@ -443,10 +480,13 @@ def test_simple_viewshed(inputs, raster_filename, input_ds, dir_path, files=None
                           files=files)
 
 
-def main_test():
+def main_test(calcz=True, simple_viewshed=True, is_geo=False):
     # dir_path = Path('/home/idan/maps')
     dir_path = Path(r'd:\dev\gis\maps')
-    raster_filename = Path(dir_path) / Path('srtm1_36_sample.tif')
+    if is_geo:
+        raster_filename = Path(r'd:\Maps\w84geo\dtm_SRTM1_hgt_ndv0.cog.tif.new.cog.tif.x[20,80]_y[20,40].cog.tif')
+    else:
+        raster_filename = Path(dir_path) / Path('srtm1_36_sample.tif')
     input_ds = gdalos_util.open_ds(raster_filename)
 
     vp = ViewshedGridParams()
@@ -458,12 +498,12 @@ def main_test():
     else:
         files = None
 
-    if True:
+    if calcz:
         vp1 = copy.copy(vp)
         vp1.tz = None
         inputs = vp1.get_array()
         test_calcz(inputs=inputs, raster_filename=raster_filename, input_ds=input_ds, dir_path=dir_path, files=files)
-    if True:
+    if simple_viewshed:
         inputs = vp.get_array()
         test_simple_viewshed(inputs=inputs, run_comb_with_post=False, files=files,
                              dir_path=dir_path, raster_filename=raster_filename, input_ds=input_ds)
