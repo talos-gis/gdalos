@@ -3,13 +3,22 @@ from gdalos.viewshed.viewshed_params import ViewshedParams
 
 
 class ViewshedGridParams(ViewshedParams):
-    __slots__ = ['name', 'interval', 'grid_range']
+    __slots__ = ['name', 'interval', 'grid_range', 'r_fact']
 
-    def __init__(self):
+    def __init__(self, is_geo):
         super().__init__()
-        self.max_r = 2000
-        self.ox = 700_000
-        self.oy = 3550_000
+        if is_geo:
+            # self.ox = 35.0
+            # self.oy = 32.0
+            self.ox = 25.0
+            self.oy = 15.0
+            self.max_r = 10000
+            self.r_fact = 111_111
+        else:
+            self.max_r = 2000
+            self.ox = 700_000
+            self.oy = 3550_000
+            self.r_fact = 1
         self.oz = 10
         self.tz = 10
 
@@ -17,7 +26,7 @@ class ViewshedGridParams(ViewshedParams):
         # self.h_aperture = 30
 
         self.name = None
-        self.interval = self.max_r / 2
+        self.interval = self.max_r / (self.r_fact * 2)
         j = 1
         self.grid_range = range(-j, j + 1)
 

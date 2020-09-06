@@ -134,8 +134,8 @@ def gdalos_trans(
         overwrite=False,
         cog: Union[type(...), bool] = ...,
         prefer_2_step_cog: Union[type(...), bool] = ...,
-        write_info: bool = True,
-        write_spec: bool = True,
+        write_info: Union[type(...), bool] = ...,
+        write_spec: Union[type(...), bool] = ...,
         multi_file_as_vrt: bool = False,
         of: MaybeSequence[Union[type(...), GdalOutputFormat, str]] = ...,
         outext: str = ...,
@@ -327,23 +327,26 @@ def gdalos_trans(
         cog = not filename_is_ds
     if ovr_type is None:
         cog = False
-    if return_ds is ...:
-        return_ds = of == GdalOutputFormat.mem
-    if of is ... or of is None:
-        of = GdalOutputFormat.mem if return_ds else GdalOutputFormat.cog if (
-                cog and support_of_cog) else GdalOutputFormat.gtiff
-    elif isinstance(of, str):
+
+    if isinstance(of, str):
         of = of.lower()
         try:
             of = GdalOutputFormat[of]
         except:
             pass
+    if return_ds is ...:
+        return_ds = of == GdalOutputFormat.mem
+    if of in [..., None]:
+        of = GdalOutputFormat.mem if return_ds else GdalOutputFormat.cog if (
+                cog and support_of_cog) else GdalOutputFormat.gtiff
+
     if of == GdalOutputFormat.cog:
         cog = True
 
-    if of == GdalOutputFormat.mem:
-        write_info = False
-        write_spec = False
+    if write_info is ...:
+        write_info = not return_ds
+    if write_spec is ...:
+        write_spec = not return_ds
     if filename_is_ds:
         input_ext = None
     else:
@@ -976,7 +979,7 @@ def gdalos_trans(
                 aux_files.append(info)
     # endregion
 
-    missing_final_files = list(f for f in final_files if not os.path.exists(f))
+    missing_final_files = list(f for f in final_files if (f != '') and not os.path.exists(f))
     if missing_final_files:
         logger.error("output files are missing: {}".format(missing_final_files))
     do_delete_temp_files = delete_temp_files and not missing_final_files

@@ -95,7 +95,7 @@ def get_canonic_name(datum, zone):
     else:
         res = "w84"
     if zone:
-        res = res + "u" + str(zone)
+        res = res + "u" + ('0' if zone<10 else '') + str(zone)
     else:
         res = res + "geo"
     return res
@@ -114,21 +114,20 @@ def get_utm_zone_extent_points(float_zone, width=10):
     return extent_points
 
 
-def get_osr(ds) -> osr.SpatialReference:
+def get_srs_from_ds(ds) -> osr.SpatialReference:
     srs = osr.SpatialReference()
     srs.ImportFromWkt(ds.GetProjection())
     return srs
 
 
 def get_srs_pj_from_ds(ds) -> str:
-    srs = get_osr(ds)
+    srs = get_srs_from_ds(ds)
     srs_pj4 = srs.ExportToProj4()
     return srs_pj4
 
 
 def get_srs_pj_from_epsg(epsg=4326):
-    srs = osr.SpatialReference()
-    srs.ImportFromEPSG(epsg)
+    srs = get_srs(epsg)
     srs_pj4 = srs.ExportToProj4()
     return srs_pj4
 
@@ -136,36 +135,39 @@ def get_srs_pj_from_epsg(epsg=4326):
 def proj_is_equivalent(pj1, pj2):
     if pj1 == pj2:
         return True
-    srs1 = osr.SpatialReference()
-    srs1.ImportFromProj4(pj1)
-
-    srs2 = osr.SpatialReference()
-    srs2.ImportFromProj4(pj2)
+    srs1 = get_srs(pj1)
+    srs2 = get_srs(pj2)
 
     return srs1.IsSame(srs2)
 
 
-def _srs(srs: Union[str, osr.SpatialReference]):
+# from epsg, pj_string passthrough srs
+def get_srs(srs: Union[str, int, osr.SpatialReference]):
     if isinstance(srs, str):
         srs_ = osr.SpatialReference()
         if srs_.ImportFromProj4(srs) != ogr.OGRERR_NONE:
-            raise Exception("ogr error when parsing srs")
+            raise Exception(f"ogr error when parsing srs: {srs}")
+        srs = srs_
+    elif isinstance(srs, int):
+        srs_ = osr.SpatialReference()
+        if srs_.ImportFromEPSG(srs) != ogr.OGRERR_NONE:
+            raise Exception(f"ogr error when parsing srs epsg:{srs}")
         srs = srs_
     return srs
 
 
 def reproject_coordinates(coords: Sequence[Sequence[Real]],
                           src_srs: Union[str, osr.SpatialReference], tgt_srs: Union[str, osr.SpatialReference]):
-    src_srs = _srs(src_srs)
-    tgt_srs = _srs(tgt_srs)
+    src_srs = get_srs(src_srs)
+    tgt_srs = get_srs(tgt_srs)
 
     transform = osr.CoordinateTransformation(src_srs, tgt_srs)
     return [transform.TransformPoint(src_x, src_y)[:2] for src_x, src_y in coords]
 
 
 def get_transform(src_srs: Union[str, osr.SpatialReference], tgt_srs: Union[str, osr.SpatialReference]):
-    src_srs = _srs(src_srs)
-    tgt_srs = _srs(tgt_srs)
+    src_srs = get_srs(src_srs)
+    tgt_srs = get_srs(tgt_srs)
     if src_srs.IsSame(tgt_srs):
         return None
     else:

@@ -8,6 +8,7 @@ import ogr
 import osr
 
 from gdalos import gdalos_types
+from gdalos.gdalos_types import FileName
 
 
 def open_ds(filename_or_ds, *args, **kwargs):
@@ -165,16 +166,16 @@ def check_expand_glob(val, filenames_expand):
     return (filenames_expand is True) or ((filenames_expand is ...) and ('*' in str(val) or '?' in str(val)))
 
 
-def flatten_and_expand_file_list(l, do_expand_txt=True, do_expand_glob: Union[type(...), bool] = ...):
-    if is_path_like(l):
-        item = str(l).strip()
+def flatten_and_expand_file_list(lst, do_expand_txt=True, do_expand_glob: Union[type(...), bool] = ..., always_return_list=False):
+    if isinstance(lst, FileName.__args__):
+        item = str(lst).strip()
         if check_expand_glob(item, do_expand_glob):
             item1 = glob.glob(item)
             if len(item1) == 1:
-                item = item1[0]
+                item = str(item1[0]).strip()
             elif len(item1) > 1:
-                return flatten_and_expand_file_list(item1, do_expand_txt, do_expand_glob)
-
+                # return flatten_and_expand_file_list(item1, do_expand_txt, do_expand_glob)
+                return item1
         if (
                 do_expand_txt
                 and os.path.isfile(item)
@@ -183,22 +184,18 @@ def flatten_and_expand_file_list(l, do_expand_txt=True, do_expand_glob: Union[ty
         ):
             return flatten_and_expand_file_list(expand_txt(item), do_expand_txt, do_expand_glob)
         else:
-            return item.strip()
+            return [item] if always_return_list else item
 
-    if not is_list_like(l):
-        return l
+    if not is_list_like(lst):
+        return [lst] if always_return_list else lst
     flat_list = []
-    for item in l:
+    for item in lst:
         item1 = flatten_and_expand_file_list(item, do_expand_txt, do_expand_glob)
         if is_list_like(item1):
             flat_list.extend(item1)
         else:
             flat_list.append(item1)
     return flat_list
-
-
-def is_path_like(s):
-    return isinstance(s, (str, Path))
 
 
 def is_list_like(lst):

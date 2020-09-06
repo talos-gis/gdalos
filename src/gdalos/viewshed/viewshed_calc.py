@@ -1,5 +1,6 @@
 from functools import partial
 from numbers import Real
+from typing import Union
 
 import gdal, osr, ogr
 import glob
@@ -11,6 +12,7 @@ from enum import Enum
 
 import copy
 
+from gdalos.gdalos_types import FileName
 from gdalos.rectangle import GeoRectangle
 from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans, gdalos_extent
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
@@ -47,7 +49,8 @@ class CalcOperation(Enum):
 def temp_params(is_temp_file):
     gdal_out_format = 'GTiff' if is_temp_file else 'MEM'
     d_path = tempfile.mktemp(suffix='.tif') if is_temp_file else ''
-    return_ds = not is_temp_file
+    return_ds = True
+    # return_ds = not is_temp_file
     return is_temp_file, gdal_out_format, d_path, return_ds
 
 
@@ -59,7 +62,7 @@ def make_slice(slicer):
     return slice(*[{True: lambda n: None, False: int}[x == ''](x) for x in (slicer.split(':') + ['', '', ''])[:3]])
 
 
-def viewshed_calc(output_filename, of='GTiff', **kwargs):
+def viewshed_calc(output_filename, of='GTiff', return_ds=None, **kwargs):
     output_filename = Path(output_filename)
     print(output_filename)
     # ext = output_filename.suffix
@@ -69,15 +72,17 @@ def viewshed_calc(output_filename, of='GTiff', **kwargs):
     is_czml = ext == '.czml'
     if is_czml:
         kwargs['out_crs'] = 0  # czml supprts only 4326
-    temp_files=[]
+    temp_files = []
     ds = viewshed_calc_to_ds(**kwargs, temp_files=temp_files)
     if not ds:
         raise Exception('error occurred')
     if is_czml:
         ds = gdal_to_czml.gdal_to_czml(ds, name=str(output_filename), out_filename=output_filename)
-    elif of != 'MEM':
+    elif of.upper() != 'MEM':
         driver = gdal.GetDriverByName(of)
         ds = driver.CreateCopy(str(output_filename), ds)
+    if not return_ds:
+        ds = None
 
     if temp_files:
         for f in temp_files:
@@ -89,11 +94,9 @@ def viewshed_calc(output_filename, of='GTiff', **kwargs):
 
 
 def viewshed_calc_to_ds(vp_array,
-                        input_ds,
-                        input_filename=None,
-                        input_selector:DataSetSelector=None,
+                        input_filename:Union[gdal.Dataset, FileName, DataSetSelector],
                         extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
-                        in_coords_crs_pj=None, out_crs=None,
+                        in_coords_srs=None, out_crs=None,
                         color_palette: ColorPaletteOrPathOrStrings=None,
                         discrete_mode: DiscreteMode=DiscreteMode.interp,
                         bi=1, ovr_idx=0, co=None,
@@ -101,6 +104,18 @@ def viewshed_calc_to_ds(vp_array,
                         backend:ViewshedBackend=None,
                         temp_files=None,
                         files=None):
+    input_selector = None
+    input_ds = None
+    if isinstance(input_filename, FileName.__args__):
+        input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
+    elif isinstance(input_filename, DataSetSelector):
+        input_selector = input_filename
+        if input_selector.get_map_count() == 1:
+            input_filename = input_selector.get_map(0)
+            input_selector = None
+    else:
+        input_ds = input_filename
+
     is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
 
     color_palette = gdalos_color.get_color_palette(color_palette)
@@ -109,9 +124,7 @@ def viewshed_calc_to_ds(vp_array,
         operation = None
 
     do_post_color = False
-    temp_files = temp_files or []
-
-    combined_post_process_needed = False
+    temp_files = temp_files if temp_files is not None else []
 
     vp_slice = make_slice(vp_slice)
 
@@ -143,60 +156,75 @@ def viewshed_calc_to_ds(vp_array,
         if len(vp_array) > max_rasters_count:
             vp_array = vp_array[0:max_rasters_count]
 
-        srs_4326 = osr.SpatialReference()
-        srs_4326.ImportFromEPSG(4326)
+        srs_4326 = projdef.get_srs(4326)
+        pjstr_4326 = srs_4326.ExportToProj4()
 
         first_vs = True
 
-        if in_coords_crs_pj is not None:
-            in_coords_crs_pj = projdef.get_proj_string(in_coords_crs_pj)
+        if in_coords_srs is not None:
+            in_coords_srs = projdef.get_proj_string(in_coords_srs)
 
         for vp in vp_array:
+            # vp might get changed, so make a copy
+            vp = copy.copy(vp)
             if first_vs or input_selector is not None:
                 first_vs = False
+                # figure out in_coords_crs_pj for getting the geo_x, geo_y
                 if input_selector is None:
-                    if in_coords_crs_pj is None:
-                        in_coords_crs_pj = projdef.get_osr(input_ds)
+                    if in_coords_srs is None:
+                        if input_ds is None:
+                            input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
+                        in_coords_srs = projdef.get_srs_from_ds(input_ds)
                 else:
-                    if in_coords_crs_pj is None:
-                        in_coords_crs_pj = srs_4326
-                    input_filename, input_ds = input_selector.get_item_projected()
+                    if in_coords_srs is None:
+                        in_coords_srs = pjstr_4326
 
-                transform_coords_to_4326 = projdef.get_transform(in_coords_crs_pj, srs_4326)
+                transform_coords_to_4326 = projdef.get_transform(in_coords_srs, pjstr_4326)
+                if transform_coords_to_4326:
+                    geo_x, geo_y, _ = transform_coords_to_4326.TransformPoint(vp.ox, vp.oy)
+                else:
+                    geo_x, geo_y = vp.ox, vp.oy
 
-                if input_filename is not None:
+                # select the ds
+                if input_selector is not None:
+                    input_filename, input_ds = input_selector.get_item_projected(geo_x, geo_y)
                     input_filename = Path(input_filename).resolve()
-                    if input_ds is None:
-                        input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
                 if input_ds is None:
-                    raise Exception('ds is None')
+                    input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
+                    if input_ds is None:
+                        raise Exception(f'cannot open input file: {input_filename}')
 
-                in_raster_srs = projdef.get_osr(input_ds)
-                input_raster_is_projected = in_raster_srs.IsProjected()
+                # figure out the input, output and intermediate srs
+                # the intermediate srs will be used for combining the output rasters, if needed
+                pjstr_input_srs = projdef.get_srs_pj_from_ds(input_ds)
+                pjstr_output_srs = projdef.get_proj_string(out_crs) if out_crs is not None else \
+                    pjstr_input_srs if input_selector is None else pjstr_4326
+                if input_selector is None:
+                    pjstr_inter_srs = pjstr_input_srs
+                else:
+                    pjstr_inter_srs = pjstr_output_srs
+
+                input_srs = projdef.get_srs_from_ds(input_ds)
+                input_raster_is_projected = input_srs.IsProjected()
                 if input_raster_is_projected:
-                    transform_coords_to_raster = projdef.get_transform(in_coords_crs_pj, in_raster_srs)
+                    transform_coords_to_raster = projdef.get_transform(in_coords_srs, pjstr_input_srs)
                 else:
                     raise Exception(f'input raster has to be projected')
-
             if input_raster_is_projected:
                 projected_filename = input_filename
                 if transform_coords_to_raster:
                     vp.ox, vp.oy, _ = transform_coords_to_raster.TransformPoint(vp.ox, vp.oy)
             else:
-                if transform_coords_to_4326:
-                    geo_x, geo_y, _ = transform_coords_to_4326.TransformPoint(vp.ox, vp.oy)
-                else:
-                    geo_x, geo_y = vp.ox, vp.oy
                 projected_pj = get_projected_pj(geo_x, geo_y)
-                transform_coords_to_raster = projdef.get_transform(in_coords_crs_pj, projected_pj)
+                transform_coords_to_raster = projdef.get_transform(in_coords_srs, projected_pj)
                 vp.ox, vp.oy, _ = transform_coords_to_raster.TransformPoint(vp.ox, vp.oy)
                 d = gdalos_extent.transform_resolution_p(transform_coords_to_raster, 10, 10, vp.ox, vp.oy)
-                extent = GeoRectangle.from_center_and_radius(vp.ox, vp.os, vp.max_r + d, vp.max_r + d)
+                extent = GeoRectangle.from_center_and_radius(vp.ox, vp.oy, vp.max_r + d, vp.max_r + d)
 
                 projected_filename = tempfile.mktemp('.tif')
                 projected_ds = gdalos_trans(
                     input_ds, out_filename=projected_filename, warp_srs=projected_pj,
-                    extent=extent, return_ds=True)
+                    extent=extent, return_ds=True, write_info=False, write_spec=False)
                 if not projected_ds:
                     raise Exception('input raster projection faild')
                 input_ds = projected_ds
@@ -206,7 +234,6 @@ def viewshed_calc_to_ds(vp_array,
             elif isinstance(backend, str):
                 backend = ViewshedBackend[backend]
 
-            inter_process = (backend == ViewshedBackend.gdal) and not vp.is_omni_h()
             is_base_calc = True
             if backend == ViewshedBackend.gdal:
                 # TypeError: '>' not supported between instances of 'NoneType' and 'int'
@@ -256,6 +283,7 @@ def viewshed_calc_to_ds(vp_array,
                     # print('GS_SetCacheSize ', talos.GS_SetCacheSize(cache_size_mb))
 
                 dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
+                talos.GS_SetProjectCRSFromActiveDTM()
                 if ovr_idx:
                     talos.GS_DtmSelectOvle(ovr_idx)
                 if dtm_open_err != 0:
@@ -268,6 +296,7 @@ def viewshed_calc_to_ds(vp_array,
                 is_base_calc = bnd_type in [gdal.GDT_Byte]
                 do_post_color = color_table and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
 
+                # talos supports only file output (not ds)
                 is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
 
                 talos.GS_SaveRaster(ras, str(d_path))
@@ -300,16 +329,27 @@ def viewshed_calc_to_ds(vp_array,
                 ds = None
                 ds = gdalos_util.open_ds(d_path)
                 temp_files.append(d_path)
-                is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
 
-            if inter_process:
-                ring = PolygonizeSector(vp.ox, vp.oy, vp.max_r, vp.max_r, vp.azimuth, vp.h_aperture)
-                calc_cutline = tempfile.mktemp(suffix='.gpkg')
-                temp_files.append(calc_cutline)
-                create_layer_from_geometries([ring], calc_cutline)
-
-                ds = gdalos_trans(ds, out_filename=d_path,
+            cut_sector = (backend == ViewshedBackend.gdal) and not vp.is_omni_h()
+            # warp_result = False
+            warp_result = (input_selector is not None)
+            if warp_result or cut_sector:
+                if cut_sector:
+                    ring = PolygonizeSector(vp.ox, vp.oy, vp.max_r, vp.max_r, vp.azimuth, vp.h_aperture)
+                    calc_cutline = tempfile.mktemp(suffix='.gpkg')
+                    temp_files.append(calc_cutline)
+                    create_layer_from_geometries([ring], calc_cutline)
+                else:
+                    calc_cutline = None
+                # todo: check why without temp file it crashes on operation
+                is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
+                ds = gdalos_trans(ds, out_filename=d_path, warp_srs=pjstr_inter_srs,
                                   cutline=calc_cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
+                if is_temp_file:
+                    # close original ds and reopen
+                    ds = None
+                    ds = gdalos_util.open_ds(d_path)
+                    temp_files.append(d_path)
                 if not ds:
                     raise Exception('Viewshed calculation failed to cut')
 
@@ -355,6 +395,7 @@ def viewshed_calc_to_ds(vp_array,
         debug_time = 1
         t = time.time()
         for i in range(debug_time):
+            is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
             ds = gdal_calc.Calc(
                 calc_expr, outfile=str(d_path), extent=extent, format=gdal_out_format,
                 color_table=color_table, hideNodata=hide_nodata, return_ds=return_ds, overwrite=True,
@@ -368,11 +409,10 @@ def viewshed_calc_to_ds(vp_array,
         for i in range(len(files)):
             files[i] = None  # close calc input ds(s)
 
-    pjstr_src_srs = projdef.get_srs_pj_from_ds(input_ds)
-    pjstr_tgt_srs = projdef.get_proj_string(out_crs) if out_crs is not None else pjstr_src_srs
-    combined_post_process_needed = cutline or not projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs)
+    combined_post_process_needed = cutline or not projdef.proj_is_equivalent(pjstr_inter_srs, pjstr_output_srs)
     if combined_post_process_needed:
-        ds = gdalos_trans(ds, out_filename=d_path, warp_srs=pjstr_tgt_srs,
+        is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
+        ds = gdalos_trans(ds, out_filename=d_path, warp_srs=pjstr_output_srs,
                           cutline=cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
 
         if return_ds:
@@ -380,29 +420,35 @@ def viewshed_calc_to_ds(vp_array,
                 raise Exception('error occurred')
 
     if do_post_color:
+        is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
         ds = gdalos_raster_color(ds, out_filename=d_path, color_palette=color_palette, discrete_mode=discrete_mode)
         if not ds:
             raise Exception('Viewshed calculation failed to color result')
 
+    removed = []
     if temp_files:
         for f in temp_files:
             try:
                 os.remove(f)
+                removed.append(f)
             except:
                 pass
                 # probably this is a file that backs the ds that we'll return
                 # print('failed to remove temp file:{}'.format(f))
-
+    for f in removed:
+        temp_files.remove(f)
     return ds
 
 
-def test_calcz(inputs, raster_filename, input_ds, dir_path, files):
+def test_calcz(inputs, raster_filename, dir_path, calcs=None, **kwargs):
+    if calcs is None:
+        calcs = CalcOperation
     cwd = Path.cwd()
     backend = ViewshedBackend.talos
     for color_palette in [..., None]:
         prefix = 'calcz_color_' if color_palette else 'calcz_'
         output_path = dir_path / Path(prefix + str(backend))
-        for calc in CalcOperation:
+        for calc in calcs:
             # if calc != CalcOperation.viewshed:
             #     continue
             if color_palette is ...:
@@ -411,28 +457,28 @@ def test_calcz(inputs, raster_filename, input_ds, dir_path, files):
                 # continue
                 for i, vp in enumerate(inputs):
                     output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
-                    viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
+                    viewshed_calc(input_filename=raster_filename,
                                   output_filename=output_filename,
                                   vp_array=vp,
                                   backend=backend,
                                   operation=calc,
                                   color_palette=color_palette,
-                                  files=files,
+                                  **kwargs
                                   )
             elif calc in [CalcOperation.max, CalcOperation.min]:
                 output_filename = output_path / Path('{}.tif'.format(calc.name))
-                viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
+                viewshed_calc(input_filename=raster_filename,
                               output_filename=output_filename,
                               vp_array=inputs,
                               backend=backend,
                               operation=calc,
                               color_palette=color_palette,
-                              files=files,
+                              **kwargs,
                               # vp_slice=slice(0, 2)
                               )
 
 
-def test_simple_viewshed(inputs, raster_filename, input_ds, dir_path, files=None, run_comb_with_post=False):
+def test_simple_viewshed(inputs, raster_filename, dir_path, run_comb_with_post=False, **kwargs):
     calc_filter = CalcOperation
     # calc_filter = [CalcOperation.count_z]
     cwd = Path.cwd()
@@ -443,24 +489,24 @@ def test_simple_viewshed(inputs, raster_filename, input_ds, dir_path, files=None
             if calc == CalcOperation.viewshed:
                 for i, vp in enumerate(inputs):
                     output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
-                    viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
+                    viewshed_calc(input_filename=raster_filename,
                                   output_filename=output_filename,
                                   vp_array=vp,
                                   backend=backend,
                                   operation=calc,
                                   color_palette=color_palette,
-                                  files=files,
+                                  **kwargs,
                                   )
             else:
                 output_filename = output_path / Path('{}.tif'.format(calc.name))
                 try:
-                    viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
+                    viewshed_calc(input_filename=raster_filename,
                                   output_filename=output_filename,
                                   vp_array=inputs,
                                   backend=backend,
                                   operation=calc,
                                   color_palette=color_palette,
-                                  files=files,
+                                  **kwargs,
                                   # vp_slice=slice(0, 2)
                                   )
                 except:
@@ -469,7 +515,7 @@ def test_simple_viewshed(inputs, raster_filename, input_ds, dir_path, files=None
         if run_comb_with_post:
             output_filename = output_path / 'combine_post.tif'
             cutline = cwd / r'sample/shp/comb_poly.gml'
-            viewshed_calc(input_ds=input_ds, input_filename=raster_filename,
+            viewshed_calc(input_filename=raster_filename,
                           output_filename=output_filename,
                           vp_array=inputs,
                           backend=backend,
@@ -477,19 +523,23 @@ def test_simple_viewshed(inputs, raster_filename, input_ds, dir_path, files=None
                           color_palette=color_palette,
                           cutline=cutline,
                           out_crs=0,
-                          files=files)
+                          **kwargs)
 
 
-def main_test(calcz=True, simple_viewshed=True, is_geo=False):
+def main_test(calcz=True, simple_viewshed=True, is_geo_coords=False, is_geo_raster=False):
     # dir_path = Path('/home/idan/maps')
     dir_path = Path(r'd:\dev\gis\maps')
-    if is_geo:
+
+    vp = ViewshedGridParams(is_geo_coords)
+    in_coords_srs = 4326 if is_geo_coords else None
+
+    if is_geo_raster:
         raster_filename = Path(r'd:\Maps\w84geo\dtm_SRTM1_hgt_ndv0.cog.tif.new.cog.tif.x[20,80]_y[20,40].cog.tif')
     else:
-        raster_filename = Path(dir_path) / Path('srtm1_36_sample.tif')
-    input_ds = gdalos_util.open_ds(raster_filename)
-
-    vp = ViewshedGridParams()
+        if is_geo_coords:
+            raster_filename = DataSetSelector(r'd:\Maps\srtm3.tif\utm.cog2\*.tif')
+        else:
+            raster_filename = Path(dir_path) / Path('srtm1_36_sample.tif')
 
     use_input_files = False
     if use_input_files:
@@ -498,16 +548,20 @@ def main_test(calcz=True, simple_viewshed=True, is_geo=False):
     else:
         files = None
 
+    if simple_viewshed:
+        inputs = vp.get_array()
+        test_simple_viewshed(inputs=inputs, run_comb_with_post=False, files=files, in_coords_srs=in_coords_srs,
+                             dir_path=dir_path, raster_filename=raster_filename)
     if calcz:
         vp1 = copy.copy(vp)
         vp1.tz = None
         inputs = vp1.get_array()
-        test_calcz(inputs=inputs, raster_filename=raster_filename, input_ds=input_ds, dir_path=dir_path, files=files)
-    if simple_viewshed:
-        inputs = vp.get_array()
-        test_simple_viewshed(inputs=inputs, run_comb_with_post=False, files=files,
-                             dir_path=dir_path, raster_filename=raster_filename, input_ds=input_ds)
+        test_calcz(inputs=inputs, raster_filename=raster_filename, in_coords_srs=in_coords_srs, dir_path=dir_path,
+                   # calcs=[CalcOperation.max],
+                   files=files)
 
 
 if __name__ == "__main__":
-    main_test()
+    main_test(is_geo_coords=False,
+              # simple_viewshed=False
+              )
