@@ -12,16 +12,15 @@ def calc_dot_pitch(screen_diagonal_inches=24, screen_width_pixels=1920, screen_h
     return x
 
 
-def calc_scale(dot_pitch, pixels_at_zoom0=256, zoom=10):
-    earth_r = 6378137
+def calc_scale(dot_pitch, pixels_at_zoom0=256, zoom=10, earth_r=6378137):
     pixels_at_zoom = pixels_at_zoom0 * (2 ** zoom)
     perimeter = 2 * math.pi * earth_r
-    scale = round(perimeter / (pixels_at_zoom * dot_pitch))
+    scale = perimeter / (pixels_at_zoom * dot_pitch)
     return scale
 
 
 if __name__ == '__main__':
     web_mercator = True
     pixels = 256 if web_mercator else 512
-    map_scale = calc_scale(dot_pitch=calc_dot_pitch(24, 1920, 1080), zoom=10, pixels_at_zoom0=pixels)
+    map_scale = round(calc_scale(dot_pitch=calc_dot_pitch(24, 1920, 1080), zoom=10, pixels_at_zoom0=pixels))
     print(map_scale)

@@ -289,11 +289,14 @@ def viewshed_calc_to_ds(vp_array,
                 if dtm_open_err != 0:
                     raise Exception('talos could not open input file {}'.format(projected_filename))
                 talos.GS_SetRefractionCoeff(vp.refraction_coeff)
-                inputs = vp.get_as_talos_params()
-                ras = talos.GS_Viewshed_Calc1(**inputs)
 
+                inputs = vp.get_as_talos_params()
                 bnd_type = inputs['result_dt']
                 is_base_calc = bnd_type in [gdal.GDT_Byte]
+                inputs['low_nodata'] = is_base_calc or operation == CalcOperation.max
+
+                ras = talos.GS_Viewshed_Calc1(**inputs)
+
                 do_post_color = color_table and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
 
                 # talos supports only file output (not ds)

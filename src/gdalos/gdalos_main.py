@@ -556,9 +556,9 @@ def gdalos_trans(
             warp_options["targetAlignedPixels"] = True
             base_out_res = [r / 2 ** ovr_idx for r in out_res]
             out_suffixes.append('r' + str(base_out_res if keep_src_ovr_suffixes else out_res))
-        elif ovr_idx is not ...:
-            #  out_res is None and no warp
-            out_res = input_res
+        # elif ovr_idx is not ...:
+        #     #  out_res is None and no warp
+        #     out_res = input_res
     # endregion
 
     # region decide ovr_type

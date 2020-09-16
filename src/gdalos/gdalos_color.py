@@ -140,6 +140,9 @@ class ColorPalette:
     def read_color_file(self, color_filename_or_lines):
         if isinstance(color_filename_or_lines, ColorPalette):
             return self
+        elif color_filename_or_lines is None:
+            self.pal.clear()
+            return self
         elif isinstance(color_filename_or_lines, (Path, str)):
             color_filename_or_lines = open(str(color_filename_or_lines)).readlines()
         elif not isinstance(color_filename_or_lines, Sequence):
