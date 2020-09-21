@@ -32,6 +32,18 @@ def options_dict_to_list(options: dict):
     return options_list
 
 
+def multi_thread_to_str(multi_thread: Union[bool, int, str]) -> str:
+    if isinstance(multi_thread, bool):
+        multi_thread = 'ALL_CPUS'
+    elif isinstance(multi_thread, int):
+        multi_thread = str(multi_thread)
+    elif isinstance(multi_thread, str):
+        pass
+    else:
+        raise Exception(f'unknown value multi_threa={multi_thread}')
+    return multi_thread
+
+
 class RasterKind(Enum):
     photo = auto()
     pal = auto()
@@ -304,10 +316,7 @@ def gdalos_trans(
     ds = gdalos_util.open_ds(filename, ovr_idx=ovr_idx, open_options=open_options, logger=logger)
     # region decide which overviews to make
     if multi_thread:
-        if isinstance(multi_thread, int):
-            multi_thread = str(multi_thread)
-        elif isinstance(multi_thread, bool):
-            multi_thread = 'ALL_CPUS'
+        multi_thread = multi_thread_to_str(multi_thread)
         creation_options['NUM_THREADS'] = multi_thread
         warp_options_inner['NUM_THREADS'] = multi_thread
         warp_options['multithread'] = True
@@ -939,6 +948,7 @@ def gdalos_trans(
                     ovr_type=ovr_type,
                     dst_ovr_count=dst_ovr_count,
                     kind=kind,
+                    multi_thread=multi_thread,
                     resampling_alg=resampling_alg,
                     print_progress=print_progress,
                     logger=logger,
@@ -1083,6 +1093,7 @@ def gdalos_ovr(
         config_options: dict = None,
         ovr_options: dict = None,
         ovr_files: list = None,
+        multi_thread: Union[bool, int, str] = True,
         print_progress=...,
         logger=None,
 ):
@@ -1122,6 +1133,13 @@ def gdalos_ovr(
         ovr_options = dict()
     if config_options is None:
         config_options = dict()
+
+    gdal_version = int(gdal.VersionInfo())
+    multi_thread_support_available = gdal_version >= 3_02_00_00
+    if multi_thread and multi_thread_support_available:
+        multi_thread = multi_thread_to_str(multi_thread)
+        config_options['GDAL_NUM_THREADS'] = multi_thread
+
     if resampling_alg is ...:
         if kind in [None, ...]:
             kind = RasterKind.guess(filename)
