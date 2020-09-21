@@ -271,6 +271,7 @@ def viewshed_calc_to_ds(vp_array,
                     print('talos Version ', talosgis_data.__data__.__version__)
                     print('GS_GetIntVersion ', talos.GS_GetIntVersion())
                     print('GS_GetDLLVersion ', talos.GS_GetDLLVersion())
+                    print('GS_DtmGetCalcThreadsCount ', talos.GS_DtmGetCalcThreadsCount())
 
                     gdal_path = get_talos_gdal_path()
                     talos.GS_SetGDALPath(gdal_path)

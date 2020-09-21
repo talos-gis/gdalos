@@ -25,6 +25,13 @@ def print_time_now(logger):
     logger.info(get_cuttent_time_string())
 
 
+def options_dict_to_list(options: dict):
+    options_list = []
+    for k, v in options.items():
+        options_list.append("{}={}".format(k, v))
+    return options_list
+
+
 class RasterKind(Enum):
     photo = auto()
     pal = auto()
@@ -151,6 +158,7 @@ def gdalos_trans(
         creation_options: dict = None,
         translate_options: dict = None,
         warp_options: dict = None,
+        warp_options_inner: dict = None,
         extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None,
         extent_in_4326: bool = True,
         extent_crop_to_minimal: bool = True,
@@ -168,6 +176,7 @@ def gdalos_trans(
         src_nodatavalue: Optional[Union[type(...), Real]] = ...,  # None -> use minimum; ... -> use original
         hide_nodatavalue: bool = False,
         resampling_alg: Union[type(...), None, GdalResamplingAlg, str] = ...,
+        multi_thread: Union[bool, int, str] = True,
         lossy: bool = None,
         expand_rgb: bool = False,
         quality: Real = ...,
@@ -286,6 +295,7 @@ def gdalos_trans(
     creation_options = dict(creation_options or dict())
     translate_options = dict(translate_options or dict())
     warp_options = dict(warp_options or dict())
+    warp_options_inner = dict(warp_options or dict())
     out_suffixes = []
 
     if ovr_idx not in [..., None]:
@@ -293,6 +303,14 @@ def gdalos_trans(
 
     ds = gdalos_util.open_ds(filename, ovr_idx=ovr_idx, open_options=open_options, logger=logger)
     # region decide which overviews to make
+    if multi_thread:
+        if isinstance(multi_thread, int):
+            multi_thread = str(multi_thread)
+        elif isinstance(multi_thread, bool):
+            multi_thread = 'ALL_CPUS'
+        creation_options['NUM_THREADS'] = multi_thread
+        warp_options_inner['NUM_THREADS'] = multi_thread
+        warp_options['multithread'] = True
     if ovr_idx is not ...:
         warp_options['overviewLevel'] = 'None'  # force gdal to use the selected ovr_idx
         if ovr_idx is None:
@@ -537,7 +555,9 @@ def gdalos_trans(
             warp_scale = float(warp_scale)
         if not isinstance(warp_scale, Sequence):
             warp_scale = [warp_scale, warp_scale]
-        warp_options["warpOptions"] = ['XSCALE={}'.format(warp_scale[0]), 'YSCALE={}'.format(warp_scale[1])]
+        # warp_options["warpOptions"].extend(['XSCALE={}'.format(warp_scale[0]), 'YSCALE={}'.format(warp_scale[1])])
+        warp_options_inner['XSCALE'] = str(warp_scale[0])
+        warp_options_inner['YSCALE'] = str(warp_scale[1])
 
     # region out_res
     if out_res is not ...:
@@ -769,10 +789,7 @@ def gdalos_trans(
             creation_options["COPY_SRC_OVERVIEWS"] = "YES"
 
         if creation_options:
-            creation_options_list = []
-            for k, v in creation_options.items():
-                creation_options_list.append("{}={}".format(k, v))
-            common_options["creationOptions"] = creation_options_list
+            common_options["creationOptions"] = options_dict_to_list(creation_options)
 
         if print_progress:
             common_options["callback"] = print_progress_callback(print_progress)
@@ -802,6 +819,8 @@ def gdalos_trans(
                     gdal.SetConfigOption(k, v)
 
             if do_warp:
+                if warp_options_inner:
+                    warp_options["warpOptions"] = options_dict_to_list(warp_options_inner)
                 if verbose and warp_options:
                     logger.info("warp options: " + str(warp_options))
                 out_ds = gdal.Warp(str(trans_filename), ds, **common_options, **warp_options)
