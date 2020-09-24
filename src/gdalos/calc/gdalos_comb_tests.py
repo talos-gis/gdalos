@@ -6,7 +6,7 @@ from pathlib import Path
 from gdalos import gdalos_util, gdalos_extent, GeoRectangle
 from gdalos.calc import gdal_calc
 from gdalos.gdalos_color import ColorPalette
-from gdalos.calc.gdalcompare import compare
+from gdalos.calc.gdalcompare import find_diff
 from gdalos.calc import gdalos_combine
 
 
@@ -86,7 +86,7 @@ def compare_rasters(pattern):
             golden = filename
         else:
             print('{} vs {}'.format(golden, filename))
-            res = compare(golden, filename)
+            res = find_diff(golden, filename)
             print(res)
             total += res
     print('total: {}'.format(total))

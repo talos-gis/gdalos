@@ -261,7 +261,7 @@ def compare_sds(golden_db, new_db, options=None):
 #######################################################
 
 
-def compare(golden_file, new_file, check_sds=0):
+def find_diff(golden_file, new_file, check_sds=False):
     # Compare Files
     found_diff = 0
 
@@ -332,6 +332,6 @@ if __name__ == '__main__':
         i = i + 1
         # next argument
 
-    found_diff = compare(golden_file, new_file, check_sds)
+    found_diff = find_diff(golden_file, new_file, check_sds)
     print('Differences Found: ' + str(found_diff))
     sys.exit(found_diff)
