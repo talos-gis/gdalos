@@ -1,6 +1,7 @@
 from setuptools import setup, find_packages
 
 from src.gdalos_data.__data__ import (
+    __name__,
     __author__,
     __author_email__,
     __license__,
@@ -9,7 +10,7 @@ from src.gdalos_data.__data__ import (
 )
 
 setup(
-    name="gdalos",
+    name=__name__,
     version=__version__,
     author=__author__,
     author_email=__author_email__,

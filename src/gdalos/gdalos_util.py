@@ -109,9 +109,9 @@ def get_raster_band(filename_or_ds, bnd_index=1, ovr_index=None):
         return bnd
 
 
-def get_ovr_count(filename_or_ds):
+def get_ovr_count(filename_or_ds, bnd_index=1):
     with OpenDS(filename_or_ds) as ds:
-        bnd = ds.GetRasterBand(1)
+        bnd = ds.GetRasterBand(bnd_index)
         return bnd.GetOverviewCount()
 
 
@@ -132,9 +132,9 @@ def get_raster_minimum(filename_or_ds):
         return min(_band_getmin(b) for b in _get_bands(ds))
 
 
-def get_raster_min_max(filename_or_ds):
+def get_raster_min_max(filename_or_ds, bnd_index=1):
     with OpenDS(filename_or_ds) as ds:
-        bnd = ds.GetRasterBand(1)
+        bnd = ds.GetRasterBand(bnd_index)
         bnd.ComputeStatistics(0)
         min_val = bnd.GetMinimum()
         max_val = bnd.GetMaximum()

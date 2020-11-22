@@ -71,7 +71,7 @@ class RasterKind(Enum):
         raise Exception("could not guess raster kind")
 
 
-def resampling_alg_by_kind(kind, expand_rgb=False, fast_mode=False) -> GdalResamplingAlg:
+def resampling_alg_by_kind(kind: RasterKind, expand_rgb=False, fast_mode=False) -> GdalResamplingAlg:
     if kind == RasterKind.pal and not expand_rgb:
         if fast_mode:
             return GdalResamplingAlg.nearest
