@@ -1,11 +1,12 @@
 import copy
 from gdalos.viewshed.viewshed_params import ViewshedParams
+from gdalos.viewshed.radio_params import RadioParams
 
 
 class ViewshedGridParams(ViewshedParams):
     __slots__ = ['name', 'interval', 'grid_range', 'r_fact']
 
-    def __init__(self, is_geo):
+    def __init__(self, is_geo, is_radio):
         super().__init__()
         if is_geo:
             # self.ox = 35.0
@@ -29,6 +30,9 @@ class ViewshedGridParams(ViewshedParams):
         self.interval = self.max_r / (self.r_fact * 2)
         j = 1
         self.grid_range = range(-j, j + 1)
+
+        if is_radio:
+            self.radio_parameters = RadioParams()
 
     def get_array(self):
         result = []

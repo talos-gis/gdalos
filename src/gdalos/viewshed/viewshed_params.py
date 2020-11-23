@@ -1,6 +1,6 @@
 import copy
 from typing import Sequence
-import gdal
+from osgeo import gdal
 
 st_seen = 5
 st_seenbut = 4
@@ -25,7 +25,7 @@ class ViewshedParams(object):
                  'ox', 'oy', 'oz', 'tz', 'omsl', 'tmsl',
                  'azimuth', 'h_aperture', 'elevation', 'v_aperture',
                  'vv', 'iv', 'ov', 'ndv',
-                 'refraction_coeff', 'mode']
+                 'refraction_coeff', 'mode', 'radio_parameters']
 
     def __init__(self):
         self.min_r = 0
@@ -53,6 +53,7 @@ class ViewshedParams(object):
 
         self.refraction_coeff = atmospheric_refraction_coeff
         self.mode = 2
+        self.radio_parameters = None
 
     def is_omni_h(self):
         return not self.h_aperture or abs(self.h_aperture - 360) < 0.0001
