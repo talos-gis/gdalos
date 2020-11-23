@@ -1,8 +1,7 @@
 from functools import partial
-from numbers import Real
 from typing import Union
 
-import gdal, osr, ogr
+from osgeo import gdal
 import glob
 import tempfile
 import os
@@ -260,7 +259,7 @@ def viewshed_calc_to_ds(vp_array,
                 global talos
                 if talos is None:
                     try:
-                        from talosgis import get_talos_gdal_path
+                        import talosgis
                         from talosgis import talos2 as talos
                         import talosgis_data.__data__
                         import gdalos_data.__data__
@@ -269,12 +268,16 @@ def viewshed_calc_to_ds(vp_array,
 
                     print('gdalos Version ', gdalos_data.__data__.__version__)
                     print('talos Version ', talosgis_data.__data__.__version__)
-                    print('GS_GetIntVersion ', talos.GS_GetIntVersion())
+                    talos_ver = talos.GS_GetIntVersion()
+                    print('GS_GetIntVersion ', talos_ver)
                     print('GS_GetDLLVersion ', talos.GS_GetDLLVersion())
                     print('GS_DtmGetCalcThreadsCount ', talos.GS_DtmGetCalcThreadsCount())
 
-                    gdal_path = get_talos_gdal_path()
+                    gdal_path = talosgis.get_talos_gdal_path()
                     talos.GS_SetGDALPath(gdal_path)
+                    if talos_ver >= 260:
+                        proj_path = talosgis.get_talos_proj_path()
+                        talos.GS_SetProjPath(proj_path)
                     # print('GS_GetGDALPath ', talos.GS_GetGDALPath())
                     print('GS_talosInit ', talos.GS_talosInit())
 
@@ -282,6 +285,9 @@ def viewshed_calc_to_ds(vp_array,
                     # print('GS_GetGDALPath ', talos.GS_GetGDALPath())
 
                     # print('GS_SetCacheSize ', talos.GS_SetCacheSize(cache_size_mb))
+
+                talos_ver = talos.GS_GetIntVersion()
+                radio_support = talos_ver >= 260
 
                 dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
                 talos.GS_SetProjectCRSFromActiveDTM()
@@ -444,7 +450,7 @@ def viewshed_calc_to_ds(vp_array,
     return ds
 
 
-def test_calcz(inputs, raster_filename, dir_path, calcs=None, **kwargs):
+def test_calcz(vp_array, raster_filename, dir_path, calcs=None, **kwargs):
     if calcs is None:
         calcs = CalcOperation
     cwd = Path.cwd()
@@ -459,7 +465,7 @@ def test_calcz(inputs, raster_filename, dir_path, calcs=None, **kwargs):
                 color_palette = cwd / 'sample/color_files/gradient/{}.txt'.format('percentages')  #calc.name)
             if calc == CalcOperation.viewshed:
                 # continue
-                for i, vp in enumerate(inputs):
+                for i, vp in enumerate(vp_array):
                     output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
                     viewshed_calc(input_filename=raster_filename,
                                   output_filename=output_filename,
@@ -473,7 +479,7 @@ def test_calcz(inputs, raster_filename, dir_path, calcs=None, **kwargs):
                 output_filename = output_path / Path('{}.tif'.format(calc.name))
                 viewshed_calc(input_filename=raster_filename,
                               output_filename=output_filename,
-                              vp_array=inputs,
+                              vp_array=vp_array,
                               backend=backend,
                               operation=calc,
                               color_palette=color_palette,
@@ -482,7 +488,7 @@ def test_calcz(inputs, raster_filename, dir_path, calcs=None, **kwargs):
                               )
 
 
-def test_simple_viewshed(inputs, raster_filename, dir_path, run_comb_with_post=False, **kwargs):
+def test_simple_viewshed(vp_array, raster_filename, dir_path, run_comb_with_post=False, **kwargs):
     calc_filter = CalcOperation
     # calc_filter = [CalcOperation.count_z]
     cwd = Path.cwd()
@@ -491,7 +497,7 @@ def test_simple_viewshed(inputs, raster_filename, dir_path, run_comb_with_post=F
         for calc in calc_filter:
             color_palette = cwd / 'sample/color_files/viewshed/{}.txt'.format(calc.name)
             if calc == CalcOperation.viewshed:
-                for i, vp in enumerate(inputs):
+                for i, vp in enumerate(vp_array):
                     output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
                     viewshed_calc(input_filename=raster_filename,
                                   output_filename=output_filename,
@@ -506,7 +512,7 @@ def test_simple_viewshed(inputs, raster_filename, dir_path, run_comb_with_post=F
                 try:
                     viewshed_calc(input_filename=raster_filename,
                                   output_filename=output_filename,
-                                  vp_array=inputs,
+                                  vp_array=vp_array,
                                   backend=backend,
                                   operation=calc,
                                   color_palette=color_palette,
@@ -514,14 +520,14 @@ def test_simple_viewshed(inputs, raster_filename, dir_path, run_comb_with_post=F
                                   # vp_slice=slice(0, 2)
                                   )
                 except:
-                    print('failed to run viewshed calc with backend: {}, inputs: {}'.format(backend, inputs))
+                    print('failed to run viewshed calc with backend: {}, inputs: {}'.format(backend, vp_array))
 
         if run_comb_with_post:
             output_filename = output_path / 'combine_post.tif'
             cutline = cwd / r'sample/shp/comb_poly.gml'
             viewshed_calc(input_filename=raster_filename,
                           output_filename=output_filename,
-                          vp_array=inputs,
+                          vp_array=vp_array,
                           backend=backend,
                           operation=CalcOperation.count,
                           color_palette=color_palette,
@@ -530,11 +536,11 @@ def test_simple_viewshed(inputs, raster_filename, dir_path, run_comb_with_post=F
                           **kwargs)
 
 
-def main_test(calcz=True, simple_viewshed=True, is_geo_coords=False, is_geo_raster=False):
+def main_test(calcz=True, simple_viewshed=True, is_geo_coords=False, is_geo_raster=False, is_radio=False):
     # dir_path = Path('/home/idan/maps')
     dir_path = Path(r'd:\dev\gis\maps')
 
-    vp = ViewshedGridParams(is_geo_coords)
+    vp = ViewshedGridParams(is_geo_coords, is_radio)
     in_coords_srs = 4326 if is_geo_coords else None
 
     if is_geo_raster:
@@ -553,19 +559,20 @@ def main_test(calcz=True, simple_viewshed=True, is_geo_coords=False, is_geo_rast
         files = None
 
     if simple_viewshed:
-        inputs = vp.get_array()
-        test_simple_viewshed(inputs=inputs, run_comb_with_post=False, files=files, in_coords_srs=in_coords_srs,
+        vp_array = vp.get_array()
+        test_simple_viewshed(vp_array=vp_array, run_comb_with_post=False, files=files, in_coords_srs=in_coords_srs,
                              dir_path=dir_path, raster_filename=raster_filename)
     if calcz:
         vp1 = copy.copy(vp)
         vp1.tz = None
-        inputs = vp1.get_array()
-        test_calcz(inputs=inputs, raster_filename=raster_filename, in_coords_srs=in_coords_srs, dir_path=dir_path,
+        vp_array = vp1.get_array()
+        test_calcz(vp_array=vp_array, raster_filename=raster_filename, in_coords_srs=in_coords_srs, dir_path=dir_path,
                    # calcs=[CalcOperation.max],
                    files=files)
 
 
 if __name__ == "__main__":
     main_test(is_geo_coords=False,
+              is_radio=True,
               # simple_viewshed=False
               )

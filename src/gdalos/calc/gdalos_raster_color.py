@@ -1,6 +1,6 @@
 import os
 import tempfile
-import gdal
+from osgeo import gdal
 from gdalos.gdalos_color import ColorPalette
 from gdalos.calc import gdal_calc
 from functools import partial

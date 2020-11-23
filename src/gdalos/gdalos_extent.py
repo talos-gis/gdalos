@@ -1,8 +1,7 @@
 import tempfile
 import math
 
-from osgeo import ogr, osr
-import gdal
+from osgeo import gdal
 
 from gdalos.rectangle import GeoRectangle, get_points_extent
 from gdalos import gdalos_util

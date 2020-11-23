@@ -1,5 +1,5 @@
 import numpy as np
-import gdal
+from osgeo import gdal
 
 gdal_dt_to_np_dt = {gdal.GDT_Byte: np.uint8,
                     gdal.GDT_UInt16: np.uint16,

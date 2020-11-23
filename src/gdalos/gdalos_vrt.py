@@ -2,7 +2,7 @@ import math
 from collections import defaultdict
 from typing import List
 
-import gdal
+from osgeo import gdal
 import re
 import os
 from pathlib import Path

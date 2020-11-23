@@ -1,6 +1,6 @@
 import os
 import glob
-import gdal
+from osgeo import gdal
 import tempfile
 from pathlib import Path
 from gdalos import gdalos_util, gdalos_extent, GeoRectangle

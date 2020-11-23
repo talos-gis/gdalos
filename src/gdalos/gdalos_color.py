@@ -1,6 +1,6 @@
 import os
 import re
-import gdal
+from osgeo import gdal
 from xml.dom import minidom
 from collections import OrderedDict
 from pathlib import Path

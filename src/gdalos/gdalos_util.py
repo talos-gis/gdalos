@@ -3,9 +3,9 @@ import os
 from pathlib import Path
 from typing import Iterator, Sequence, Union
 
-import gdal
-import ogr
-import osr
+from osgeo import gdal
+from osgeo import ogr
+from osgeo import osr
 
 from gdalos import gdalos_types
 from gdalos.gdalos_types import FileName

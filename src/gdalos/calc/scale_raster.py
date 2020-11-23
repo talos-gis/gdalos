@@ -1,7 +1,7 @@
 import math
 import numpy as np
 from functools import partial
-import gdal
+from osgeo import gdal
 from gdalos.calc import gdal_calc, gdal_numpy
 from gdalos import gdalos_util
 from numbers import Real

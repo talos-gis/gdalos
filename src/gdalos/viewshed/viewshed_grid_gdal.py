@@ -14,7 +14,7 @@ def calc_extent(oxy, grid_range, interval, md, frame):
 
 
 def viewshed_run(vp: ViewshedGridParams, output_path, input_filename):
-    import gdal
+    from osgeo import gdal
     from gdalos import gdalos_util
 
     ds = gdalos_util.open_ds(input_filename)
