@@ -57,3 +57,8 @@ def replace_keys(dicts, key_map):
     if single:
         result = result[0]
     return result
+
+
+def get_dict(slotted_object):
+    return {x: getattr(slotted_object, x) for x in slotted_object.__slots__}
+

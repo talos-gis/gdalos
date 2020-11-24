@@ -273,11 +273,16 @@ def viewshed_calc_to_ds(vp_array,
                     print('GS_GetDLLVersion ', talos.GS_GetDLLVersion())
                     print('GS_DtmGetCalcThreadsCount ', talos.GS_DtmGetCalcThreadsCount())
 
-                    gdal_path = talosgis.get_talos_gdal_path()
-                    talos.GS_SetGDALPath(gdal_path)
-                    if talos_ver >= 260:
+                    if hasattr(talos, 'GS_SetGDALPath'):
+                        gdal_path = talosgis.get_talos_gdal_path()
+                        talos.GS_SetGDALPath(gdal_path)
+                    if hasattr(talos, 'GS_SetProjPath'):
                         proj_path = talosgis.get_talos_proj_path()
                         talos.GS_SetProjPath(proj_path)
+                    if hasattr(talos, 'GS_SetRadioPath'):
+                        radio_path = talosgis.get_talos_radio_path()
+                        talos.GS_SetRadioPath(radio_path)
+
                     # print('GS_GetGDALPath ', talos.GS_GetGDALPath())
                     print('GS_talosInit ', talos.GS_talosInit())
 
@@ -285,9 +290,6 @@ def viewshed_calc_to_ds(vp_array,
                     # print('GS_GetGDALPath ', talos.GS_GetGDALPath())
 
                     # print('GS_SetCacheSize ', talos.GS_SetCacheSize(cache_size_mb))
-
-                talos_ver = talos.GS_GetIntVersion()
-                radio_support = talos_ver >= 260
 
                 dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
                 talos.GS_SetProjectCRSFromActiveDTM()
@@ -301,6 +303,13 @@ def viewshed_calc_to_ds(vp_array,
                 bnd_type = inputs['result_dt']
                 is_base_calc = bnd_type in [gdal.GDT_Byte]
                 inputs['low_nodata'] = is_base_calc or operation == CalcOperation.max
+
+                if hasattr(talos, 'GS_SetCalcModule'):
+                    talos.GS_SetCalcModule(vp.get_calc_module())
+                if vp.is_radio():
+                    if not hasattr(talos, 'GS_SetRadioParameters'):
+                        raise Exception('This version does not support radio')
+                    talos.GS_SetRadioParameters(**vp.get_radio_as_talos_params())
 
                 ras = talos.GS_Viewshed_Calc1(**inputs)
 
@@ -495,9 +504,9 @@ def test_simple_viewshed(vp_array, raster_filename, dir_path, run_comb_with_post
     for backend in reversed(ViewshedBackend):
         output_path = dir_path / Path('comb_' + str(backend))
         for calc in calc_filter:
-            color_palette = cwd / 'sample/color_files/viewshed/{}.txt'.format(calc.name)
             if calc == CalcOperation.viewshed:
                 for i, vp in enumerate(vp_array):
+                    color_palette = None if vp.is_radio else cwd / 'sample/color_files/viewshed/{}.txt'.format(calc.name)
                     output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
                     viewshed_calc(input_filename=raster_filename,
                                   output_filename=output_filename,
