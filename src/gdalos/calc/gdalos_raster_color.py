@@ -134,7 +134,7 @@ def test_dem_color():
     color_palette.read_color_file(color_palette_filename)
 
     ds = gdalos_raster_color(
-        ds=ds,
+        filename_or_ds=ds,
         out_filename=out_filename,
         color_palette=color_palette,
         discrete_mode=DiscreteMode.interp,

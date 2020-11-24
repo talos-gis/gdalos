@@ -239,15 +239,15 @@ def doit(opts, args):
                             else:
                                 eps = 0.000001
                                 for i in (1, 5):
-                                    if abs(GeoTransformCheck[i] - myFileGeoTransform[i])>eps:
+                                    if abs(GeoTransformCheck[i] - myFileGeoTransform[i]) > eps:
                                         raise Exception(
                                             "Error! Pixel size file %s %s are different from other files %s.  Cannot proceed" %
                                             (myF, myFileGeoTransform, GeoTransformCheck))
                                 for i in (2, 4):
-                                    if abs(GeoTransformCheck[i] - myFileGeoTransform[i])>eps:
+                                    if abs(myFileGeoTransform[i]) > eps:
                                         raise Exception(
-                                            "Error! The rotation of file %s is %s, only 0 is accepted.  Cannot proceed" %
-                                            (myF, (myFileGeoTransform[2], myFileGeoTransform[4]), GeoTransformCheck))
+                                            "Error! The rotation of file %s is (%s %s), only 0 is accepted.  Cannot proceed" %
+                                            (myF, myFileGeoTransform[2], myFileGeoTransform[4]))
                     else:
                         GeoTransformCheck = myFileGeoTransform
                 else:
