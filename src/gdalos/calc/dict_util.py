@@ -1,7 +1,11 @@
+import copy
+from typing import List
+
+
 def fill_arrays(*args):
     max_len = max(len(x) for x in args)
     result = []
-    for x in range(len(args)):
+    for x in args:
         lx = len(x)
         if lx < max_len:
             v = x[lx-1]
@@ -61,4 +65,22 @@ def replace_keys(dicts, key_map):
 
 def get_dict(slotted_object):
     return {x: getattr(slotted_object, x) for x in slotted_object.__slots__}
+
+
+def get_list_from_lists_dict(d: dict, vp, key_map=None) -> List:
+    max_len = max(len(v) if v else 0 for v in d.values())
+    result = []
+    for i in range(max_len):
+        vp = copy.deepcopy(vp)
+        for k, v in d.items():
+            if not v:
+                continue
+            if key_map:
+                k = key_map[k]
+            len_v = len(v)
+            if i < len_v:
+                setattr(vp, k, v[i])
+                # vp1.k = v[i]
+        result.append(vp)
+    return result
 

@@ -31,6 +31,9 @@ talos = None
 class ViewshedBackend(Enum):
     gdal = 0
     talos = 1
+    radio = 2
+    t_radio = 3
+    z_radio = 4
 
 
 default_ViewshedBackend = ViewshedBackend.gdal

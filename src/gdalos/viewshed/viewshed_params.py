@@ -3,6 +3,8 @@ from typing import Sequence
 from osgeo import gdal
 
 from gdalos.calc import dict_util
+from gdalos.viewshed import radio_params
+from gdalos.viewshed.radio_params import RadioParams
 
 st_seen = 5
 st_seenbut = 4
@@ -97,7 +99,7 @@ class ViewshedParams(object):
         return gdal.GDT_Int16 if self.is_radio() or self.is_calc_oz() or self.is_calc_tz() else gdal.GDT_Byte
 
     def get_radio_as_talos_params(self):
-        return dict_util.get_dict(self.radio_parameters)
+        return self.radio_parameters.get_dict()
 
     def get_as_talos_params(self):
         vp_params = \
@@ -130,22 +132,18 @@ class ViewshedParams(object):
 
     @staticmethod
     def get_list_from_lists_dict(d: dict, key_map=None) -> Sequence['ViewshedParams']:
-        max_len = max(len(v) if v else 0 for v in d.values())
-        result = []
-        vp = ViewshedParams()
-        for i in range(max_len):
-            vp = copy.deepcopy(vp)
-            for k, v in d.items():
-                if not v:
-                    continue
-                if key_map:
-                    k = key_map[k]
-                len_v = len(v)
-                if i < len_v:
-                    setattr(vp, k, v[i])
-                    # vp1.k = v[i]
-            result.append(vp)
-        return result
+        radio_d = d['radio_parameters']
+        d['radio_parameters'] = None
+        vp_array = dict_util.get_list_from_lists_dict(d, ViewshedParams(), key_map=key_map)
+        if radio_d is not None:
+            radio_array = dict_util.get_list_from_lists_dict(radio_d, RadioParams(), key_map=key_map)
+            r = None
+            for i, v in enumerate(vp_array):
+                if i < len(radio_array):
+                    r = radio_array[i]
+                v.radio_parameters = r
+
+        return vp_array
 
 
 # gdal_viewshed_params_short = \
