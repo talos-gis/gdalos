@@ -296,8 +296,7 @@ def viewshed_calc_to_ds(vp_array,
 
                 dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
                 talos.GS_SetProjectCRSFromActiveDTM()
-                if ovr_idx:
-                    talos.GS_DtmSelectOvle(ovr_idx)
+                talos.GS_DtmSelectOvle(ovr_idx or 0)
                 if dtm_open_err != 0:
                     raise Exception('talos could not open input file {}'.format(projected_filename))
                 talos.GS_SetRefractionCoeff(vp.refraction_coeff)
