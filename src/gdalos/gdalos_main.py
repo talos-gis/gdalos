@@ -14,7 +14,7 @@ from gdalos.__util__ import with_param_dict
 from gdalos.rectangle import GeoRectangle, make_partitions
 from gdalos_data.__data__ import __version__
 from gdalos.gdalos_types import GdalOutputFormat, OvrType, enum_to_str, GdalResamplingAlg
-from gdalos.calc.scale_raster import scale_raster
+from gdalos.calc import scale_raster
 
 
 def get_cuttent_time_string():
@@ -307,7 +307,7 @@ def gdalos_trans(
     creation_options = dict(creation_options or dict())
     translate_options = dict(translate_options or dict())
     warp_options = dict(warp_options or dict())
-    warp_options_inner = dict(warp_options or dict())
+    warp_options_inner = dict(warp_options_inner or dict())
     out_suffixes = []
 
     if ovr_idx not in [..., None]:
@@ -797,8 +797,9 @@ def gdalos_trans(
         if cog and not cog_2_steps and of != GdalOutputFormat.cog:
             creation_options["COPY_SRC_OVERVIEWS"] = "YES"
 
+        creation_options_list = options_dict_to_list(creation_options)
         if creation_options:
-            common_options["creationOptions"] = options_dict_to_list(creation_options)
+            common_options["creationOptions"] = creation_options_list
 
         if print_progress:
             common_options["callback"] = print_progress_callback(print_progress)
@@ -833,6 +834,10 @@ def gdalos_trans(
                 if verbose and warp_options:
                     logger.info("warp options: " + str(warp_options))
                 out_ds = gdal.Warp(str(trans_filename), ds, **common_options, **warp_options)
+
+                workaround_issue_3232 = True  # workaround https://github.com/OSGeo/gdal/issues/3232
+                if not value_scale and workaround_issue_3232:
+                    scale_raster.assign_same_scale_and_offset_values(out_ds, ds)
             else:
                 if verbose and translate_options:
                     logger.info("translate options: " + str(translate_options))
@@ -841,7 +846,7 @@ def gdalos_trans(
                 temp_files.append(trans_filename)
                 if verbose:
                     logger.info(f'scaling {out_filename}..."')
-                out_ds = scale_raster(
+                out_ds = scale_raster.scale_raster(
                     out_ds, out_filename,
                     scale=value_scale, format=enum_to_str(of),
                     hide_nodata=hide_nodatavalue,

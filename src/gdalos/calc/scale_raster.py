@@ -65,3 +65,18 @@ def scale_raster(filename_or_ds, d_path, gdal_dt=gdal.GDT_Int16,
         ds.GetRasterBand(i + 1).SetScale(scale)
 
     return ds
+
+
+def assign_same_scale_and_offset_values(out_ds, in_ds):
+    out_bands_count = out_ds.RasterCount
+    in_bands_count = in_ds.RasterCount
+    scale = 1
+    offset = 0
+    for i in range(out_bands_count):
+        if i < in_bands_count:
+            in_bnd = in_ds.GetRasterBand(i + 1)
+            scale = in_bnd.GetScale()
+            offset = in_bnd.GetOffset()
+        out_bnd = out_ds.GetRasterBand(i + 1)
+        out_bnd.SetScale(scale)
+        out_bnd.SetOffset(offset)
