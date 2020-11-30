@@ -263,28 +263,24 @@ def viewshed_calc_to_ds(vp_array,
                 if talos is None:
                     try:
                         import talosgis
+                        import gdalos
                         from talosgis import talos2 as talos
-                        import talosgis_data.__data__
-                        import gdalos_data.__data__
                     except ImportError:
                         raise Exception('failed to load talos backend')
 
-                    print('gdalos Version ', gdalos_data.__data__.__version__)
-                    print('talos Version ', talosgis_data.__data__.__version__)
+                    print('gdalos Version ', gdalos.__version__)
+                    print('talos Version ', talosgis.__version__)
                     talos_ver = talos.GS_GetIntVersion()
                     print('GS_GetIntVersion ', talos_ver)
                     print('GS_GetDLLVersion ', talos.GS_GetDLLVersion())
                     print('GS_DtmGetCalcThreadsCount ', talos.GS_DtmGetCalcThreadsCount())
 
                     if hasattr(talos, 'GS_SetGDALPath'):
-                        gdal_path = talosgis.get_talos_gdal_path()
-                        talos.GS_SetGDALPath(gdal_path)
+                        talos.GS_SetGDALPath(talosgis.gdal_path)
                     if hasattr(talos, 'GS_SetProjPath'):
-                        proj_path = talosgis.get_talos_proj_path()
-                        talos.GS_SetProjPath(proj_path)
+                        talos.GS_SetProjPath(talosgis.proj_path)
                     if hasattr(talos, 'GS_SetRadioPath'):
-                        radio_path = talosgis.get_talos_radio_path()
-                        talos.GS_SetRadioPath(radio_path)
+                        talos.GS_SetRadioPath(talosgis.radio_path)
 
                     # print('GS_GetGDALPath ', talos.GS_GetGDALPath())
                     print('GS_talosInit ', talos.GS_talosInit())
