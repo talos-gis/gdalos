@@ -1,9 +1,7 @@
-import copy
 from typing import Sequence
 from osgeo import gdal
 
 from gdalos.calc import dict_util
-from gdalos.viewshed import radio_params
 from gdalos.viewshed.radio_params import RadioParams
 
 st_seen = 5

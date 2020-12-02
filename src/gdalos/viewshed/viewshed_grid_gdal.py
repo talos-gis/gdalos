@@ -1,6 +1,6 @@
-from gdalos import gdalos_trans
-from gdalos import GeoRectangle
 from pathlib import Path
+
+from gdalos.gdalos_main import gdalos_trans, GeoRectangle
 from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
 
 

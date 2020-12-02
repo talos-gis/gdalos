@@ -13,7 +13,7 @@ import copy
 
 from gdalos.gdalos_types import FileName
 from gdalos.rectangle import GeoRectangle
-from gdalos import projdef, gdalos_util, gdalos_color, gdalos_trans, gdalos_extent
+from gdalos.gdalos_main import projdef, gdalos_util, gdalos_trans, gdalos_extent
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
 from gdalos.calc import gdal_calc, gdal_to_czml, dict_util, gdalos_combine
 from gdalos.viewshed import viewshed_params
@@ -24,7 +24,7 @@ from gdalos.talos.geom_arc import PolygonizeSector
 from gdalos.calc.discrete_mode import DiscreteMode
 from gdalos.calc.gdalos_raster_color import gdalos_raster_color
 from gdalos.gdalos_selector import get_projected_pj, DataSetSelector
-
+from gdalos import gdalos_color
 talos = None
 
 

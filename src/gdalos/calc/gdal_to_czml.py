@@ -7,7 +7,7 @@ from czml3.properties import (
 )
 
 from osgeo import gdal
-from gdalos import gdalos_trans, projdef
+from gdalos.gdalos_main import gdalos_trans, projdef
 from gdalos.gdalos_color import ColorPalette
 import base64
 

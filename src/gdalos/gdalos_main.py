@@ -3,7 +3,6 @@ import logging
 import os
 import time
 import tempfile
-from enum import Enum, auto
 from numbers import Real
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, TypeVar, Union
@@ -12,7 +11,7 @@ from osgeo import gdal
 from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef, __version__
 from gdalos.__util__ import with_param_dict
 from gdalos.rectangle import GeoRectangle, make_partitions
-from gdalos.gdalos_types import GdalOutputFormat, OvrType, enum_to_str, GdalResamplingAlg
+from gdalos.gdalos_types import GdalOutputFormat, OvrType, RasterKind, enum_to_str, GdalResamplingAlg
 from gdalos.calc import scale_raster
 
 
@@ -41,46 +40,6 @@ def multi_thread_to_str(multi_thread: Union[bool, int, str]) -> str:
     else:
         raise Exception(f'unknown value multi_threa={multi_thread}')
     return multi_thread
-
-
-class RasterKind(Enum):
-    photo = auto()
-    pal = auto()
-    dtm = auto()
-
-    @classmethod
-    def guess(cls, band_types_or_filename_or_ds):
-        if isinstance(band_types_or_filename_or_ds, (list, tuple)):
-            band_types = list(gdalos_util.get_data_type(band) for band in band_types_or_filename_or_ds)
-        else:
-            band_types = gdalos_util.get_band_types(band_types_or_filename_or_ds)
-        if len(band_types) == 0:
-            raise Exception("no bands in raster")
-
-        if band_types[0] == gdal.GDT_Byte:
-            if len(band_types) in (3, 4):
-                return cls.photo
-            elif len(band_types) == 1:
-                return cls.pal
-            else:
-                raise Exception("invalid raster band count")
-        elif len(band_types) == 1:
-            return cls.dtm
-
-        raise Exception("could not guess raster kind")
-
-
-def resampling_alg_by_kind(kind: RasterKind, expand_rgb=False, fast_mode=False) -> GdalResamplingAlg:
-    if kind == RasterKind.pal and not expand_rgb:
-        if fast_mode:
-            return GdalResamplingAlg.nearest
-        else:
-            return GdalResamplingAlg.mode
-    else:
-        if fast_mode:
-            return GdalResamplingAlg.average
-        else:
-            return GdalResamplingAlg.cubic
 
 
 def do_skip_if_exists(out_filename, overwrite, logger=None):
@@ -805,7 +764,7 @@ def gdalos_trans(
 
         if resample_is_needed:
             if resampling_alg is ...:
-                resampling_alg = resampling_alg_by_kind(kind, expand_rgb)
+                resampling_alg = kind.resampling_alg_by_kind(expand_rgb)
             if resampling_alg is not None:
                 common_options["resampleAlg"] = enum_to_str(resampling_alg)
 
@@ -1147,7 +1106,7 @@ def gdalos_ovr(
     if resampling_alg is ...:
         if kind in [None, ...]:
             kind = RasterKind.guess(filename)
-        resampling_alg = resampling_alg_by_kind(kind)
+        resampling_alg = kind.resampling_alg_by_kind()
     if resampling_alg is not None:
         ovr_options["resampling"] = enum_to_str(resampling_alg)
     if print_progress:
@@ -1259,7 +1218,7 @@ def gdalos_vrt(
     if resampling_alg is ...:
         if kind in [None, ...]:
             kind = RasterKind.guess(first_filename)
-        resampling_alg = resampling_alg_by_kind(kind)
+        resampling_alg = kind.resampling_alg_by_kind(kind)
     if resampling_alg is not None:
         vrt_options["resampleAlg"] = resampling_alg
     vrt_options = gdal.BuildVRTOptions(*vrt_options)

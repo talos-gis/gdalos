@@ -1,6 +1,7 @@
 from osgeo import gdal
 import numpy as np
-from gdalos import gdalos_color, gdalos_trans
+from gdalos import gdalos_color
+from gdalos.gdalos_main import gdalos_trans
 from gdalos.gdalos_color import ColorPalette
 
 

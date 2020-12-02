@@ -51,3 +51,42 @@ class GdalOutputFormat(Enum):
     cog = auto()
     gpkg = auto()
     mem = auto()
+
+
+class RasterKind(Enum):
+    photo = auto()
+    pal = auto()
+    dtm = auto()
+
+    @classmethod
+    def guess(cls, band_types_or_filename_or_ds):
+        if isinstance(band_types_or_filename_or_ds, (list, tuple)):
+            band_types = list(gdalos_util.get_data_type(band) for band in band_types_or_filename_or_ds)
+        else:
+            band_types = gdalos_util.get_band_types(band_types_or_filename_or_ds)
+        if len(band_types) == 0:
+            raise Exception("no bands in raster")
+
+        if band_types[0] == gdal.GDT_Byte:
+            if len(band_types) in (3, 4):
+                return cls.photo
+            elif len(band_types) == 1:
+                return cls.pal
+            else:
+                raise Exception("invalid raster band count")
+        elif len(band_types) == 1:
+            return cls.dtm
+
+        raise Exception("could not guess raster kind")
+
+    def resampling_alg_by_kind(self, expand_rgb=False, fast_mode=False) -> GdalResamplingAlg:
+        if self == RasterKind.pal and not expand_rgb:
+            if fast_mode:
+                return GdalResamplingAlg.nearest
+            else:
+                return GdalResamplingAlg.mode
+        else:
+            if fast_mode:
+                return GdalResamplingAlg.average
+            else:
+                return GdalResamplingAlg.cubic
