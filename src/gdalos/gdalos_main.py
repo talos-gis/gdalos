@@ -9,10 +9,9 @@ from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, TypeVar, Union
 
 from osgeo import gdal
-from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef
+from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef, __version__
 from gdalos.__util__ import with_param_dict
 from gdalos.rectangle import GeoRectangle, make_partitions
-from gdalos_data.__data__ import __version__
 from gdalos.gdalos_types import GdalOutputFormat, OvrType, enum_to_str, GdalResamplingAlg
 from gdalos.calc import scale_raster
 
