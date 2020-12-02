@@ -31,9 +31,9 @@ talos = None
 class ViewshedBackend(Enum):
     gdal = 0
     talos = 1
-    radio = 2
-    t_radio = 3
-    z_radio = 4
+    # radio = 2
+    # t_radio = 3
+    # z_radio = 4
 
 
 default_ViewshedBackend = ViewshedBackend.gdal
@@ -436,55 +436,55 @@ def viewshed_calc_to_ds(vp_array,
     return ds
 
 
-def test_calcz(vp_array, raster_filename, dir_path, calcs=None, **kwargs):
-    if calcs is None:
-        calcs = CalcOperation
+def test_calcz(vp_array, raster_filename, dir_path,
+               backends=[ViewshedBackend.talos], calc_filter=CalcOperation, **kwargs):
     cwd = Path.cwd()
-    backend = ViewshedBackend.talos
-    for color_palette in [..., None]:
-        prefix = 'calcz_color_' if color_palette else 'calcz_'
-        output_path = dir_path / Path(prefix + str(backend))
-        for calc in calcs:
-            # if calc != CalcOperation.viewshed:
-            #     continue
-            if color_palette is ...:
-                color_palette = cwd / 'sample/color_files/gradient/{}.txt'.format('percentages')  #calc.name)
-            if calc == CalcOperation.viewshed:
-                # continue
-                for i, vp in enumerate(vp_array):
-                    output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
+    for backend in backends:
+        for color_palette in [..., None]:
+            prefix = 'calcz_color' if color_palette else 'calcz'
+            output_path = dir_path / str(backend) / prefix
+            for calc in calc_filter:
+                # if calc != CalcOperation.viewshed:
+                #     continue
+                if color_palette is ...:
+                    color_palette = cwd / 'sample/color_files/gradient/{}.txt'.format('percentages')  #calc.name)
+                if calc == CalcOperation.viewshed:
+                    # continue
+                    for i, vp in enumerate(vp_array):
+                        output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
+                        viewshed_calc(input_filename=raster_filename,
+                                      output_filename=output_filename,
+                                      vp_array=vp,
+                                      backend=backend,
+                                      operation=calc,
+                                      color_palette=color_palette,
+                                      **kwargs
+                                      )
+                elif calc in [CalcOperation.max, CalcOperation.min]:
+                    output_filename = output_path / Path('{}.tif'.format(calc.name))
                     viewshed_calc(input_filename=raster_filename,
                                   output_filename=output_filename,
-                                  vp_array=vp,
+                                  vp_array=vp_array,
                                   backend=backend,
                                   operation=calc,
                                   color_palette=color_palette,
-                                  **kwargs
+                                  **kwargs,
+                                  # vp_slice=slice(0, 2)
                                   )
-            elif calc in [CalcOperation.max, CalcOperation.min]:
-                output_filename = output_path / Path('{}.tif'.format(calc.name))
-                viewshed_calc(input_filename=raster_filename,
-                              output_filename=output_filename,
-                              vp_array=vp_array,
-                              backend=backend,
-                              operation=calc,
-                              color_palette=color_palette,
-                              **kwargs,
-                              # vp_slice=slice(0, 2)
-                              )
 
 
-def test_simple_viewshed(vp_array, raster_filename, dir_path, run_comb_with_post=False, **kwargs):
-    calc_filter = CalcOperation
+def test_simple_viewshed(vp_array, raster_filename, dir_path, run_comb_with_post=False,
+                         backends=reversed(ViewshedBackend), calc_filter=CalcOperation, **kwargs):
     # calc_filter = [CalcOperation.count_z]
     cwd = Path.cwd()
-    for backend in reversed(ViewshedBackend):
-        output_path = dir_path / Path('comb_' + str(backend))
+    for backend in backends:
+        output_path = dir_path / str(backend) / 'normal'
         for calc in calc_filter:
             if calc == CalcOperation.viewshed:
                 for i, vp in enumerate(vp_array):
-                    color_palette = None if vp.is_radio else cwd / 'sample/color_files/viewshed/{}.txt'.format(calc.name)
-                    output_filename = output_path / Path('{}_{}.tif'.format(calc.name, i))
+                    color_palette = None if vp.is_radio() else cwd / f'sample/color_files/viewshed/{calc.name}.txt'
+                    prefix = 'radio' if vp.is_radio() else 'vs'
+                    output_filename = output_path / f'{prefix}_{calc.name}_{i}.tif'
                     viewshed_calc(input_filename=raster_filename,
                                   output_filename=output_filename,
                                   vp_array=vp,
@@ -494,7 +494,8 @@ def test_simple_viewshed(vp_array, raster_filename, dir_path, run_comb_with_post
                                   **kwargs,
                                   )
             else:
-                output_filename = output_path / Path('{}.tif'.format(calc.name))
+                prefix = 'radio' if vp_array[0].is_radio() else 'vs'
+                output_filename = output_path / f'{prefix}_{calc.name}.tif'
                 try:
                     viewshed_calc(input_filename=raster_filename,
                                   output_filename=output_filename,
@@ -506,7 +507,7 @@ def test_simple_viewshed(vp_array, raster_filename, dir_path, run_comb_with_post
                                   # vp_slice=slice(0, 2)
                                   )
                 except:
-                    print('failed to run viewshed calc with backend: {}, inputs: {}'.format(backend, vp_array))
+                    print(f'failed to run viewshed calc with backend: {backend}, inputs: {vp_array}')
 
         if run_comb_with_post:
             output_filename = output_path / 'combine_post.tif'
@@ -546,19 +547,18 @@ def main_test(calcz=True, simple_viewshed=True, is_geo_coords=False, is_geo_rast
 
     if simple_viewshed:
         vp_array = vp.get_array()
+        backends = [ViewshedBackend.talos] if is_radio else reversed(ViewshedBackend)
         test_simple_viewshed(vp_array=vp_array, run_comb_with_post=False, files=files, in_coords_srs=in_coords_srs,
-                             dir_path=dir_path, raster_filename=raster_filename)
+                             dir_path=dir_path, raster_filename=raster_filename, backends=backends)
     if calcz:
         vp1 = copy.copy(vp)
         vp1.tz = None
         vp_array = vp1.get_array()
         test_calcz(vp_array=vp_array, raster_filename=raster_filename, in_coords_srs=in_coords_srs, dir_path=dir_path,
-                   # calcs=[CalcOperation.max],
+                   # calc_filter=[CalcOperation.max],
                    files=files)
 
 
 if __name__ == "__main__":
-    main_test(is_geo_coords=False,
-              is_radio=True,
-              # simple_viewshed=False
-              )
+    main_test(is_geo_coords=False, simple_viewshed=True, calcz=True, is_radio=False)
+    main_test(is_geo_coords=False, simple_viewshed=True, calcz=False, is_radio=True)
