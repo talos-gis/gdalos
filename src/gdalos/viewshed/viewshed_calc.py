@@ -263,32 +263,11 @@ def viewshed_calc_to_ds(vp_array,
                 if talos is None:
                     try:
                         import talosgis
-                        import gdalos
-                        from talosgis import talos2 as talos
+                        from talosgis import talos
+                        from talosgis import talos_utils
+                        talos_utils.talos_init()
                     except ImportError:
                         raise Exception('failed to load talos backend')
-
-                    print('gdalos Version ', gdalos.__version__)
-                    print('talos Version ', talosgis.__version__)
-                    talos_ver = talos.GS_GetIntVersion()
-                    print('GS_GetIntVersion ', talos_ver)
-                    print('GS_GetDLLVersion ', talos.GS_GetDLLVersion())
-                    print('GS_DtmGetCalcThreadsCount ', talos.GS_DtmGetCalcThreadsCount())
-
-                    if hasattr(talos, 'GS_SetGDALPath'):
-                        talos.GS_SetGDALPath(talosgis.gdal_path)
-                    if hasattr(talos, 'GS_SetProjPath'):
-                        talos.GS_SetProjPath(talosgis.proj_path)
-                    if hasattr(talos, 'GS_SetRadioPath'):
-                        talos.GS_SetRadioPath(talosgis.radio_path)
-
-                    # print('GS_GetGDALPath ', talos.GS_GetGDALPath())
-                    print('GS_talosInit ', talos.GS_talosInit())
-
-                    # print('GS_IsGDALLoaded ', talos.GS_IsGDALLoaded())
-                    # print('GS_GetGDALPath ', talos.GS_GetGDALPath())
-
-                    # print('GS_SetCacheSize ', talos.GS_SetCacheSize(cache_size_mb))
 
                 dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
                 talos.GS_SetProjectCRSFromActiveDTM()
