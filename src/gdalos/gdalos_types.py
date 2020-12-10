@@ -2,6 +2,9 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Union, List, Tuple
 
+from gdalos import gdalos_util
+from osgeo import gdal
+
 SequanceNotString = Union[List, Tuple]
 FileName = Union[str, Path]
 

@@ -1,7 +1,8 @@
 # calc_type
+from collections import Sequence
 from enum import IntEnum
 
-from gdalos.calc import dict_util
+from gdalos import util
 
 
 class RadioCalcType(IntEnum):
@@ -21,9 +22,9 @@ class RadioPolarity(IntEnum):
 
 
 class RadioParams(object):
-    __slots__ = ['frequency', 'KFactor', 'polarity', 'calc_type',
+    __slots__ = ('frequency', 'KFactor', 'polarity', 'calc_type',
                  'refractivity', 'conductivity', 'permittivity', 'humidity',
-                 'power_diff', 'fill_center', 'profile_extension']
+                 'power_diff', 'fill_center', 'profile_extension')
 
     def __init__(self):
         self.frequency = 3333.0
@@ -40,8 +41,14 @@ class RadioParams(object):
         self.fill_center = True
         self.profile_extension = True
 
+    def unsequence(self):
+        for attr in self.__slots__:
+            val = getattr(self, attr)
+            if isinstance(val, Sequence):
+                setattr(self, attr, val[0])
+
     def get_dict(self):
-        d = dict_util.get_dict(self)
+        d = util.get_dict(self)
         polarity = d['polarity']
         if isinstance(polarity, str):
             polarity = polarity[0].lower()

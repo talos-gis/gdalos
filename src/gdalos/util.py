@@ -1,5 +1,6 @@
 import copy
-from typing import List
+from typing import List, Sequence
+from itertools import chain, cycle, product, tee
 
 
 def fill_arrays(*args):
@@ -84,3 +85,38 @@ def get_list_from_lists_dict(d: dict, vp, key_map=None) -> List:
         result.append(vp)
     return result
 
+
+def get_object_from_lists_dict(d: dict, vp, key_map=None):
+    for k, v in d.items():
+        if not v:
+            continue
+        if key_map:
+            k = key_map[k]
+        setattr(vp, k, v)
+    return vp
+
+
+def get_all_slots(a):
+    """ gets all the slots of an object and its super class """
+    return chain.from_iterable(getattr(cls, '__slots__', []) for cls in a.__mro__)
+
+
+def make_points_list(x_arr, y_arr, do_zip=True, do_cycle=True):
+    if not isinstance(x_arr, Sequence):
+        return x_arr, y_arr
+    elif do_zip:  # return a zip of the arrays, if are of different and do_cycle then complete the other list by cycling
+        if len(x_arr) == len(y_arr) or not do_cycle:
+            return list(zip(x_arr, y_arr))
+        elif len(x_arr) > len(y_arr):
+            return list(zip(x_arr, cycle(y_arr)))
+        else:
+            return list(zip(cycle(x_arr), y_arr))
+    else:  # cartesian product
+        return product(x_arr, y_arr)
+
+
+def make_xy_list(xy_arr):
+    if isinstance(xy_arr[0], Sequence):
+        return tee(xy_arr)
+    else:
+        return xy_arr

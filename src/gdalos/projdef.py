@@ -1,6 +1,7 @@
 import math
 from numbers import Real
 from typing import Union, Sequence
+import osgeo
 from osgeo import osr, ogr
 
 
@@ -153,6 +154,9 @@ def get_srs(srs: Union[str, int, osr.SpatialReference]):
         if srs_.ImportFromEPSG(srs) != ogr.OGRERR_NONE:
             raise Exception(f"ogr error when parsing srs epsg:{srs}")
         srs = srs_
+    if int(osgeo.__version__[0]) >= 3:
+        # GDAL 3 changes axis order: https://github.com/OSGeo/gdal/issues/1546
+        srs.SetAxisMappingStrategy(osgeo.osr.OAMS_TRADITIONAL_GIS_ORDER)
     return srs
 
 
