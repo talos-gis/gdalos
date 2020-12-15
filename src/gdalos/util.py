@@ -1,4 +1,5 @@
 import copy
+from enum import IntEnum, auto
 from typing import List, Sequence
 from itertools import chain, cycle, product, tee
 
@@ -101,22 +102,36 @@ def get_all_slots(a):
     return chain.from_iterable(getattr(cls, '__slots__', []) for cls in a.__mro__)
 
 
-def make_points_list(x_arr, y_arr, do_zip=True, do_cycle=True):
+class FillMode(IntEnum):
+    zip = auto()
+    zip_cycle = auto()
+    product = auto()
+
+
+def make_points_list(x_arr, y_arr, mode: FillMode):
+    if isinstance(mode, (tuple, list)):
+        mode = mode[0]
+    if isinstance(mode, str):
+        mode = FillMode[mode]
     if not isinstance(x_arr, Sequence):
         return x_arr, y_arr
-    elif do_zip:  # return a zip of the arrays, if are of different and do_cycle then complete the other list by cycling
-        if len(x_arr) == len(y_arr) or not do_cycle:
+    elif mode != FillMode.product:
+        # return a zip of the arrays, if are of different and do_cycle then complete the other list by cycling
+        if len(x_arr) == len(y_arr) or (mode != FillMode.zip_cycle):
             return list(zip(x_arr, y_arr))
         elif len(x_arr) > len(y_arr):
             return list(zip(x_arr, cycle(y_arr)))
         else:
             return list(zip(cycle(x_arr), y_arr))
     else:  # cartesian product
-        return product(x_arr, y_arr)
+        return list(product(x_arr, y_arr))
 
 
 def make_xy_list(xy_arr):
     if isinstance(xy_arr[0], Sequence):
-        return tee(xy_arr)
+        xs, ys = tee(xy_arr)
+        xs, ys = (x[0] for x in xs), (y[1] for y in ys)
+        # r = [list(x[i]) for x in (tee(xy_arr)) for i in range(xy_arr)]
+        return xs, ys
     else:
         return xy_arr

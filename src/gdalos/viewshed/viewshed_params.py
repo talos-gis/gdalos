@@ -1,10 +1,12 @@
 from itertools import tee
 from typing import Sequence
+
+import numpy as np
 from osgeo import gdal
 
 from gdalos import util
-from gdalos.util import make_points_list, make_xy_list
-from gdalos.viewshed.radio_params import RadioParams
+from gdalos.util import make_points_list, make_xy_list, FillMode
+from gdalos.viewshed.radio_params import RadioParams, RadioCalcType
 
 st_seen = 5
 st_seenbut = 4
@@ -26,7 +28,7 @@ atmospheric_refraction_coeff = 1/7
 
 class LOSParams(object):
     __slots__ = ['ox', 'oy', 'oz', 'tz', 'omsl', 'tmsl',
-                 'refraction_coeff', 'mode', 'radio_parameters']
+                 'refraction_coeff', 'mode', 'radio_parameters', 'fill_mode']
 
     def __init__(self):
         self.ox = None
@@ -39,6 +41,7 @@ class LOSParams(object):
         self.refraction_coeff = atmospheric_refraction_coeff
         self.mode = 2
         self.radio_parameters = None
+        self.fill_mode = FillMode.zip_cycle
 
     def is_calc_oz(self):
         return self.oz is None
@@ -48,11 +51,11 @@ class LOSParams(object):
 
     @property
     def oxy(self):
-        return make_points_list(self.ox, self.oy)
+        return make_points_list(self.ox, self.oy, self.fill_mode)
 
     @oxy.setter
     def oxy(self, oxy):
-        self.ox, self.oy = make_xy_list(oxy)
+        self.ox, self.oy, *_ = make_xy_list(oxy)
 
     def update(self, d: dict):
         for k, v in d.items():
@@ -100,12 +103,14 @@ class LOSParams(object):
 
 
 class MultiPointParams(LOSParams):
-    __slots__ = ('tx', 'ty')
+    __slots__ = ('tx', 'ty', 'mode', 'results')
 
     def __init__(self):
         super(MultiPointParams, self).__init__()
         self.tx = None
         self.ty = None
+        self.mode = None
+        self.results = None
 
     def make_xy_lists(self):
         super(MultiPointParams, self).make_xy_lists()
@@ -116,7 +121,7 @@ class MultiPointParams(LOSParams):
 
     @property
     def txy(self):
-        return make_points_list(self.tx, self.ty)
+        return make_points_list(self.tx, self.ty, self.fill_mode)
 
     @txy.setter
     def txy(self, txy):
@@ -124,27 +129,47 @@ class MultiPointParams(LOSParams):
 
     def get_as_talos_params(self):
         vp_params = \
-            'ox', 'oy', 'oz', 'tx', 'ty', 'tz', 'max_r_slant', 'tz', \
-            'omsl', 'tmsl', 'azimuth', 'h_aperture', 'elevation', 'v_aperture'
+            'omsl', 'tmsl', \
+            'ox', 'oy', 'oz', 'tx', 'ty', 'tz', \
+            'mode', 'results'
+
+        mode_data_type = np.int32
+        result_vector_name = 'AIO_res'
+        mode_vector_name = 'A_mode'
+        vector_names = {
+            np.float64: ['A_ox', 'A_oy', 'A_oz', 'A_tx', 'A_ty', 'A_tz'],
+            mode_data_type: [mode_vector_name],
+            np.float32: [result_vector_name],
+        }
 
         talos_params = \
-            'ox', 'oy', 'oz', 'MaxRange', 'MinRange', 'MinRangeShave', 'SlantRange', 'tz', \
-            'ObsMSL', 'TarMSL', 'Direction', 'Aperture', 'Elevation', 'ElevationAperture'
+            ['ObsMSL', 'TarMSL'] + \
+            vector_names[np.float64] + \
+            vector_names[mode_data_type] + vector_names[np.float32]
+
         d = {k1: getattr(self, k0) for k0, k1 in
              zip(vp_params, talos_params)}
 
-        slack_dummy_height = -1000
-        if d['oz'] is None or d['tz'] is None:
-            if self.is_radio():
-                raise Exception('You have to specify oz and tz for radio calc')
-            if d['oz'] is None:
-                d['oz'] = slack_dummy_height
-                if d['tz'] is None:
-                    raise Exception('You have to specify at least one of oz or tz')
-            else:
-                d['tz'] = slack_dummy_height
+        if d[mode_vector_name] is None:
+            d[mode_vector_name] = np.array([RadioCalcType.PathLoss], dtype=mode_data_type)
+        elif not isinstance(d[mode_vector_name], np.ndarray):
+            if isinstance(d[mode_vector_name], (tuple, list)):
+                d[mode_vector_name] = [RadioCalcType[x] for x in d[mode_vector_name]]
 
-        d['result_dt'] = self.get_result_dt()
+        for data_type, names in vector_names.items():
+            for x in names:
+                arr = d[x]
+                if arr is not None and not isinstance(arr, np.ndarray):
+                    d[x] = np.array(list(arr), dtype=data_type)
+
+        input_coord_vectors = vector_names[np.float64]
+        res_len = max(len(d[x]) for x in input_coord_vectors)
+        mode_len = len(d[mode_vector_name])
+        res_shape = None if d[result_vector_name] is None else d[result_vector_name].shape
+        min_res_shape = (res_len, mode_len)
+        if res_shape is None or res_shape[0] < min_res_shape[0] or res_shape[1] < min_res_shape[1]:
+            d[result_vector_name] = np.zeros(min_res_shape, dtype=np.float32)
+            assert min_res_shape == d[result_vector_name].shape
         return d
 
 

@@ -438,8 +438,8 @@ def viewshed_calc_to_ds(
     return ds
 
 
-def mock_los_arr(rows=10, cols=6) -> np.ndarray:
-    return np.arange(rows*cols).reshape((rows, cols))
+# def mock_los_arr(rows=10, cols=6) -> np.ndarray:
+#     return np.arange(rows*cols).reshape((rows, cols))
 
 
 def los_calc(
@@ -574,8 +574,8 @@ def los_calc(
         vp.oxy = o_points
         vp.txy = t_points
         inputs = vp.get_as_talos_params()
-        res = talos.GS_Radio_Calc(**inputs)
-        # res = mock_los_arr()
+        # talos.GS_Radio_Calc(**inputs)
+        res = inputs['AIO_res']
     else:
         raise Exception('unknown or unsupported backend {}'.format(backend))
 

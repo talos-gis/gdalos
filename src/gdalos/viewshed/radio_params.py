@@ -6,14 +6,16 @@ from gdalos import util
 
 
 class RadioCalcType(IntEnum):
-    PathLoss = 0
-    PowerReminder = 1
-    PowerReminderBinary = 2
-    LOS = 3
-    FreeSpaceLoss = 4
-    NonFreeSpaceLoss = 5
-    Clearance = 6
-    Mode = 7
+    FOS = 0
+    TerrainElev = 1
+    ElevationAngleCalc = 2
+
+    FreeSpaceLoss = 10
+    PathLoss = 11
+    NonFreeSpaceLoss = 12
+    PowerReminder = 13
+    Clearance = 14
+    Mode = 15
 
 
 class RadioPolarity(IntEnum):
