@@ -1,3 +1,4 @@
+import math
 from functools import partial
 from itertools import cycle, product, tee
 from typing import Union, Sequence
@@ -493,7 +494,27 @@ def los_calc(
 
     # select the ds
     if input_selector is not None:
-        input_filename, input_ds = input_selector.get_item_projected(geo_o[0][0], geo_o[0][1])
+        min_x = min_y = math.inf
+        max_x = max_y = -math.inf
+        for x, y in geo_o:
+            if x < min_x:
+                min_x = x
+            elif x > max_x:
+                max_x = x
+            if y < min_y:
+                min_y = y
+            elif y > max_y:
+                max_y = y
+        for x, y in geo_t:
+            if x < min_x:
+                min_x = x
+            elif x > max_x:
+                max_x = x
+            if y < min_y:
+                min_y = y
+            elif y > max_y:
+                max_y = y
+        input_filename, input_ds = input_selector.get_item_projected((min_x+max_x)/2, (min_y+max_y)/2)
         input_filename = Path(input_filename).resolve()
     if input_ds is None:
         input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
@@ -571,8 +592,9 @@ def los_calc(
             if not hasattr(talos, 'GS_SetRadioParameters'):
                 raise Exception('This version does not support radio')
             talos.GS_SetRadioParameters(**vp.get_radio_as_talos_params())
-        vp.oxy = o_points
-        vp.txy = t_points
+        o_points, t_points = util.make_pairs(o_points, t_points, vp.ot_fill)
+        vp.oxy = list(o_points)
+        vp.txy = list(t_points)
         inputs = vp.get_as_talos_params()
         talos.GS_Radio_Calc(**inputs)
         res = inputs['AIO_res']

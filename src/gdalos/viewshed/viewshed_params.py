@@ -28,7 +28,7 @@ atmospheric_refraction_coeff = 1/7
 
 class LOSParams(object):
     __slots__ = ['ox', 'oy', 'oz', 'tz', 'omsl', 'tmsl',
-                 'refraction_coeff', 'mode', 'radio_parameters', 'fill_mode']
+                 'refraction_coeff', 'mode', 'radio_parameters', 'xy_fill', 'ot_fill']
 
     def __init__(self):
         self.ox = None
@@ -41,7 +41,8 @@ class LOSParams(object):
         self.refraction_coeff = atmospheric_refraction_coeff
         self.mode = 2
         self.radio_parameters = None
-        self.fill_mode = FillMode.zip_cycle
+        self.xy_fill = FillMode.zip_cycle
+        self.ot_fill = FillMode.zip_cycle
 
     def is_calc_oz(self):
         return self.oz is None
@@ -51,7 +52,7 @@ class LOSParams(object):
 
     @property
     def oxy(self):
-        return make_points_list(self.ox, self.oy, self.fill_mode)
+        return make_points_list(self.ox, self.oy, self.xy_fill)
 
     @oxy.setter
     def oxy(self, oxy):
@@ -121,7 +122,7 @@ class MultiPointParams(LOSParams):
 
     @property
     def txy(self):
-        return make_points_list(self.tx, self.ty, self.fill_mode)
+        return make_points_list(self.tx, self.ty, self.xy_fill)
 
     @txy.setter
     def txy(self, txy):

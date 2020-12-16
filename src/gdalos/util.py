@@ -127,11 +127,23 @@ def make_points_list(x_arr, y_arr, mode: FillMode):
         return list(product(x_arr, y_arr))
 
 
-def make_xy_list(xy_arr):
-    if isinstance(xy_arr[0], Sequence):
-        xs, ys = tee(xy_arr)
+def make_xy_list(pair_list):
+    if isinstance(pair_list[0], Sequence):
+        xs, ys = tee(pair_list)
         xs, ys = (x[0] for x in xs), (y[1] for y in ys)
-        # r = [list(x[i]) for x in (tee(xy_arr)) for i in range(xy_arr)]
+        # r = [list(x[i]) for x in (tee(pair_arr)) for i in range(pair_arr)]
+
+        # xs = []
+        # ys = []
+        # for pair in pair_list:
+        #     xs.append(pair[0])
+        #     ys.append(pair[1])
         return xs, ys
     else:
-        return xy_arr
+        return pair_list
+
+
+def make_pairs(x_arr, y_arr, fill_mode):
+    pair_list = make_points_list(x_arr, y_arr, fill_mode)
+    result = make_xy_list(pair_list)
+    return result
