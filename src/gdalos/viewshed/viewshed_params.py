@@ -136,6 +136,7 @@ class MultiPointParams(LOSParams):
         mode_data_type = np.int32
         result_vector_name = 'AIO_res'
         mode_vector_name = 'A_mode'
+        scalar_names = ['ObsMSL', 'TarMSL']
         vector_names = {
             np.float64: ['A_ox', 'A_oy', 'A_oz', 'A_tx', 'A_ty', 'A_tz'],
             mode_data_type: [mode_vector_name],
@@ -143,12 +144,16 @@ class MultiPointParams(LOSParams):
         }
 
         talos_params = \
-            ['ObsMSL', 'TarMSL'] + \
+            scalar_names + \
             vector_names[np.float64] + \
             vector_names[mode_data_type] + vector_names[np.float32]
 
         d = {k1: getattr(self, k0) for k0, k1 in
              zip(vp_params, talos_params)}
+
+        for name in scalar_names:
+            if isinstance(d[name], Sequence):
+                d[name] = d[name][0]
 
         if d[mode_vector_name] is None:
             d[mode_vector_name] = np.array([RadioCalcType.PathLoss], dtype=mode_data_type)
