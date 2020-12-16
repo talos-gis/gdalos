@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Tuple, Union
 
 from gdalos import projdef, gdalos_util
-from gdalos.gdalos_types import SequanceNotString, FileName
+from gdalos.gdalos_base import SequanceNotString, FileName
 from gdalos.gdalos_util import OpenDS
 
 

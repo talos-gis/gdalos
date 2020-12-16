@@ -13,7 +13,7 @@ import numpy as np
 
 import copy
 
-from gdalos.gdalos_types import FileName
+from gdalos.gdalos_base import FileName
 from gdalos.rectangle import GeoRectangle
 from gdalos.gdalos_main import projdef, gdalos_util, gdalos_trans, gdalos_extent
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
@@ -574,7 +574,7 @@ def los_calc(
         vp.oxy = o_points
         vp.txy = t_points
         inputs = vp.get_as_talos_params()
-        # talos.GS_Radio_Calc(**inputs)
+        talos.GS_Radio_Calc(**inputs)
         res = inputs['AIO_res']
     else:
         raise Exception('unknown or unsupported backend {}'.format(backend))

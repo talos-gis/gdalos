@@ -1,16 +1,7 @@
 from enum import Enum, auto
-from pathlib import Path
-from typing import Union, List, Tuple
 
 from gdalos import gdalos_util
 from osgeo import gdal
-
-SequanceNotString = Union[List, Tuple]
-FileName = Union[str, Path]
-
-
-def enum_to_str(enum_or_str):
-    return enum_or_str.name if isinstance(enum_or_str, Enum) else str(enum_or_str)
 
 
 class OvrType(Enum):

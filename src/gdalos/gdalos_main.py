@@ -11,7 +11,8 @@ from osgeo import gdal
 from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef, __version__
 from gdalos.__util__ import with_param_dict
 from gdalos.rectangle import GeoRectangle, make_partitions
-from gdalos.gdalos_types import GdalOutputFormat, OvrType, RasterKind, enum_to_str, GdalResamplingAlg
+from gdalos.gdalos_types import GdalOutputFormat, OvrType, RasterKind, GdalResamplingAlg
+from gdalos.gdalos_base import enum_to_str
 from gdalos.calc import scale_raster
 
 

@@ -7,8 +7,7 @@ from osgeo import gdal
 from osgeo import ogr
 from osgeo import osr
 
-from gdalos import gdalos_types
-from gdalos.gdalos_types import FileName
+from gdalos.gdalos_base import FileName, enum_to_str
 
 
 def open_ds(filename_or_ds, *args, **kwargs):
@@ -224,7 +223,7 @@ def wkt_write_ogr(path, wkt_list, of='ESRI Shapefile', epsg=4326):
 
 
 def get_ext_by_of(of: str):
-    ext = gdalos_types.enum_to_str(of).lower()
+    ext = enum_to_str(of).lower()
     if ext in ['gtiff', 'cog', 'mem']:
         ext = 'tif'
     return '.' + ext
