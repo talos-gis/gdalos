@@ -12,7 +12,7 @@ rmdir /s/q build
 python setup.py bdist_wheel
 
 ## uploading the dist via twine
-python -m twine upload dist/*.gz dist/*.whl
+python -m twine upload dist/*.whl
 
 ## one liner to the test pypi
 rm dist/*.* ; python setup.py bdist_wheel && python -m twine upload dist/*.gz dist/*.whl ; rm dist/*.*
