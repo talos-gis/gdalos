@@ -449,7 +449,8 @@ def los_calc(
         in_coords_srs=None, out_crs=None,
         bi=1, ovr_idx=0, co=None, of='xyz',
         backend: ViewshedBackend = None,
-        output_filename=None):
+        output_filename=None,
+        mock=False):
     input_selector = None
     input_ds = None
     if isinstance(input_filename, FileName.__args__):
@@ -516,47 +517,48 @@ def los_calc(
                 max_y = y
         input_filename, input_ds = input_selector.get_item_projected((min_x+max_x)/2, (min_y+max_y)/2)
         input_filename = Path(input_filename).resolve()
-    if input_ds is None:
+    if input_ds is None and not mock:
         input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
         if input_ds is None:
             raise Exception(f'cannot open input file: {input_filename}')
 
     # figure out the input, output and intermediate srs
     # the intermediate srs will be used for combining the output rasters, if needed
-    pjstr_input_srs = projdef.get_srs_pj_from_ds(input_ds)
-    pjstr_output_srs = projdef.get_proj_string(out_crs) if out_crs is not None else \
-        pjstr_input_srs if input_selector is None else pjstr_4326
-    if input_selector is None:
-        pjstr_inter_srs = pjstr_input_srs
-    else:
-        pjstr_inter_srs = pjstr_output_srs
+    if input_ds is not None:
+        pjstr_input_srs = projdef.get_srs_pj_from_ds(input_ds)
+        pjstr_output_srs = projdef.get_proj_string(out_crs) if out_crs is not None else \
+            pjstr_input_srs if input_selector is None else pjstr_4326
+        if input_selector is None:
+            pjstr_inter_srs = pjstr_input_srs
+        else:
+            pjstr_inter_srs = pjstr_output_srs
 
-    input_srs = projdef.get_srs_from_ds(input_ds)
-    input_raster_is_projected = input_srs.IsProjected()
-    if input_raster_is_projected:
-        transform_coords_to_raster = projdef.get_transform(in_coords_srs, pjstr_input_srs)
-    else:
-        raise Exception(f'input raster has to be projected')
-    if input_raster_is_projected:
-        projected_filename = input_filename
-        if transform_coords_to_raster:
-            o_points = transform_coords_to_raster.TransformPoints(o_points)
-            t_points = transform_coords_to_raster.TransformPoints(t_points)
-    else:
-        raise Exception('currently only projected input raster is supported')
-        # projected_pj = get_projected_pj(geo_o[0][0], geo_o[0][1])
-        # transform_coords_to_raster = projdef.get_transform(in_coords_srs, projected_pj)
-        # vp.ox, vp.oy, _ = transform_coords_to_raster.TransformPoints(vp.ox, vp.oy)
-        # d = gdalos_extent.transform_resolution_p(transform_coords_to_raster, 10, 10, vp.ox, vp.oy)
-        # extent = GeoRectangle.from_center_and_radius(vp.ox, vp.oy, vp.max_r + d, vp.max_r + d)
-        #
-        # projected_filename = tempfile.mktemp('.tif')
-        # projected_ds = gdalos_trans(
-        #     input_ds, out_filename=projected_filename, warp_srs=projected_pj,
-        #     extent=extent, return_ds=True, write_info=False, write_spec=False)
-        # if not projected_ds:
-        #     raise Exception('input raster projection faild')
-        # # input_ds = projected_ds
+        input_srs = projdef.get_srs_from_ds(input_ds)
+        input_raster_is_projected = input_srs.IsProjected()
+        if input_raster_is_projected:
+            transform_coords_to_raster = projdef.get_transform(in_coords_srs, pjstr_input_srs)
+        else:
+            raise Exception(f'input raster has to be projected')
+        if input_raster_is_projected:
+            projected_filename = input_filename
+            if transform_coords_to_raster:
+                o_points = transform_coords_to_raster.TransformPoints(o_points)
+                t_points = transform_coords_to_raster.TransformPoints(t_points)
+        else:
+            raise Exception('currently only projected input raster is supported')
+            # projected_pj = get_projected_pj(geo_o[0][0], geo_o[0][1])
+            # transform_coords_to_raster = projdef.get_transform(in_coords_srs, projected_pj)
+            # vp.ox, vp.oy, _ = transform_coords_to_raster.TransformPoints(vp.ox, vp.oy)
+            # d = gdalos_extent.transform_resolution_p(transform_coords_to_raster, 10, 10, vp.ox, vp.oy)
+            # extent = GeoRectangle.from_center_and_radius(vp.ox, vp.oy, vp.max_r + d, vp.max_r + d)
+            #
+            # projected_filename = tempfile.mktemp('.tif')
+            # projected_ds = gdalos_trans(
+            #     input_ds, out_filename=projected_filename, warp_srs=projected_pj,
+            #     extent=extent, return_ds=True, write_info=False, write_spec=False)
+            # if not projected_ds:
+            #     raise Exception('input raster projection faild')
+            # # input_ds = projected_ds
 
     if backend is None:
         backend = default_ViewshedBackend
@@ -564,40 +566,49 @@ def los_calc(
         backend = ViewshedBackend[backend]
 
     if backend == ViewshedBackend.talos:
-        if not projected_filename:
-            raise Exception('to use talos backend you need to provide an input filename')
-        global talos
-        if talos is None:
-            try:
-                import talosgis
-                from talosgis import talos
-                from talosgis import talos_utils
-                talos_utils.talos_init()
-            except ImportError:
-                raise Exception('failed to load talos backend')
-
-        dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
-        talos.GS_SetProjectCRSFromActiveDTM()
-        talos.GS_DtmSelectOvle(ovr_idx or 0)
-        if dtm_open_err != 0:
-            raise Exception('talos could not open input file {}'.format(projected_filename))
-        refraction_coeff = vp.refraction_coeff
-        if isinstance(refraction_coeff, Sequence):
-            refraction_coeff = refraction_coeff[0]
-        talos.GS_SetRefractionCoeff(refraction_coeff)
-
-        if hasattr(talos, 'GS_SetCalcModule'):
-            talos.GS_SetCalcModule(vp.get_calc_module())
-        if vp.is_radio():
-            if not hasattr(talos, 'GS_SetRadioParameters'):
-                raise Exception('This version does not support radio')
-            talos.GS_SetRadioParameters(**vp.get_radio_as_talos_params())
+        radio_params = vp.get_radio_as_talos_params()
         o_points, t_points = util.make_pairs(o_points, t_points, vp.ot_fill)
         vp.oxy = list(o_points)
         vp.txy = list(t_points)
         inputs = vp.get_as_talos_params()
-        talos.GS_Radio_Calc(**inputs)
-        res = inputs['AIO_res']
+
+        if not mock:
+            if not projected_filename:
+                raise Exception('to use talos backend you need to provide an input filename')
+            global talos
+            if talos is None:
+                try:
+                    import talosgis
+                    from talosgis import talos
+                    from talosgis import talos_utils
+                    talos_utils.talos_init()
+                except ImportError:
+                    raise Exception('failed to load talos backend')
+            dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
+            if dtm_open_err != 0:
+                raise Exception('talos could not open input file {}'.format(projected_filename))
+            talos.GS_SetProjectCRSFromActiveDTM()
+            talos.GS_DtmSelectOvle(ovr_idx or 0)
+
+            refraction_coeff = vp.refraction_coeff
+            if isinstance(refraction_coeff, Sequence):
+                refraction_coeff = refraction_coeff[0]
+            talos.GS_SetRefractionCoeff(refraction_coeff)
+
+            if hasattr(talos, 'GS_SetCalcModule'):
+                talos.GS_SetCalcModule(vp.get_calc_module())
+            if vp.is_radio():
+                if not hasattr(talos, 'GS_SetRadioParameters'):
+                    raise Exception('This version does not support radio')
+                talos.GS_SetRadioParameters(**radio_params)
+            talos.GS_Radio_Calc(**inputs)
+
+        # input_names = ['ox', 'oy', 'oz', 'tx', 'ty', 'tz']
+        input_names = ['ox', 'oy', 'tx', 'ty']
+        input_arrays = [inputs[f'AIO_{x}'] for x in input_names]
+        output_arrays = inputs['AIO_re']
+        output_arrays = [output_arrays[i] for i in range(len(output_arrays))]
+        res = np.stack(input_arrays + output_arrays).transpose()
     else:
         raise Exception('unknown or unsupported backend {}'.format(backend))
 

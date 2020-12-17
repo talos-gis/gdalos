@@ -129,25 +129,28 @@ class MultiPointParams(LOSParams):
         self.tx, self.ty = make_xy_list(txy)
 
     def get_as_talos_params(self):
+        input_names = ['ox', 'oy', 'oz', 'tx', 'ty', 'tz']
         vp_params = \
-            'omsl', 'tmsl', \
-            'ox', 'oy', 'oz', 'tx', 'ty', 'tz', \
-            'mode', 'results'
-
+            ['omsl', 'tmsl'] + \
+            ['mode'] + \
+            input_names + \
+            ['results']
+        vector_dtype = np.float32
         mode_data_type = np.int32
-        result_vector_name = 'AIO_res'
-        mode_vector_name = 'A_mode'
         scalar_names = ['ObsMSL', 'TarMSL']
+        mode_vector_name = 'A_mode'
+        result_vector_name = 'AIO_re'
+        input_vector_names = [f'AIO_{x}' for x in input_names]
+        io_vector_names = input_vector_names + [result_vector_name]
         vector_names = {
-            np.float64: ['A_ox', 'A_oy', 'A_oz', 'A_tx', 'A_ty', 'A_tz'],
             mode_data_type: [mode_vector_name],
-            np.float32: [result_vector_name],
+            vector_dtype: io_vector_names,
         }
 
         talos_params = \
             scalar_names + \
-            vector_names[np.float64] + \
-            vector_names[mode_data_type] + vector_names[np.float32]
+            vector_names[mode_data_type] + \
+            vector_names[vector_dtype]
 
         d = {k1: getattr(self, k0) for k0, k1 in
              zip(vp_params, talos_params)}
@@ -168,14 +171,25 @@ class MultiPointParams(LOSParams):
                 if arr is not None and not isinstance(arr, np.ndarray):
                     d[x] = np.array(list(arr), dtype=data_type)
 
-        input_coord_vectors = vector_names[np.float64]
-        res_len = max(len(d[x]) for x in input_coord_vectors)
         mode_len = len(d[mode_vector_name])
-        res_shape = None if d[result_vector_name] is None else d[result_vector_name].shape
-        min_res_shape = (res_len, mode_len)
+        input_dim = len(input_vector_names)
+        res_len = max(len(d[x]) for x in input_vector_names)
+        min_res_shape = (mode_len, res_len)
+
+        res_vec = d[result_vector_name]
+        res_shape = None if res_vec is None else res_vec.shape
         if res_shape is None or res_shape[0] < min_res_shape[0] or res_shape[1] < min_res_shape[1]:
-            d[result_vector_name] = np.zeros(min_res_shape, dtype=np.float32)
-            assert min_res_shape == d[result_vector_name].shape
+            res_vec = np.zeros(min_res_shape, dtype=vector_dtype)
+            assert min_res_shape == res_vec.shape
+        d[result_vector_name] = res_vec
+
+        io_vector_prefixes = input_names + ['re']
+        for idx, x in enumerate(io_vector_prefixes):
+            d[f'count_{x}'] = len(d[f'AIO_{x}'])
+            d[f'offset_{x}'] = 0
+            d[f'scanline_{x}'] = 1
+        d['results_stride'] = d[f'count_re'] = res_vec.shape[1]
+
         return d
 
 
