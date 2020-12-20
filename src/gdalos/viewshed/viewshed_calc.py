@@ -1,6 +1,7 @@
+import collections
+import json
 import math
 from functools import partial
-from itertools import cycle, product, tee
 from typing import Union, Sequence
 
 from osgeo import gdal
@@ -605,20 +606,31 @@ def los_calc(
 
         # input_names = ['ox', 'oy', 'oz', 'tx', 'ty', 'tz']
         input_names = ['ox', 'oy', 'tx', 'ty']
-        input_arrays = [inputs[f'AIO_{x}'] for x in input_names]
+
+        output_names = vp.mode
         output_arrays = inputs['AIO_re']
         output_arrays = [output_arrays[i] for i in range(len(output_arrays))]
-        res = np.stack(input_arrays + output_arrays).transpose()
+
+        res = collections.OrderedDict()
+        for name in input_names:
+            res[name] = inputs[f'AIO_{name}']
+        for idx, name in enumerate(output_names):
+            res[vp.mode[idx]] = output_arrays[idx]
     else:
         raise Exception('unknown or unsupported backend {}'.format(backend))
 
     if res is None:
         raise Exception('error occurred')
     elif output_filename is not None:
+        os.makedirs(os.path.dirname(str(output_filename)), exist_ok=True)
         output_filename = Path(output_filename)
-        # ext = gdalos_util.get_ext_by_of(of)
-        # os.makedirs(os.path.dirname(str(output_filename)), exist_ok=True)
-        np.savetxt(output_filename, res, fmt='%s')
+        if of == 'json':
+            with open(output_filename, 'w') as outfile:
+                json_dump = {k: v.tolist() for k, v in res.items()}
+                json.dump(json_dump, outfile, indent=2)
+        else:
+            xyz = np.stack(res.values()).transpose()
+            np.savetxt(output_filename, xyz, fmt='%s')
 
     return res
 

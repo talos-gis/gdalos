@@ -1,5 +1,5 @@
 __name__ = "gdalos"
-__version__ = "0.47.4"
+__version__ = "0.47.5"
 __author__ = "Idan Miara, Ben Avrahami"
 __author_email__ = "idan@miara.com"
 __license__ = "MIT"
