@@ -39,7 +39,7 @@ class LOSParams(object):
         self.tmsl = False  # target MSL
 
         self.refraction_coeff = atmospheric_refraction_coeff
-        self.mode = 2
+        self.mode = None
         self.radio_parameters = None
         self.xy_fill = FillMode.zip_cycle
         self.ot_fill = FillMode.zip_cycle
@@ -104,7 +104,7 @@ class LOSParams(object):
 
 
 class MultiPointParams(LOSParams):
-    __slots__ = ('tx', 'ty', 'mode', 'results')
+    __slots__ = ('tx', 'ty', 'results')
 
     def __init__(self):
         super(MultiPointParams, self).__init__()
@@ -231,6 +231,12 @@ class ViewshedParams(LOSParams):
         d = {k1: getattr(self, k0) for k0, k1 in
              zip(vp_params, gdal_params)}
         d['dfCurvCoeff'] = 1 - self.refraction_coeff
+
+        if d['mode'] is None:
+            d['mode'] = 2
+        elif isinstance(d['mode'], str):
+            d['mode'] = int(d['mode'])
+
         return d
 
     def get_result_dt(self):
