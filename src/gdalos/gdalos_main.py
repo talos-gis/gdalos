@@ -794,7 +794,7 @@ def gdalos_trans(
                     logger.info("warp options: " + str(warp_options))
                 out_ds = gdal.Warp(str(trans_filename), ds, **common_options, **warp_options)
 
-                workaround_issue_3232 = True  # workaround https://github.com/OSGeo/gdal/issues/3232
+                workaround_issue_3232 = gdal.__version__ < (3, 3)  # workaround https://github.com/OSGeo/gdal/issues/3232
                 if not value_scale and workaround_issue_3232:
                     scale_raster.assign_same_scale_and_offset_values(out_ds, ds)
             else:

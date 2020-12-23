@@ -501,20 +501,20 @@ def los_calc(
         for x, y in geo_o:
             if x < min_x:
                 min_x = x
-            elif x > max_x:
+            if x > max_x:
                 max_x = x
             if y < min_y:
                 min_y = y
-            elif y > max_y:
+            if y > max_y:
                 max_y = y
         for x, y in geo_t:
             if x < min_x:
                 min_x = x
-            elif x > max_x:
+            if x > max_x:
                 max_x = x
             if y < min_y:
                 min_y = y
-            elif y > max_y:
+            if y > max_y:
                 max_y = y
         input_filename, input_ds = input_selector.get_item_projected((min_x+max_x)/2, (min_y+max_y)/2)
         input_filename = Path(input_filename).resolve()

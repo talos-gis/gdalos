@@ -1,3 +1,5 @@
+:: python -m pip install twine wheel
+
 :: delete old dists
 rmdir /s/q dist
 rmdir /s/q build
