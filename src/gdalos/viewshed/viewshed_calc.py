@@ -294,6 +294,9 @@ def viewshed_calc_to_ds(
 
                 ras = talos.GS_Viewshed_Calc1(**inputs)
 
+                if ras is None:
+                    raise Exception(f'fail to calc viewshed: {inputs}')
+
                 do_post_color = color_table and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
 
                 # talos supports only file output (not ds)
@@ -602,10 +605,12 @@ def los_calc(
                 if not hasattr(talos, 'GS_SetRadioParameters'):
                     raise Exception('This version does not support radio')
                 talos.GS_SetRadioParameters(**radio_params)
-            talos.GS_Radio_Calc(**inputs)
+            result = talos.GS_Radio_Calc(**inputs)
+            if result:
+                raise Exception('talos calc error')
 
-        # input_names = ['ox', 'oy', 'oz', 'tx', 'ty', 'tz']
-        input_names = ['ox', 'oy', 'tx', 'ty']
+        input_names = ['ox', 'oy', 'oz', 'tx', 'ty', 'tz']
+        # input_names = ['ox', 'oy', 'tx', 'ty']
 
         output_names = vp.mode
         output_arrays = inputs['AIO_re']
@@ -625,8 +630,9 @@ def los_calc(
         os.makedirs(os.path.dirname(str(output_filename)), exist_ok=True)
         output_filename = Path(output_filename)
         if of == 'json':
+            res['r'] = [projected_filename]
             with open(output_filename, 'w') as outfile:
-                json_dump = {k: v.tolist() for k, v in res.items()}
+                json_dump = {k: v.tolist() if isinstance(v, np.ndarray) else str(v) for k, v in res.items()}
                 json.dump(json_dump, outfile, indent=2)
         else:
             xyz = np.stack(res.values()).transpose()
