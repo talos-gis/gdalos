@@ -1,78 +1,12 @@
 import glob
 import os
 from pathlib import Path
-from typing import Iterator, Sequence, Union
+from typing import Iterator, Sequence
 
-from osgeo import gdal
-from osgeo import ogr
-from osgeo import osr
+from osgeo import ogr, osr
+from osgeo_utils.auxiliary.util import *
 
 from gdalos.gdalos_base import FileName, enum_to_str
-
-
-def open_ds(filename_or_ds, *args, **kwargs):
-    ods = OpenDS(filename_or_ds, *args, **kwargs)
-    return ods.__enter__()
-
-
-def get_ovr_idx(filename_or_ds, ovr_idx):
-    if ovr_idx in [..., None]:
-        ovr_idx = 0
-    if ovr_idx < 0:
-        # -1 is the last overview; -2 is the one before the last
-        overview_count = get_ovr_count(open_ds(filename_or_ds))
-        ovr_idx = max(0, overview_count + ovr_idx + 1)
-    return ovr_idx
-
-
-class OpenDS:
-    def __init__(self, filename_or_ds, *args, **kwargs):
-        if isinstance(filename_or_ds, (str, Path)):
-            self.filename = str(filename_or_ds)
-            self.ds = None
-        else:
-            self.filename = None
-            self.ds = filename_or_ds
-        self.args = args
-        self.kwargs = kwargs
-        self.own = None
-
-    def __enter__(self) -> gdal.Dataset:
-        if self.ds is None:
-            self.ds = self._open_ds(self.filename, *self.args, **self.kwargs)
-            if self.ds is None:
-                raise IOError('could not open file "{}"'.format(self.filename))
-            self.own = True
-        return self.ds
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.own:
-            self.ds = None
-
-    @staticmethod
-    def _open_ds(
-            filename,
-            access_mode=gdal.GA_ReadOnly,
-            ovr_idx: int = None,
-            open_options: dict = None,
-            logger=None,
-    ):
-        open_options = dict(open_options or dict())
-        ovr_idx = get_ovr_idx(filename, ovr_idx)
-        if ovr_idx > 0:
-            open_options["OVERVIEW_LEVEL"] = ovr_idx - 1  # gdal overview 0 is the first overview (after the base layer)
-        if logger is not None:
-            s = 'openning file: "{}"'.format(filename)
-            if open_options:
-                s = s + " with options: {}".format(str(open_options))
-            logger.debug(s)
-        if open_options:
-            open_options = ["{}={}".format(k, v) for k, v in open_options.items()]
-
-        if open_options:
-            return gdal.OpenEx(str(filename), open_options=open_options)
-        else:
-            return gdal.Open(str(filename), access_mode)
 
 
 def _get_bands(ds: gdal.Dataset) -> Iterator[gdal.Band]:
@@ -106,12 +40,6 @@ def get_raster_band(filename_or_ds, bnd_index=1, ovr_index=None):
         if ovr_index is not None:
             bnd = bnd.GetOverview(ovr_index)
         return bnd
-
-
-def get_ovr_count(filename_or_ds, bnd_index=1):
-    with OpenDS(filename_or_ds) as ds:
-        bnd = ds.GetRasterBand(bnd_index)
-        return bnd.GetOverviewCount()
 
 
 def get_nodatavalue(filename_or_ds):

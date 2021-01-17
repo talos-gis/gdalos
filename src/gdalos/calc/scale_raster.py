@@ -2,9 +2,10 @@ import math
 import numpy as np
 from functools import partial
 from osgeo import gdal
-from gdalos.calc import gdal_calc, gdal_numpy
+from gdalos.calc import gdal_calc
 from gdalos import gdalos_util
 from numbers import Real
+from osgeo_utils.auxiliary.numpy_util import GDALTypeCodeToNumericTypeCodeEx
 
 
 def autoscale(bnd, np_dtype, possible_scale_values=(0.1, 0.15, 0.2, 0.25, 0.3)):
@@ -48,7 +49,7 @@ def scale_raster(filename_or_ds, d_path, gdal_dt=gdal.GDT_Int16,
     if out_ndv is ... and in_ndv is not None:
         # out_ndv = None if in_ndv is None else gdal_calc.DefaultNDVLookup[gdal_dt]
         out_ndv = gdal_calc.DefaultNDVLookup[gdal_dt]
-    np_dtype = gdal_numpy.gdal_dt_to_np_dt[gdal_dt]
+    np_dtype = GDALTypeCodeToNumericTypeCodeEx(gdal_dt)
     if not scale or scale is ...:
         scale = autoscale(ds.GetRasterBand(1), np_dtype)
     f = partial(scale_np_array, factor=1 / scale, in_ndv=in_ndv, out_ndv=out_ndv, dtype=np_dtype)
@@ -58,7 +59,7 @@ def scale_raster(filename_or_ds, d_path, gdal_dt=gdal.GDT_Int16,
     creation_options_list = creation_options_list or gdalos_util.get_creation_options()
 
     ds = gdal_calc.Calc(
-        calc_expr, outfile=str(d_path), hideNodata=hide_nodata, NoDataValue=out_ndv, return_ds=True, type=gdal_dt,
+        calc_expr, outfile=str(d_path), hideNodata=hide_nodata, NoDataValue=out_ndv, type=gdal_dt,
         user_namespace=user_namespace, creation_options=creation_options_list, **kwargs, **calc_kwargs)
 
     for i in range(ds.RasterCount):

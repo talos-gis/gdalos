@@ -1,7 +1,7 @@
 import os
 import tempfile
 from osgeo import gdal
-from gdalos.gdalos_color import ColorPalette
+from gdalos.gdalos_color import ColorPalette, read_talos_palette
 from gdalos.calc import gdal_calc
 from functools import partial
 import numpy as np
@@ -91,7 +91,7 @@ def gdalos_raster_color(filename_or_ds: gdal.Dataset,
 
         ds = gdal_calc.Calc(
             calc_expr, type=gdal.GDT_Byte, outfile=str(out_filename), format=output_format,
-            color_table=color_table, return_ds=True, overwrite=True,
+            color_table=color_table, overwrite=True,
             user_namespace=user_namespace, **calc_kwargs)
 
         ds.SetMetadataItem(gdal_to_czml.czml_metadata_name, meta)
@@ -117,8 +117,7 @@ def test_dtm():
 def test_f1():
     path = Path(r'd:\dev\gis\talos_wps\data\sample\maps\f1.tif')
     talos_pal = r'100;4;0;0;500;0;1;1;0;|;$CC000080;0;3;2|;$CC00FFFF;0;3;2|;$CC00FF00;0;3;2|;$CCFFFF00;0;3;2'
-    pal = ColorPalette()
-    pal.read_talos_palette(talos_pal)
+    pal = read_talos_palette(talos_pal)
     test_main(path, pal)
 
 

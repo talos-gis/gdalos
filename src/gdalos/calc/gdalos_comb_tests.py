@@ -6,7 +6,7 @@ from pathlib import Path
 from gdalos.gdalos_main import gdalos_util, gdalos_extent, GeoRectangle
 from gdalos.calc import gdal_calc
 from gdalos.gdalos_color import ColorPalette
-from gdalos.calc.gdalcompare import find_diff
+from osgeo_utils.gdalcompare import find_diff
 from gdalos.calc import gdalos_combine
 
 

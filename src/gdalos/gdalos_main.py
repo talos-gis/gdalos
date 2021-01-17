@@ -11,7 +11,8 @@ from osgeo import gdal
 import gdalos
 from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef, __version__
 from gdalos.__util__ import with_param_dict
-from gdalos.rectangle import GeoRectangle, make_partitions
+from gdalos.rectangle import GeoRectangle
+from gdalos.partitions import make_partitions
 from gdalos.gdalos_types import GdalOutputFormat, OvrType, RasterKind, GdalResamplingAlg
 from gdalos.gdalos_base import enum_to_str
 from gdalos.calc import scale_raster
@@ -148,7 +149,7 @@ def gdalos_trans(
         warp_scale: Optional[Union[Real, Tuple[Real, Real]]] = 1,  # https://github.com/OSGeo/gdal/issues/2810
         warp_error_threshold: Optional[Real] = 0,  # [None|0]: [linear approximator|exact] coordinate reprojection
         ovr_type: Optional[OvrType] = OvrType.auto_select,
-        ovr_idx: Optional[Union[type(...), int]] = 0,  # ovr_idx=0 is the base raster; 1 is the first overview
+        ovr_idx: Optional[Union[type(...), int]] = 0,  # ovr_idx=0 (or None) is the base raster; 1 is the first overview; ovr_idx=... will select the default ovr
         keep_src_ovr_suffixes: bool = True,
         dst_ovr_count: Optional[int] = None,
         dst_nodatavalue: Optional[Union[type(...), Real]] = None,  # None -> don't change; ... -> change only for DTM
@@ -288,7 +289,7 @@ def gdalos_trans(
         warp_options_inner['NUM_THREADS'] = multi_thread
         warp_options['multithread'] = True
     if ovr_idx is not ...:
-        warp_options['overviewLevel'] = 'None'  # force gdal to use the selected ovr_idx
+        warp_options['overviewLevel'] = 'None'  # force gdal to use the selected ovr_idx (added in GDAL >= 3.0)
         if ovr_idx is None:
             ovr_idx = 0  # base raster
         overview_count = gdalos_util.get_ovr_count(ds)

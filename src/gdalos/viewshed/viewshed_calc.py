@@ -30,6 +30,7 @@ from gdalos.calc.discrete_mode import DiscreteMode
 from gdalos.calc.gdalos_raster_color import gdalos_raster_color
 from gdalos.gdalos_selector import get_projected_pj, DataSetSelector
 from gdalos import gdalos_color
+from osgeo_utils.auxiliary.extent_util import Extent
 
 talos = None
 
@@ -101,7 +102,7 @@ def viewshed_calc(output_filename, of='GTiff', **kwargs):
 def viewshed_calc_to_ds(
         vp_array,
         input_filename: Union[gdal.Dataset, FileName, DataSetSelector],
-        extent=2, cutline=None, operation: CalcOperation = CalcOperation.count,
+        extent=Extent.UNION, cutline=None, operation: CalcOperation = CalcOperation.count,
         in_coords_srs=None, out_crs=None,
         color_palette: ColorPaletteOrPathOrStrings = None,
         discrete_mode: DiscreteMode = DiscreteMode.interp,
@@ -404,14 +405,13 @@ def viewshed_calc_to_ds(
             is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
             ds = gdal_calc.Calc(
                 calc_expr, outfile=str(d_path), extent=extent, format=gdal_out_format,
-                color_table=color_table, hideNodata=hide_nodata, return_ds=return_ds, overwrite=True,
+                color_table=color_table, hideNodata=hide_nodata, overwrite=True,
                 NoDataValue=no_data_value, user_namespace=user_namespace, **calc_kwargs)
         t = time.time() - t
         print('time for calc: {:.3f} seconds'.format(t))
 
-        if return_ds:
-            if not ds:
-                raise Exception('error occurred')
+        if not ds:
+            raise Exception('error occurred')
         for i in range(len(files)):
             files[i] = None  # close calc input ds(s)
 

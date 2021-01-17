@@ -41,6 +41,7 @@ setup(
     classifiers=classifiers,
     packages=packages,
     package_dir=package_dir,
+    install_requires=['gdal', 'gdal-utils'],
     extras_require={
         "gdal": ["gdal"],
         "PyQt": ["fidget", "PyQt5"],

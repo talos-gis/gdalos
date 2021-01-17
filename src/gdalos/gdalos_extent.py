@@ -1,7 +1,4 @@
-import tempfile
-import math
-
-from osgeo import gdal
+from osgeo_utils.auxiliary.extent_util import *  # noqa
 
 from gdalos.rectangle import GeoRectangle, get_points_extent
 from gdalos import gdalos_util
@@ -176,51 +173,6 @@ def calc_geo_offsets(src_gt, src_size, dst_gt, dst_size):
     src_offset = (max(0, offset[0]), max(0, offset[1]))
     dst_offset = (max(0, -offset[0]), max(0, -offset[1]))
     return src_offset, dst_offset
-
-
-def calc_geotransform_and_dimensions(geotransforms, dimensions, input_extent: GeoRectangle = None):
-    # extents differ, but pixel size and rotation are the same.
-    # we'll make a union or an intersection
-    if geotransforms is None or len(geotransforms) != len(dimensions):
-        raise Exception('Error! GeoTransforms and Dimensions have different lengths!')
-    if isinstance(input_extent, GeoRectangle):
-        gt = geotransforms[0]
-        out_extent = input_extent.align(gt)
-    else:
-        out_extent: GeoRectangle = None
-        is_union = input_extent == 2
-        for gt, size in zip(geotransforms, dimensions):
-            extent = GeoRectangle.from_geotransform_and_size(gt, size)
-            out_extent = extent if out_extent is None else \
-                out_extent.union(extent) if is_union else out_extent.intersect(extent)
-
-    if out_extent is None or out_extent.is_empty():
-        return None, None, None
-    else:
-        pixel_size = (gt[1], gt[5])
-        pix_extent = out_extent.to_pixels(pixel_size)
-        gt = (out_extent.left,
-              gt[1], gt[2],
-              out_extent.up,
-              gt[4], gt[5])
-    return gt, (math.ceil(pix_extent.w), math.ceil(pix_extent.h)), out_extent
-
-
-def make_temp_vrt(ds, extent: GeoRectangle):
-    # ds = gdalos_util.open_ds(filename)
-    # extent = gdalos_extent.get_extent(ds)
-    options = gdal.BuildVRTOptions(outputBounds=(extent.min_x, extent.min_y, extent.max_x, extent.max_y))
-    # hideNodata=True, separate=False)
-    # vrt_filename = filename + ".vrt"
-    vrt_filename = tempfile.mktemp(suffix='.vrt')
-    vrt_ds = gdal.BuildVRT(vrt_filename, ds, options=options)
-    if vrt_ds is None:
-        raise Exception("Error! cannot create vrt. Cannot proceed")
-    # close_and_reopen = False
-    # if close_and_reopen:
-    #     vrt_ds = None
-    #     vrt_ds = gdalos_util.open_ds(vrt_filename)
-    return vrt_filename, vrt_ds
 
 
 def make_temp_vrt_old(filename, ds, data_type, projection, bands_count, gt, dimensions, ref_gt, ref_dimensions):
