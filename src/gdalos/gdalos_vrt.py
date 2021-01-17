@@ -178,7 +178,7 @@ def vrt_fix_openoptions(ros: List[RasterOverview], filename_in: Path, filename_o
                 #   <OpenOptions>
                 #       <OOI key="OVERVIEW_LEVEL">6</OOI>
                 #   </OpenOptions>
-                ovr_idx = ...
+                ovr_idx = None
                 for ro in ros:
                     if relative:
                         source_filename = (dir_name / source_filename).resolve()
@@ -189,7 +189,7 @@ def vrt_fix_openoptions(ros: List[RasterOverview], filename_in: Path, filename_o
                                 '\t<OpenOptions>\n\t\t<OOI key="OVERVIEW_LEVEL">{}</OOI>\n\t</OpenOptions>\n'.format(
                                     ovr_idx-1))
                         break
-                if ovr_idx is ...:
+                if ovr_idx is None:
                     raise Exception('SourceFilename: {} not found'.format(source_filename))
 
 
