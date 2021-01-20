@@ -1,5 +1,9 @@
 import math
+from typing import Optional, List
+
 from gdalos.rectangle import GeoRectangle
+
+Partition = GeoRectangle
 
 
 def find_two_greatest_devisors(x: int):
@@ -10,11 +14,11 @@ def find_two_greatest_devisors(x: int):
     return x, 1
 
 
-def make_partitions(x_parts, y_parts=None):
+def make_partitions(x_parts: int, y_parts: Optional[int] = None) -> List[Partition]:
     if y_parts is None:
         x_parts, y_parts = find_two_greatest_devisors(x_parts)
     return list(
-        GeoRectangle(i, j, x_parts, y_parts)
+        Partition(i, j, x_parts, y_parts)
         for i in range(x_parts)
         for j in range(y_parts)
     )

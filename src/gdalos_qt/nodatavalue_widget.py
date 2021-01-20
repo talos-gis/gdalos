@@ -6,8 +6,8 @@ from fidget.widgets import FidgetConst, FidgetInt, FidgetStacked
 
 class NodatavalueWidgetSrc(FidgetStacked[Optional[Union[float, type(...)]]]):
     INNER_TEMPLATES = [
-        FidgetConst.template("get original value", option=("...", ...)),
-        FidgetConst.template("raster minimum (might take time)", option=("None", None)),
+        FidgetConst.template("get original value", option=("None", None)),
+        FidgetConst.template("raster minimum (might take time)", option=("...", ...)),
         FidgetInt.template("given value"),
     ]
     SELECTOR_CLS = "radio"

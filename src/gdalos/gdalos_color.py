@@ -1,5 +1,5 @@
-from pathlib import Path
 import math
+from pathlib import Path
 
 from osgeo_utils.auxiliary.base import num
 from osgeo_utils.auxiliary.color_palette import *  # noqa

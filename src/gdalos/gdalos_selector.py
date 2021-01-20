@@ -4,7 +4,7 @@ from numbers import Real
 from typing import List, Union
 
 from gdalos import projdef, gdalos_util
-from gdalos.gdalos_base import SequanceNotString, FileName
+from gdalos.gdalos_base import SequanceNotString, PathLike
 from gdalos.gdalos_util import OpenDS
 
 
@@ -14,7 +14,7 @@ class DataSetSelector:
     __slots__ = ['ds_list', 'centers']
     regex = re.compile(r'w84u([-+]?[0-9]*\.?[0-9]+)')
 
-    def __init__(self, lst: Union[FileName, SequanceNotString]):
+    def __init__(self, lst: Union[PathLike, SequanceNotString]):
         self.ds_list: List[OpenDS] = []
         lst = gdalos_util.flatten_and_expand_file_list(lst, do_expand_glob=True, always_return_list=True)
 
@@ -32,7 +32,7 @@ class DataSetSelector:
     def get_centers(self) -> List[Real]:
         return list(self.get_center(item.filename) for item in self.ds_list)
 
-    def get_center(self, filename: FileName) -> Real:
+    def get_center(self, filename: PathLike) -> Real:
         filename = str(filename)
         result = self.regex.search(filename)
         float_zone = float(result.group(1))

@@ -1,6 +1,7 @@
 import math
 from numbers import Real
 from typing import Union, Sequence
+
 import osgeo
 from osgeo import osr, ogr
 

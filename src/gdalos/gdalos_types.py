@@ -1,7 +1,8 @@
 from enum import Enum, auto
 
-from gdalos import gdalos_util
 from osgeo import gdal
+
+from gdalos import gdalos_util
 
 
 class OvrType(Enum):
