@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, TypeVar, Union
 
 from osgeo import gdal
+import gdalos
 from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef, __version__
 from gdalos.__util__ import with_param_dict
 from gdalos.rectangle import GeoRectangle, make_partitions
@@ -16,7 +17,7 @@ from gdalos.gdalos_base import enum_to_str
 from gdalos.calc import scale_raster
 from gdalos.util import version_tuple
 
-
+gdalos_version = version_tuple(gdalos.__version__)
 gdal_version = version_tuple(gdal.__version__)
 support_of_cog = gdal_version >= (3, 1)
 multi_thread_support_available = gdal_version >= (3, 2)
