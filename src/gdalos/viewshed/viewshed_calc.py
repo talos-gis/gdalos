@@ -20,7 +20,7 @@ from gdalos.rectangle import GeoRectangle
 from gdalos.gdalos_main import projdef, gdalos_util, gdalos_trans, gdalos_extent
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
 from gdalos.calc import gdal_calc, gdal_to_czml, gdalos_combine
-from gdalos import util
+from gdalos import util, gdalos_main
 from gdalos.viewshed import viewshed_params
 from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams
 from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
@@ -346,12 +346,15 @@ def viewshed_calc_to_ds(
                     calc_cutline = None
                 # todo: check why without temp file it crashes on operation
                 is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
+                scale = ds.GetRasterBand(1).GetScale()
                 ds = gdalos_trans(ds, out_filename=d_path, warp_srs=pjstr_inter_srs,
                                   cutline=calc_cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
                 if is_temp_file:
                     # close original ds and reopen
                     ds = None
                     ds = gdalos_util.open_ds(d_path)
+                    if scale and gdalos_main.workaround_warp_scale_bug:
+                        ds.GetRasterBand(1).SetScale(scale)
                     temp_files.append(d_path)
                 if not ds:
                     raise Exception('Viewshed calculation failed to cut')
