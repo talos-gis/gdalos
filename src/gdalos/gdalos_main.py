@@ -18,6 +18,8 @@ from gdalos.util import version_tuple
 
 
 gdal_version = version_tuple(gdal.__version__)
+support_of_cog = gdal_version >= (3, 1)
+multi_thread_support_available = gdal_version >= (3, 2)
 workaround_warp_scale_bug = gdal_version < (3, 3)  # workaround https://github.com/OSGeo/gdal/issues/3232
 
 
@@ -307,12 +309,8 @@ def gdalos_trans(
     # filename_is_ds = not isinstance(filename, (str, Path))
     filename_is_ds = ds == filename
 
-    try:
-        support_of_cog = gdal_version >= (3, 1)
-        if verbose:
-            logger.info(f'gdal version: {gdal_version}; cog driver support: {support_of_cog}')
-    except:
-        support_of_cog = False
+    if verbose:
+        logger.info(f'gdal version: {gdal_version}; cog driver support: {support_of_cog}')
     if cog is ...:
         cog = not filename_is_ds
     if ovr_type is None:
@@ -798,8 +796,7 @@ def gdalos_trans(
                     logger.info("warp options: " + str(warp_options))
                 out_ds = gdal.Warp(str(trans_filename), ds, **common_options, **warp_options)
 
-                workaround_issue_3232 = gdal.__version__ < (3, 3)  # workaround https://github.com/OSGeo/gdal/issues/3232
-                if not value_scale and workaround_issue_3232:
+                if not value_scale and workaround_warp_scale_bug:
                     scale_raster.assign_same_scale_and_offset_values(out_ds, ds)
             else:
                 if verbose and translate_options:
@@ -1102,7 +1099,6 @@ def gdalos_ovr(
     if config_options is None:
         config_options = dict()
 
-    multi_thread_support_available = gdal_version >= (3, 2)
     if multi_thread and multi_thread_support_available:
         multi_thread = multi_thread_to_str(multi_thread)
         config_options['GDAL_NUM_THREADS'] = multi_thread
