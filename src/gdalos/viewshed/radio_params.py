@@ -2,7 +2,7 @@
 from collections import Sequence
 from enum import IntEnum
 
-from gdalos import util
+from gdalos import gdalos_base
 
 
 class RadioCalcType(IntEnum):
@@ -50,7 +50,7 @@ class RadioParams(object):
                 setattr(self, attr, val[0])
 
     def get_dict(self):
-        d = util.get_dict(self)
+        d = gdalos_base.get_dict(self)
         polarity = d['polarity']
         if isinstance(polarity, str):
             polarity = polarity[0].lower()

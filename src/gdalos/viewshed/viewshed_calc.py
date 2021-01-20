@@ -1,35 +1,34 @@
 import collections
+import copy
+import glob
 import json
 import math
+import os
+import tempfile
+import time
+from enum import Enum
 from functools import partial
+from pathlib import Path
 from typing import Union, Sequence
 
-from osgeo import gdal
-import glob
-import tempfile
-import os
-import time
-from pathlib import Path
-from enum import Enum
 import numpy as np
+from osgeo import gdal
 
-import copy
-
-from gdalos.gdalos_base import FileName
-from gdalos.rectangle import GeoRectangle
-from gdalos.gdalos_main import projdef, gdalos_util, gdalos_trans, gdalos_extent
-from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
+from gdalos import gdalos_base, gdalos_main
+from gdalos import gdalos_color
 from gdalos.calc import gdal_calc, gdal_to_czml, gdalos_combine
-from gdalos import util, gdalos_main
-from gdalos.viewshed import viewshed_params
-from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams
-from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
-from gdalos.talos.ogr_util import create_layer_from_geometries
-from gdalos.talos.geom_arc import PolygonizeSector
 from gdalos.calc.discrete_mode import DiscreteMode
 from gdalos.calc.gdalos_raster_color import gdalos_raster_color
+from gdalos.gdalos_base import PathLike
+from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
+from gdalos.gdalos_main import projdef, gdalos_util, gdalos_trans, gdalos_extent
 from gdalos.gdalos_selector import get_projected_pj, DataSetSelector
-from gdalos import gdalos_color
+from gdalos.rectangle import GeoRectangle
+from gdalos.talos.geom_arc import PolygonizeSector
+from gdalos.talos.ogr_util import create_layer_from_geometries
+from gdalos.viewshed import viewshed_params
+from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
+from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams
 from osgeo_utils.auxiliary.extent_util import Extent
 
 talos = None
@@ -101,7 +100,7 @@ def viewshed_calc(output_filename, of='GTiff', **kwargs):
 
 def viewshed_calc_to_ds(
         vp_array,
-        input_filename: Union[gdal.Dataset, FileName, DataSetSelector],
+        input_filename: Union[gdal.Dataset, PathLike, DataSetSelector],
         extent=Extent.UNION, cutline=None, operation: CalcOperation = CalcOperation.count,
         in_coords_srs=None, out_crs=None,
         color_palette: ColorPaletteOrPathOrStrings = None,
@@ -113,7 +112,7 @@ def viewshed_calc_to_ds(
         files=None):
     input_selector = None
     input_ds = None
-    if isinstance(input_filename, FileName.__args__):
+    if isinstance(input_filename, PathLike.__args__):
         input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
     elif isinstance(input_filename, DataSetSelector):
         input_selector = input_filename
@@ -122,6 +121,11 @@ def viewshed_calc_to_ds(
             input_selector = None
     else:
         input_ds = input_filename
+
+    if isinstance(extent, int):
+        extent = Extent(extent)
+    elif isinstance(extent, str):
+        extent = Extent[extent]
 
     is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
 
@@ -452,7 +456,7 @@ def viewshed_calc_to_ds(
 
 def los_calc(
         vp,
-        input_filename: Union[gdal.Dataset, FileName, DataSetSelector],
+        input_filename: Union[gdal.Dataset, PathLike, DataSetSelector],
         in_coords_srs=None, out_crs=None,
         bi=1, ovr_idx=0, co=None, of='xyz',
         backend: ViewshedBackend = None,
@@ -460,7 +464,7 @@ def los_calc(
         mock=False):
     input_selector = None
     input_ds = None
-    if isinstance(input_filename, FileName.__args__):
+    if isinstance(input_filename, PathLike.__args__):
         input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
     elif isinstance(input_filename, DataSetSelector):
         input_selector = input_filename
@@ -574,7 +578,7 @@ def los_calc(
 
     if backend == ViewshedBackend.talos:
         radio_params = vp.get_radio_as_talos_params()
-        o_points, t_points = util.make_pairs(o_points, t_points, vp.ot_fill)
+        o_points, t_points = gdalos_base.make_pairs(o_points, t_points, vp.ot_fill)
         vp.oxy = list(o_points)
         vp.txy = list(t_points)
         inputs = vp.get_as_talos_params()

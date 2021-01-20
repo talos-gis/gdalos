@@ -1,8 +1,9 @@
-from osgeo import gdal
 import numpy as np
+from osgeo import gdal
+
 from gdalos import gdalos_color
-from gdalos.gdalos_main import gdalos_trans
 from gdalos.gdalos_color import ColorPalette
+from gdalos.gdalos_main import gdalos_trans
 
 
 def test_data_generator(filename, levels=10, of='GTiff', color_palette: ColorPalette=...):

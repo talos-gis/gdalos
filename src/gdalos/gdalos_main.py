@@ -1,8 +1,8 @@
 import datetime
 import logging
 import os
-import time
 import tempfile
+import time
 from numbers import Real
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, TypeVar, Union
@@ -11,12 +11,12 @@ from osgeo import gdal
 import gdalos
 from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef, __version__
 from gdalos.__util__ import with_param_dict
-from gdalos.rectangle import GeoRectangle
-from gdalos.partitions import make_partitions
-from gdalos.gdalos_types import GdalOutputFormat, OvrType, RasterKind, GdalResamplingAlg
-from gdalos.gdalos_base import enum_to_str
 from gdalos.calc import scale_raster
-from gdalos.util import version_tuple
+from gdalos.gdalos_base import enum_to_str, version_tuple
+from gdalos.gdalos_types import GdalOutputFormat, OvrType, RasterKind, GdalResamplingAlg
+from gdalos.gdalos_util import no_yes
+from gdalos.partitions import Partition, make_partitions
+from gdalos.rectangle import GeoRectangle
 
 gdalos_version = version_tuple(gdalos.__version__)
 gdal_version = version_tuple(gdal.__version__)
@@ -113,67 +113,104 @@ default_multi_byte_nodata_value = -32768
 def gdalos_trans(
         filename: MaybeSequence[str],
         reference_filename: MaybeSequence[str] = None,
-        filenames_expand: Union[type(...), bool] = ...,
-        out_filename: str = None,
-        out_path: str = None,
-        return_ds: Union[type(...), bool] = ...,
+        filenames_expand: Optional[bool] = None,
+        out_filename: Optional[str] = None,
+        out_path: Optional[str] = None,
+        return_ds: Optional[bool] = None,
         out_path_with_src_folders: bool = True,
         overwrite=False,
-        cog: Union[type(...), bool] = ...,
-        prefer_2_step_cog: Union[type(...), bool] = ...,
-        write_info: Union[type(...), bool] = ...,
-        write_spec: Union[type(...), bool] = ...,
+        cog: Optional[bool] = None,
+        prefer_2_step_cog: Optional[bool] = None,
+        write_info: Optional[bool] = None,
+        write_spec: Optional[bool] = None,
         multi_file_as_vrt: bool = False,
-        of: MaybeSequence[Union[type(...), GdalOutputFormat, str]] = ...,
-        outext: str = ...,
+        of: Optional[MaybeSequence[Union[GdalOutputFormat, str]]] = None,
+        outext: Optional[str] = None,
         ot: Optional[Union[str, int]] = None,
-        value_scale: Optional[Union[Real, type(...)]] = None,
-        kind: RasterKind = None,
+        value_scale: Optional[Real] = None,  # 0 for default
+        kind: Optional[RasterKind] = None,
         tiled: bool = True,
-        block_size: int = ...,
-        big_tiff: str = ...,
-        config_options: dict = None,
-        open_options: dict = None,
-        common_options: dict = None,
-        creation_options: dict = None,
-        translate_options: dict = None,
-        warp_options: dict = None,
-        warp_options_inner: dict = None,
+        block_size: Optional[int] = None,
+        big_tiff: Optional[str] = None,
+        config_options: Optional[dict] = None,
+        open_options: Optional[dict] = None,
+        common_options: Optional[dict] = None,
+        creation_options: Optional[dict] = None,
+        translate_options: Optional[dict] = None,
+        warp_options: Optional[dict] = None,
+        warp_options_inner: Optional[dict] = None,
         extent: Union[Optional[GeoRectangle], List[GeoRectangle]] = None,
         extent_in_4326: bool = True,
         extent_crop_to_minimal: bool = True,
-        src_win=None,
+        extent_aligned: Optional[bool] = None,
+        src_win: Optional[Sequence[int]] = None,
         cutline: Optional[Union[str, List[str]]] = None,
-        out_res: Optional[Union[type(...), Real, Tuple[Real, Real]]] = None,  # None: gdalos decides; ...: gdal decides
+        out_res: Optional[Union[type(...), Real, Tuple[Real, Real]]] = None,  # None -> gdalos default; ... -> gdal default
         warp_srs: MaybeSequence[warp_srs_base] = None,
         warp_scale: Optional[Union[Real, Tuple[Real, Real]]] = 1,  # https://github.com/OSGeo/gdal/issues/2810
         warp_error_threshold: Optional[Real] = 0,  # [None|0]: [linear approximator|exact] coordinate reprojection
         ovr_type: Optional[OvrType] = OvrType.auto_select,
-        ovr_idx: Optional[Union[type(...), int]] = 0,  # ovr_idx=0 (or None) is the base raster; 1 is the first overview; ovr_idx=... will select the default ovr
+        ovr_idx: Optional[int] = 0,  # ovr_idx=0 is the base raster; 1 is the first overview; ovr_idx=None will select the default ovr
         keep_src_ovr_suffixes: bool = True,
         dst_ovr_count: Optional[int] = None,
         dst_nodatavalue: Optional[Union[type(...), Real]] = None,  # None -> don't change; ... -> change only for DTM
-        src_nodatavalue: Optional[Union[type(...), Real]] = ...,  # None -> use minimum; ... -> use original
+        src_nodatavalue: Optional[Union[type(...), Real]] = None,  # None -> use original; ... -> use minimum;
         hide_nodatavalue: bool = False,
-        resampling_alg: Union[type(...), None, GdalResamplingAlg, str] = ...,
+        resampling_alg: Optional[Union[type(...), GdalResamplingAlg, str]] = None,  # None -> gdalos default; ... -> gdal default;
         multi_thread: Union[bool, int, str] = True,
-        lossy: bool = None,
+        lossy: Optional[bool] = None,
         expand_rgb: bool = False,
-        quality: Real = ...,
-        keep_alpha: bool = ...,
+        quality: Optional[Real] = None,
+        keep_alpha: Optional[bool] = None,
         sparse_ok: bool = True,
-        final_files: list = None,
-        ovr_files: list = None,
-        aux_files: list = None,
-        temp_files: list = None,
-        delete_temp_files=True,
-        partition=None,
+        final_files: Optional[list] = None,
+        ovr_files: Optional[list] = None,
+        aux_files: Optional[list] = None,
+        temp_files: Optional[list] = None,
+        delete_temp_files: bool = True,
+        partition: Optional[Union[MaybeSequence[Partition], int]] = None,
         print_progress=...,
         logger=...,
         console_logger_level=logging.INFO,
         *,
         all_args: dict = None,
 ):
+    # backwards compatibility: accept ... as None for the following vars
+    if filenames_expand is ...:
+        filenames_expand = None
+    if return_ds is ...:
+        return_ds = None
+    if cog is ...:
+        cog = None
+    if prefer_2_step_cog is ...:
+        prefer_2_step_cog = None
+    if write_info is ...:
+        write_info = None
+    if write_spec is ...:
+        write_spec = None
+    if of is ...:
+        of = None
+    if ot is ...:
+        ot = None
+    if outext is ...:
+        outext = None
+    if value_scale is ...:
+        value_scale = None
+    if block_size is ...:
+        block_size = None
+    if big_tiff is ...:
+        big_tiff = None
+    if quality is ...:
+        quality = None
+    if keep_alpha is ...:
+        keep_alpha = None
+    if ovr_idx is ...:
+        ovr_idx = None
+    if lossy is ...:
+        lossy = None
+    if ovr_type is ...:
+        ovr_type = None
+
     print(all_args)
 
     if final_files is None:
@@ -187,10 +224,11 @@ def gdalos_trans(
 
     if isinstance(kind, str):
         kind = RasterKind[kind]
-    if isinstance(ovr_type, str):
-        ovr_type = OvrType[ovr_type]
-    elif ovr_type is ...:
+
+    if ovr_type is None:
         ovr_type = OvrType.auto_select
+    elif isinstance(ovr_type, str):
+        ovr_type = OvrType[ovr_type]
 
     if isinstance(partition, int):
         partition = None if partition <= 1 else make_partitions(partition)
@@ -269,7 +307,6 @@ def gdalos_trans(
     # endregion
 
     # creating a copy of the input dictionaries, as I don't want to change the input
-    no_yes = ("NO", "YES")
     config_options = dict(config_options or dict())
     common_options = dict(common_options or dict())
     creation_options = dict(creation_options or dict())
@@ -278,20 +315,19 @@ def gdalos_trans(
     warp_options_inner = dict(warp_options_inner or dict())
     out_suffixes = []
 
-    if ovr_idx not in [..., None]:
-        ovr_idx = gdalos_util.get_ovr_idx(filename, ovr_idx)
-
-    ds = gdalos_util.open_ds(filename, ovr_idx=ovr_idx, open_options=open_options, logger=logger)
-    # region decide which overviews to make
     if multi_thread:
         multi_thread = multi_thread_to_str(multi_thread)
         creation_options['NUM_THREADS'] = multi_thread
         warp_options_inner['NUM_THREADS'] = multi_thread
         warp_options['multithread'] = True
-    if ovr_idx is not ...:
+
+    if ovr_idx is not None:
+        ovr_idx = gdalos_util.get_ovr_idx(filename, ovr_idx)
+    ds = gdalos_util.open_ds(filename, ovr_idx=ovr_idx, open_options=open_options, logger=logger)
+
+    # region decide which overviews to make
+    if ovr_idx is not None:
         warp_options['overviewLevel'] = 'None'  # force gdal to use the selected ovr_idx (added in GDAL >= 3.0)
-        if ovr_idx is None:
-            ovr_idx = 0  # base raster
         overview_count = gdalos_util.get_ovr_count(ds)
         src_ovr_last = ovr_idx + overview_count
         if dst_ovr_count is not None:
@@ -313,7 +349,7 @@ def gdalos_trans(
 
     if verbose:
         logger.info(f'gdal version: {gdal_version}; cog driver support: {support_of_cog}')
-    if cog is ...:
+    if cog is None:
         cog = not filename_is_ds
     if ovr_type is None:
         cog = False
@@ -324,18 +360,18 @@ def gdalos_trans(
             of = GdalOutputFormat[of]
         except:
             pass
-    if return_ds is ...:
+    if return_ds is None:
         return_ds = of == GdalOutputFormat.mem
-    if of in [..., None]:
+    if of is None:
         of = GdalOutputFormat.mem if return_ds else GdalOutputFormat.cog if (
                 cog and support_of_cog) else GdalOutputFormat.gtiff
 
     if of == GdalOutputFormat.cog:
         cog = True
 
-    if write_info is ...:
+    if write_info is None:
         write_info = not return_ds
-    if write_spec is ...:
+    if write_spec is None:
         write_spec = not return_ds
     if filename_is_ds:
         input_ext = None
@@ -355,7 +391,6 @@ def gdalos_trans(
     creation_options["SPARSE_OK"] = no_yes[bool(sparse_ok)]
 
     extent_was_cropped = False
-    extent_aligned = True
     input_is_vrt = input_ext == ".vrt"
 
     geo_transform = ds.GetGeoTransform()
@@ -364,7 +399,7 @@ def gdalos_trans(
     band_types = gdalos_util.get_band_types(ds)
     if kind in [None, ...]:
         kind = RasterKind.guess(band_types)
-    if kind != RasterKind.dtm and value_scale:
+    if kind != RasterKind.dtm:
         value_scale = None
 
     # region warp CRS handling
@@ -379,7 +414,8 @@ def gdalos_trans(
         if projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs):
             warp_srs = None  # no warp is really needed here
     if warp_srs is not None:
-        extent_aligned = False
+        if extent_aligned is None:
+            extent_aligned = False
         if tgt_zone is not None and extent_in_4326:
             if tgt_zone != 0:
                 # cropping according to tgt_zone bounds
@@ -410,7 +446,7 @@ def gdalos_trans(
     resample_is_needed = warp_srs is not None or (out_res not in [..., None])
     org_comp = gdalos_util.get_image_structure_metadata(ds, "COMPRESSION")
     src_is_lossy = (org_comp is not None) and ("JPEG" in org_comp)
-    if lossy in [None, ...]:
+    if lossy is None:
         lossy = src_is_lossy or resample_is_needed
     if lossy and (kind != RasterKind.photo):
         lossy = False
@@ -436,9 +472,9 @@ def gdalos_trans(
             dst_nodatavalue = None  # don't change no_data
     if dst_nodatavalue is not None:
         src_nodatavalue_org = gdalos_util.get_nodatavalue(ds)
-        if src_nodatavalue is ...:
+        if src_nodatavalue is None:
             src_nodatavalue = src_nodatavalue_org
-        elif src_nodatavalue is None:
+        elif src_nodatavalue is ...:
             # assume raster minimum is nodata if nodata isn't set
             logger.debug('finding raster minimum, this might take some time...')
             src_min_value = gdalos_util.get_raster_minimum(ds)
@@ -564,13 +600,13 @@ def gdalos_trans(
     )
 
     if ovr_type == OvrType.auto_select:
-        if (ovr_idx is not ...) and (overview_count > 0) or (of == GdalOutputFormat.cog):
+        if (ovr_idx is not None) and (overview_count > 0) or (of == GdalOutputFormat.cog):
             # if the raster has overviews then use them, otherwise create overviews
             ovr_type = OvrType.existing_reuse
         else:
             ovr_type = OvrType.create_external_auto
-    if (ovr_type == OvrType.existing_reuse) and (ovr_idx is ...):
-        raise Exception('ovr_idx = {} cannot be used with ovr_type == {}'.format(..., OvrType.existing_reuse))
+    if (ovr_type == OvrType.existing_reuse) and (ovr_idx is None):
+        raise Exception(f'ovr_idx = {None} cannot be used with ovr_type == {OvrType.existing_reuse}')
 
     cog_2_steps = \
         cog and \
@@ -580,7 +616,7 @@ def gdalos_trans(
 
     if cog_2_steps:
         if of == GdalOutputFormat.cog:
-            if prefer_2_step_cog is ...:
+            if prefer_2_step_cog is None:
                 prefer_2_step_cog = trans_or_warp_is_needed and (ovr_type == OvrType.existing_reuse)
             if prefer_2_step_cog:
                 of = GdalOutputFormat.gtiff
@@ -589,7 +625,7 @@ def gdalos_trans(
     # endregion
 
     # region make out_filename
-    if outext in [..., None]:
+    if outext is None:
         outext = gdalos_util.get_ext_by_of(of)
     elif not outext.startswith('.'):
         outext = '.' + outext
@@ -639,7 +675,7 @@ def gdalos_trans(
             out_filename = gdalos_util.concat_paths(
                 ref_filename, out_suffixes + outext
             )
-            if keep_src_ovr_suffixes and ovr_idx is not ...:
+            if keep_src_ovr_suffixes and ovr_idx is not None:
                 out_filename = gdalos_util.concat_paths(
                     out_filename, ".ovr" * ovr_idx
                 )
@@ -711,7 +747,7 @@ def gdalos_trans(
                 creation_options["TILE_FORMAT"] = "JPEG"
             elif of != GdalOutputFormat.cog:
                 creation_options["PHOTOMETRIC"] = "YCBCR"
-            if quality and (quality is not ...):
+            if quality:
                 creation_options["JPEG_QUALITY" if of == GdalOutputFormat.gtiff else 'QUALITY'] = str(quality)
 
             # alpha channel is not supported with PHOTOMETRIC=YCBCR, thus we drop it or keep it as a mask band
@@ -725,7 +761,7 @@ def gdalos_trans(
                     )
                 else:
                     translate_options["bandList"] = [1, 2, 3]
-                    if keep_alpha is ...:
+                    if keep_alpha is None:
                         keep_alpha = filename_is_ds or input_ext != '.gpkg'
                     if keep_alpha:
                         translate_options["maskBand"] = 4  # keep the alpha band as mask
@@ -733,20 +769,13 @@ def gdalos_trans(
 
         common_options["format"] = enum_to_str(of)
         if of in [GdalOutputFormat.gtiff, GdalOutputFormat.cog]:
-            if not big_tiff:
-                big_tiff = False
-            elif big_tiff is ...:
-                big_tiff = "IF_SAFER"
-            elif not isinstance(big_tiff, str):
-                big_tiff = no_yes[bool(big_tiff)]
-
-            creation_options["BIGTIFF"] = big_tiff
+            creation_options["BIGTIFF"] = gdalos_util.get_big_tiff(big_tiff)
             creation_options["COMPRESS"] = comp
 
-        tiled = tiled.upper() != no_yes[False] if isinstance(tiled, str) else bool(tiled)
+        tiled = gdalos_util.get_tiled(tiled)
         if of == GdalOutputFormat.gtiff:
             creation_options["TILED"] = no_yes[tiled]
-        if tiled and block_size is not ...:
+        if tiled and block_size is not None:
             # if block_size is ...:
             #     block_size = 256  # default gdal block_size
             # assert(width / BlockXSize * height / BlockYSize * (big_tiff ? 8: 4) <= 0x80000000)
@@ -768,9 +797,9 @@ def gdalos_trans(
             common_options["callback"] = print_progress_callback(print_progress)
 
         if resample_is_needed:
-            if resampling_alg is ...:
+            if resampling_alg is None:
                 resampling_alg = kind.resampling_alg_by_kind(expand_rgb)
-            if resampling_alg is not None:
+            if resampling_alg is not ...:
                 common_options["resampleAlg"] = enum_to_str(resampling_alg)
 
         if ot is not None:
@@ -798,13 +827,13 @@ def gdalos_trans(
                     logger.info("warp options: " + str(warp_options))
                 out_ds = gdal.Warp(str(trans_filename), ds, **common_options, **warp_options)
 
-                if not value_scale and workaround_warp_scale_bug:
+                if value_scale is None and workaround_warp_scale_bug:
                     scale_raster.assign_same_scale_and_offset_values(out_ds, ds)
             else:
                 if verbose and translate_options:
                     logger.info("translate options: " + str(translate_options))
                 out_ds = gdal.Translate(str(trans_filename), ds, **common_options, **translate_options)
-            if value_scale:
+            if value_scale is not None:
                 temp_files.append(trans_filename)
                 if verbose:
                     logger.info(f'scaling {out_filename}..."')
@@ -1056,7 +1085,7 @@ def gdalos_ovr(
         ovr_type=...,
         dst_ovr_count=default_dst_ovr_count,
         kind=None,
-        resampling_alg=...,
+        resampling_alg=None,
         config_options: dict = None,
         ovr_options: dict = None,
         ovr_files: list = None,
@@ -1105,11 +1134,11 @@ def gdalos_ovr(
         multi_thread = multi_thread_to_str(multi_thread)
         config_options['GDAL_NUM_THREADS'] = multi_thread
 
-    if resampling_alg is ...:
+    if resampling_alg is None:
         if kind in [None, ...]:
             kind = RasterKind.guess(filename)
         resampling_alg = kind.resampling_alg_by_kind()
-    if resampling_alg is not None:
+    if resampling_alg is not ...:
         ovr_options["resampling"] = enum_to_str(resampling_alg)
     if print_progress:
         ovr_options["callback"] = print_progress_callback(print_progress)
@@ -1191,10 +1220,10 @@ def gdalos_info(filename_or_ds, overwrite=True, logger=None):
 
 def gdalos_vrt(
         filenames: MaybeSequence,
-        filenames_expand: Union[type(...), bool] = ...,
+        filenames_expand: Optional[bool] = None,
         vrt_path=None,
         kind=None,
-        resampling_alg=...,
+        resampling_alg=None,
         overwrite=True,
         logger=None,
 ):
@@ -1217,12 +1246,12 @@ def gdalos_vrt(
         raise Exception("could not delete vrt file: {}".format(vrt_path))
     os.makedirs(os.path.dirname(vrt_path), exist_ok=True)
     vrt_options = dict()
-    if resampling_alg is ...:
+    if resampling_alg is None:
         if kind in [None, ...]:
             kind = RasterKind.guess(first_filename)
         resampling_alg = kind.resampling_alg_by_kind(kind)
-    if resampling_alg is not None:
-        vrt_options["resampleAlg"] = resampling_alg
+    if resampling_alg is not ...:
+        vrt_options["resampleAlg"] = enum_to_str(resampling_alg)
     vrt_options = gdal.BuildVRTOptions(*vrt_options)
     out_ds = gdal.BuildVRT(vrt_path, flatten_filenames, options=vrt_options)
     if out_ds is None:

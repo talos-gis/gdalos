@@ -1,16 +1,16 @@
 import math
+import os
+import re
+import shutil
 from collections import defaultdict
+from pathlib import Path
 from typing import List
 
 from osgeo import gdal
-import re
-import os
-from pathlib import Path
-import shutil
 
-from gdalos.rectangle import GeoRectangle
 from gdalos.gdalos_extent import get_extent
 from gdalos.gdalos_util import open_ds, OpenDS
+from gdalos.rectangle import GeoRectangle
 
 
 class AutoRepr(object):

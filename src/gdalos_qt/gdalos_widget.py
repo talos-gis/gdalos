@@ -286,7 +286,7 @@ class GdalosWidget(FidgetConverter):
                     FidgetCombo.template(
                         "resampling_alg",
                         options=list(
-                            chain((("AUTO", ...), ("None", None)), GdalResamplingAlg.__members__)
+                            chain((("None", None), ("AUTO", ...)), GdalResamplingAlg.__members__)
                         ),
                         initial_index=0,
                         make_title=True,

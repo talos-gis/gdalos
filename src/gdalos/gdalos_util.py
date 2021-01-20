@@ -4,9 +4,11 @@ from pathlib import Path
 from typing import Iterator, Sequence
 
 from osgeo import ogr, osr
+
+from gdalos.gdalos_base import enum_to_str
 from osgeo_utils.auxiliary.util import *
 
-from gdalos.gdalos_base import FileName, enum_to_str
+no_yes = ("NO", "YES")
 
 
 def _get_bands(ds: gdal.Dataset) -> Iterator[gdal.Band]:
@@ -25,8 +27,8 @@ def get_band_types(filename_or_ds):
         return [band.DataType for band in _get_bands(ds)]
 
 
-def get_data_type(bandtype: Union[str, int]):
-    if bandtype in [None, ...]:
+def get_data_type(bandtype: Optional[Union[str, int]]):
+    if bandtype is None:
         return None
     if isinstance(bandtype, str):
         return gdal.GetDataTypeName(bandtype)
@@ -89,12 +91,12 @@ def expand_txt(filename):
         return f.read().splitlines()
 
 
-def check_expand_glob(val, filenames_expand):
-    return (filenames_expand is True) or ((filenames_expand is ...) and ('*' in str(val) or '?' in str(val)))
+def check_expand_glob(val, filenames_expand: Optional[bool]):
+    return (filenames_expand is True) or ((filenames_expand is None) and ('*' in str(val) or '?' in str(val)))
 
 
-def flatten_and_expand_file_list(lst, do_expand_txt=True, do_expand_glob: Union[type(...), bool] = ..., always_return_list=False):
-    if isinstance(lst, FileName.__args__):
+def flatten_and_expand_file_list(lst, do_expand_txt=True, do_expand_glob: Optional[bool] = None, always_return_list=False):
+    if isinstance(lst, PathLike.__args__):
         item = str(lst).strip()
         if check_expand_glob(item, do_expand_glob):
             item1 = glob.glob(item)
@@ -150,6 +152,14 @@ def wkt_write_ogr(path, wkt_list, of='ESRI Shapefile', epsg=4326):
     ds.Destroy()
 
 
+def get_big_tiff(big_tiff):
+    return "IF_SAFER" if big_tiff is None else big_tiff if isinstance(big_tiff, str) else no_yes[bool(big_tiff)]
+
+
+def get_tiled(tiled):
+    return tiled.upper() != no_yes[False] if isinstance(tiled, str) else bool(tiled)
+
+
 def get_ext_by_of(of: str):
     ext = enum_to_str(of).lower()
     if ext in ['gtiff', 'cog', 'mem']:
@@ -161,28 +171,20 @@ def get_creation_options(creation_options=None,
                          of: str = 'gtiff',
                          sparse_ok: bool = True,
                          tiled: bool = True,
-                         block_size: int = ...,
-                         big_tiff: str = ...,
+                         block_size: Optional[int] = None,
+                         big_tiff: Optional[str] = None,
                          comp="DEFLATE"):
     creation_options = dict(creation_options or dict())
-    no_yes = ("NO", "YES")
     creation_options["SPARSE_OK"] = no_yes[bool(sparse_ok)]
 
     of = of.lower()
     if of in ['gtiff', 'cog']:
-        if not big_tiff:
-            big_tiff = False
-        elif big_tiff is ...:
-            big_tiff = "IF_SAFER"
-        elif not isinstance(big_tiff, str):
-            big_tiff = no_yes[bool(big_tiff)]
-
-        creation_options["BIGTIFF"] = big_tiff
+        creation_options["BIGTIFF"] = get_big_tiff(big_tiff)
         creation_options["COMPRESS"] = comp
 
-    tiled = tiled.upper() != no_yes[False] if isinstance(tiled, str) else bool(tiled)
+    tiled = get_tiled(tiled)
     creation_options["TILED"] = no_yes[tiled]
-    if tiled and block_size is not ...:
+    if tiled and block_size is not None:
         if of == 'gtiff':
             creation_options["BLOCKXSIZE"] = block_size
             creation_options["BLOCKYSIZE"] = block_size

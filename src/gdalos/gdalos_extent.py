@@ -1,7 +1,7 @@
+from gdalos import gdalos_util
+from osgeo_utils.auxiliary.rectangle import get_points_extent
 from osgeo_utils.auxiliary.extent_util import *  # noqa
 
-from gdalos.rectangle import GeoRectangle, get_points_extent
-from gdalos import gdalos_util
 
 # Geotransform:
 # 0 = x-coordinate of the upper-left corner of the upper-left pixel
