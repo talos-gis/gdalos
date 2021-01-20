@@ -14,6 +14,11 @@ from gdalos.rectangle import GeoRectangle, make_partitions
 from gdalos.gdalos_types import GdalOutputFormat, OvrType, RasterKind, GdalResamplingAlg
 from gdalos.gdalos_base import enum_to_str
 from gdalos.calc import scale_raster
+from gdalos.util import version_tuple
+
+
+gdal_version = version_tuple(gdal.__version__)
+workaround_warp_scale_bug = gdal_version < (3, 3)  # workaround https://github.com/OSGeo/gdal/issues/3232
 
 
 def get_cuttent_time_string():
@@ -303,8 +308,7 @@ def gdalos_trans(
     filename_is_ds = ds == filename
 
     try:
-        gdal_version = int(gdal.VersionInfo())
-        support_of_cog = gdal_version >= 3_01_00_00
+        support_of_cog = gdal_version >= (3, 1)
         if verbose:
             logger.info(f'gdal version: {gdal_version}; cog driver support: {support_of_cog}')
     except:
@@ -1098,8 +1102,7 @@ def gdalos_ovr(
     if config_options is None:
         config_options = dict()
 
-    gdal_version = int(gdal.VersionInfo())
-    multi_thread_support_available = gdal_version >= 3_02_00_00
+    multi_thread_support_available = gdal_version >= (3, 2)
     if multi_thread and multi_thread_support_available:
         multi_thread = multi_thread_to_str(multi_thread)
         config_options['GDAL_NUM_THREADS'] = multi_thread

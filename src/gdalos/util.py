@@ -1,6 +1,6 @@
 import copy
 from enum import IntEnum, auto
-from typing import List, Sequence
+from typing import List, Sequence, Tuple
 from itertools import chain, cycle, product, tee
 
 
@@ -147,3 +147,8 @@ def make_pairs(x_arr, y_arr, fill_mode):
     pair_list = make_points_list(x_arr, y_arr, fill_mode)
     result = make_xy_list(pair_list)
     return result
+
+
+def version_tuple(version: str) -> Tuple[int]:
+    return tuple(int(s) for s in str(version).split('.') if s.isdigit())[:3]
+
