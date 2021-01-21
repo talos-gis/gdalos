@@ -42,6 +42,7 @@ setup(
     packages=packages,
     package_dir=package_dir,
     extras_require={
+        "gdal": ["gdal"],
         "PyQt": ["fidget", "PyQt5"],
         "PySide": ["fidget", "PySide2"]
     },
