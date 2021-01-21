@@ -1,11 +1,10 @@
-from itertools import tee
 from typing import Sequence
 
 import numpy as np
 from osgeo import gdal
 
-from gdalos import util
-from gdalos.util import make_points_list, make_xy_list, FillMode
+from gdalos import gdalos_base
+from gdalos.gdalos_base import make_points_list, make_xy_list, FillMode
 from gdalos.viewshed.radio_params import RadioParams, RadioCalcType
 
 st_seen = 5
@@ -72,9 +71,9 @@ class LOSParams(object):
     def get_list_from_lists_dict(cls, d: dict, key_map=None) -> Sequence['LOSParams']:
         radio_d = d['radio_parameters']
         d['radio_parameters'] = None
-        vp_array = util.get_list_from_lists_dict(d, cls(), key_map=key_map)
+        vp_array = gdalos_base.get_list_from_lists_dict(d, cls(), key_map=key_map)
         if radio_d is not None:
-            radio_array = util.get_list_from_lists_dict(radio_d, RadioParams(), key_map=key_map)
+            radio_array = gdalos_base.get_list_from_lists_dict(radio_d, RadioParams(), key_map=key_map)
             r = None
             for i, v in enumerate(vp_array):
                 if i < len(radio_array):
@@ -86,9 +85,9 @@ class LOSParams(object):
     def get_object_from_lists_dict(cls, d: dict, key_map=None) -> Sequence['LOSParams']:
         radio_d = d['radio_parameters']
         d['radio_parameters'] = None
-        vp_obj = util.get_object_from_lists_dict(d, cls(), key_map=key_map)
+        vp_obj = gdalos_base.get_object_from_lists_dict(d, cls(), key_map=key_map)
         if radio_d is not None:
-            radio_obj = util.get_object_from_lists_dict(radio_d, RadioParams(), key_map=key_map)
+            radio_obj = gdalos_base.get_object_from_lists_dict(radio_d, RadioParams(), key_map=key_map)
             radio_obj.unsequence()
             vp_obj.radio_parameters = radio_obj
         return vp_obj
@@ -196,7 +195,7 @@ class MultiPointParams(LOSParams):
 class ViewshedParams(LOSParams):
     __slots__ = ('max_r', 'min_r', 'min_r_shave', 'max_r_slant',
                  'azimuth', 'h_aperture', 'elevation', 'v_aperture',
-                 'vv', 'iv', 'ov', 'ndv')
+                 'vv', 'iv', 'ov', 'ndv', 'out_res')
 
     def __init__(self):
         super().__init__()
@@ -216,6 +215,8 @@ class ViewshedParams(LOSParams):
         self.iv = viewshed_invisible
         self.ov = viewshed_out_of_range
         self.ndv = viewshed_ndv
+
+        self.out_res = None
 
     def is_omni_h(self):
         return not self.h_aperture or abs(self.h_aperture - 360) < 0.0001
@@ -242,14 +243,14 @@ class ViewshedParams(LOSParams):
     def get_result_dt(self):
         return gdal.GDT_Int16 if self.is_radio() or self.is_calc_oz() or self.is_calc_tz() else gdal.GDT_Byte
 
-    def get_as_talos_params(self):
+    def get_as_talos_params(self) -> dict:
         vp_params = \
             'ox', 'oy', 'oz', 'max_r', 'min_r', 'min_r_shave', 'max_r_slant', 'tz', \
-            'omsl', 'tmsl', 'azimuth', 'h_aperture', 'elevation', 'v_aperture'
+            'omsl', 'tmsl', 'azimuth', 'h_aperture', 'elevation', 'v_aperture', 'out_res'
 
         talos_params = \
             'ox', 'oy', 'oz', 'MaxRange', 'MinRange', 'MinRangeShave', 'SlantRange', 'tz', \
-            'ObsMSL', 'TarMSL', 'Direction', 'Aperture', 'Elevation', 'ElevationAperture'
+            'ObsMSL', 'TarMSL', 'Direction', 'Aperture', 'Elevation', 'ElevationAperture', 'out_res'
         d = {k1: getattr(self, k0) for k0, k1 in
              zip(vp_params, talos_params)}
 

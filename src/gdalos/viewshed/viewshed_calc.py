@@ -9,7 +9,7 @@ import time
 from enum import Enum
 from functools import partial
 from pathlib import Path
-from typing import Union, Sequence
+from typing import Union, Sequence, Optional
 
 import numpy as np
 from osgeo import gdal
@@ -255,7 +255,7 @@ def viewshed_calc_to_ds(
                 inputs = vp.get_as_gdal_params()
                 print(inputs)
 
-                input_band: gdal.Band = input_ds.GetRasterBand(bi)
+                input_band: Optional[gdal.Band] = input_ds.GetRasterBand(bi)
                 if input_band is None:
                     raise Exception('band number out of range')
                 ds = gdal.ViewshedGenerate(input_band, gdal_out_format, str(d_path), co, **inputs)
@@ -297,7 +297,11 @@ def viewshed_calc_to_ds(
                         raise Exception('This version does not support radio')
                     talos.GS_SetRadioParameters(**vp.get_radio_as_talos_params())
 
-                ras = talos.GS_Viewshed_Calc1(**inputs)
+                if 'GS_Viewshed_Calc2' in dir(talos):
+                    ras = talos.GS_Viewshed_Calc2(**inputs)
+                else:
+                    del inputs['out_res']
+                    ras = talos.GS_Viewshed_Calc1(**inputs)
 
                 if ras is None:
                     raise Exception(f'fail to calc viewshed: {inputs}')
