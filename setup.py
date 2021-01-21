@@ -38,10 +38,12 @@ setup(
     long_description=__readme__,
     long_description_content_type=__readme_type__,
     description=__description__,
+    classifiers=classifiers,
     packages=packages,
     package_dir=package_dir,
-    extras_require={"gdal": ["gdal"], "PyQt": ["fidget", "PyQt5"], "PySide": ["fidget", "PySide2"]},
+    extras_require={
+        "PyQt": ["fidget", "PyQt5"],
+        "PySide": ["fidget", "PySide2"]
+    },
     python_requires=">=3.6.0",
-    include_package_data=True,
-    data_files=[("", ["README.rst", "LICENSE"])],
 )
