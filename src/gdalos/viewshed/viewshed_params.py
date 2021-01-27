@@ -264,7 +264,7 @@ class ViewshedParams(LOSParams):
                     raise Exception('You have to specify at least one of oz or tz')
             else:
                 d['tz'] = slack_dummy_height
-
+        d['out_res'] = d['out_res'] or 0
         d['result_dt'] = self.get_result_dt()
         return d
 
