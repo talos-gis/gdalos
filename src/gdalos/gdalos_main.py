@@ -150,7 +150,7 @@ def gdalos_trans(
         warp_scale: Optional[Union[Real, Tuple[Real, Real]]] = 1,  # https://github.com/OSGeo/gdal/issues/2810
         warp_error_threshold: Optional[Real] = 0,  # [None|0]: [linear approximator|exact] coordinate reprojection
         ovr_type: Optional[OvrType] = OvrType.auto_select,
-        ovr_idx: Optional[int] = 0,  # ovr_idx=0 is the base raster; 1 is the first overview; ovr_idx=None will select the default ovr
+        ovr_idx: Optional[int] = None,  # ovr_idx=0 is the base raster; 1 is the first overview; ovr_idx=None will select the default ovr
         keep_src_ovr_suffixes: bool = True,
         dst_ovr_count: Optional[int] = None,
         dst_nodatavalue: Optional[Union[type(...), Real]] = None,  # None -> don't change; ... -> change only for DTM
@@ -606,7 +606,7 @@ def gdalos_trans(
         else:
             ovr_type = OvrType.create_external_auto
     if (ovr_type == OvrType.existing_reuse) and (ovr_idx is None):
-        raise Exception(f'ovr_idx = {None} cannot be used with ovr_type == {OvrType.existing_reuse}')
+        ovr_idx = 0
 
     cog_2_steps = \
         cog and \

@@ -1,6 +1,6 @@
 import logging
 
-from gdalos import GeoRectangle, OvrType, gdalos_trans
+from gdalos.gdalos_main import GeoRectangle, OvrType, gdalos_trans
 
 
 def test_srtm():

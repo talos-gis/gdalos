@@ -43,8 +43,7 @@ setup(
     package_dir=package_dir,
     install_requires=['gdal>=3.0.0', 'gdal-utils>=3.3.0.5', 'numpy!=1.19.4'],
     extras_require={
-        "PyQt": ["fidget", "PyQt5"],
-        "PySide": ["fidget", "PySide2"]
+        "qt": ["fidget[qt]"],
     },
     python_requires=">=3.6.0",
 )
