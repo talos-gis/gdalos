@@ -88,7 +88,7 @@ def czml_gdaldem_crop_and_color(
     if ds is None:
         raise Exception('fail to color')
     if czml_output_filename is not None:
-        if min_max:
+        if min_max and None not in min_max:
             color_palette_copy = copy.deepcopy(color_palette)
             color_palette_copy.apply_percent(*min_max)
         else:
@@ -98,6 +98,7 @@ def czml_gdaldem_crop_and_color(
 
         gdal_to_czml.gdal_to_czml(ds, name=czml_output_filename, out_filename=czml_output_filename)
     return ds
+
 
 def gdalos_crop(ds: gdal.Dataset,
                 out_filename: str = '', output_format: str = None,

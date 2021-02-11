@@ -57,6 +57,13 @@ def test_talos_pal(talos_paletts=None):
         print(path, pal)
 
 
+def test_xml(dir_path):
+    for ext in ['qlr', 'qml']:
+        for filename in glob.glob(base.path_join(dir_path, '**', '*.' + ext)):
+            pal, filename = xml_to_color_file(filename, type=ext)
+            print(filename, pal)
+
+
 if __name__ == "__main__":
     test_talos_pal()
     # path = Path('/home/idan/maps/comb')
