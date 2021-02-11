@@ -326,9 +326,9 @@ def gdalos_trans(
     ds = gdalos_util.open_ds(filename, ovr_idx=ovr_idx, open_options=open_options, logger=logger)
 
     # region decide which overviews to make
+    overview_count = gdalos_util.get_ovr_count(ds)
     if ovr_idx is not None:
         warp_options['overviewLevel'] = 'None'  # force gdal to use the selected ovr_idx (added in GDAL >= 3.0)
-        overview_count = gdalos_util.get_ovr_count(ds)
         src_ovr_last = ovr_idx + overview_count
         if dst_ovr_count is not None:
             if dst_ovr_count >= 0:
@@ -610,6 +610,7 @@ def gdalos_trans(
             ovr_type = OvrType.create_external_auto
     if (ovr_type == OvrType.existing_reuse) and (ovr_idx is None):
         ovr_idx = 0
+        src_ovr_last = overview_count
 
     cog_2_steps = \
         cog and \
@@ -884,7 +885,7 @@ def gdalos_trans(
                 # -1: base dataset, 0: first ovr, 1: second ovr, 2: third ovr
 
                 all_args_new = all_args.copy()
-                all_args_new["ovr_type"] = None
+                all_args_new["ovr_type"] = OvrType.no_overviews
                 all_args_new["dst_ovr_count"] = None
                 all_args_new["out_path"] = None
                 all_args_new["write_spec"] = False
@@ -939,7 +940,7 @@ def gdalos_trans(
                             )
                     aux_files.extend(all_args_new["aux_files"])
                 write_info = write_info and cog
-            elif not filename_is_ds and ovr_type not in [None, OvrType.existing_reuse]:
+            elif not filename_is_ds and ovr_type not in [OvrType.no_overviews, OvrType.existing_reuse]:
                 # create overviews from dataset (internal or external)
                 ret_code = gdalos_ovr(
                     out_filename,
@@ -1085,7 +1086,7 @@ def gdalos_ovr(
         filename,
         comp=None,
         overwrite=True,
-        ovr_type=...,
+        ovr_type=None,
         dst_ovr_count=default_dst_ovr_count,
         kind=None,
         resampling_alg=None,
@@ -1112,7 +1113,7 @@ def gdalos_ovr(
 
     if isinstance(ovr_type, str):
         ovr_type = OvrType[ovr_type]
-    elif ovr_type is ...:
+    elif ovr_type is None:
         ovr_type = OvrType.auto_select
     if ovr_type in [OvrType.auto_select, OvrType.create_external_auto]:
         file_size = os.path.getsize(filename)

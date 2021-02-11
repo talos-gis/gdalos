@@ -8,6 +8,8 @@ from gdalos import gdalos_util
 class OvrType(Enum):
     # existing_reuse or create_external_auto (by existance of src overviews)
     auto_select = auto()
+    # do not create overviews
+    no_overviews = auto()
     # work with existing overviews
     existing_reuse = auto()
     # create_external_single or create_external_multi (by size)
