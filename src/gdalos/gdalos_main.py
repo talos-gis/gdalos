@@ -676,13 +676,9 @@ def gdalos_trans(
                 out_suffixes = "." + ".".join(out_suffixes)
             else:
                 out_suffixes = ""
-            out_filename = gdalos_util.concat_paths(
-                ref_filename, out_suffixes + outext
-            )
+            out_filename = gdalos_util.concat_paths(ref_filename, out_suffixes + outext)
             if keep_src_ovr_suffixes and ovr_idx is not None:
-                out_filename = gdalos_util.concat_paths(
-                    out_filename, ".ovr" * ovr_idx
-                )
+                out_filename = gdalos_util.concat_paths(out_filename, ".ovr" * ovr_idx)
     elif out_filename:
         out_filename = Path(out_filename)
     else:
@@ -910,16 +906,10 @@ def gdalos_trans(
                     if out_res not in [None, ...]:
                         res_factor = 2 ** (cur_ovr_idx - ovr_idx)
                         all_args_new["out_res"] = [r * res_factor for r in out_res]
-                    all_args_new["write_info"] = (
-                            write_info and (cur_ovr_idx == ovr_idx) and not cog
-                    )
+                    all_args_new["write_info"] = write_info and (cur_ovr_idx == ovr_idx) and not cog
                     ret_code = gdalos_trans(**all_args_new)
                     if not ret_code:
-                        logger.warning(
-                            "return code was None for creating {}".format(
-                                all_args_new["out_filename"]
-                            )
-                        )
+                        logger.warning(f'return code was None for creating {all_args_new["out_filename"]}')
                     if cur_ovr_idx == ovr_idx:
                         final_files_for_step_1.extend(all_args_new["final_files"])
                     else:
@@ -927,17 +917,9 @@ def gdalos_trans(
                     if verbose:
                         for f in ["ovr_files", "temp_files"]:
                             if all_args_new[f]:
-                                logger.error(
-                                    "there shound not be any {} here, but there are! {}".format(
-                                        f, all_args_new[f]
-                                    )
-                                )
+                                logger.error(f'there should not be any {f} here, but there are! {all_args_new[f]}')
                         if len(all_args_new["final_files"]) != 1:
-                            logger.error(
-                                "ovr creating should have made exactly 1 file! {}".format(
-                                    all_args_new["final_files"]
-                                )
-                            )
+                            logger.error(f'ovr creating should have made exactly 1 file! {all_args_new["final_files"]}')
                     aux_files.extend(all_args_new["aux_files"])
                 write_info = write_info and cog
             elif not filename_is_ds and ovr_type not in [OvrType.no_overviews, OvrType.existing_reuse]:

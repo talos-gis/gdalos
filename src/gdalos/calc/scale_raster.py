@@ -79,5 +79,7 @@ def assign_same_scale_and_offset_values(out_ds, in_ds):
             scale = in_bnd.GetScale()
             offset = in_bnd.GetOffset()
         out_bnd = out_ds.GetRasterBand(i + 1)
-        out_bnd.SetScale(scale)
-        out_bnd.SetOffset(offset)
+        if scale is not None:
+            out_bnd.SetScale(scale)
+        if offset is not None:
+            out_bnd.SetOffset(offset)
