@@ -9,7 +9,9 @@ from osgeo_utils.auxiliary.numpy_util import GDALTypeCodeToNumericTypeCodeEx
 
 
 def autoscale(bnd, np_dtype, possible_scale_values=(0.1, 0.15, 0.2, 0.25, 0.3)):
+    print('calculating band statistics...')
     bnd.ComputeStatistics(0)
+    print('statistics calculated')
     max_band_val = bnd.GetMaximum()
     max_dt_value = np.iinfo(np_dtype).max
     scale = max_band_val / max_dt_value
@@ -46,10 +48,12 @@ def scale_raster(filename_or_ds, d_path, gdal_dt=gdal.GDT_Int16,
     ds = gdalos_util.open_ds(filename_or_ds)
     if in_ndv is ...:
         in_ndv = gdalos_util.get_nodatavalue(ds)
-    if out_ndv is ... and in_ndv is not None:
-        # out_ndv = None if in_ndv is None else gdal_calc.DefaultNDVLookup[gdal_dt]
-        out_ndv = gdal_calc.DefaultNDVLookup[gdal_dt]
-    np_dtype = GDALTypeCodeToNumericTypeCodeEx(gdal_dt)
+    if out_ndv is ...:
+        if in_ndv is None:
+            out_ndv = None
+        else:
+            out_ndv = gdal_calc.DefaultNDVLookup[gdal_dt]
+    np_dtype = GDALTypeCodeToNumericTypeCodeEx(gdal_dt, signed_byte=False)
     if not scale or scale is ...:
         scale = autoscale(ds.GetRasterBand(1), np_dtype)
     f = partial(scale_np_array, factor=1 / scale, in_ndv=in_ndv, out_ndv=out_ndv, dtype=np_dtype)

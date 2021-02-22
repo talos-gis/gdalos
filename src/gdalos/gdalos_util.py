@@ -31,7 +31,7 @@ def get_data_type(bandtype: Optional[Union[str, int]]):
     if bandtype is None:
         return None
     if isinstance(bandtype, str):
-        return gdal.GetDataTypeName(bandtype)
+        return gdal.GetDataTypeByName(bandtype)
     else:
         return bandtype
 

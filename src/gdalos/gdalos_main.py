@@ -396,6 +396,8 @@ def gdalos_trans(
     geo_transform = ds.GetGeoTransform()
     input_res = (geo_transform[1], geo_transform[5])
     ot = gdalos_util.get_data_type(ot)
+    if ot is not None:
+        out_suffixes.append(gdal.GetDataTypeName(ot))
     band_types = gdalos_util.get_band_types(ds)
     if kind in [None, ...]:
         kind = RasterKind.guess(band_types)
@@ -614,7 +616,7 @@ def gdalos_trans(
 
     cog_2_steps = \
         cog and \
-        (trans_or_warp_is_needed or value_scale or
+        (trans_or_warp_is_needed or (value_scale is not None) or
          ovr_type in [OvrType.create_external_auto, OvrType.create_external_single,
                       OvrType.create_external_multi, OvrType.create_internal])
 
@@ -667,7 +669,7 @@ def gdalos_trans(
                 if partition.h > 1:
                     partition_str += "y[{},{}]".format(partition.y, partition.h)
                 out_suffixes.append(partition_str)
-            if value_scale:
+            if value_scale is not None:
                 out_suffixes.append("int")
             if not out_suffixes:
                 if outext.lower() == input_ext:
@@ -679,7 +681,7 @@ def gdalos_trans(
             out_filename = gdalos_util.concat_paths(ref_filename, out_suffixes + outext)
             if keep_src_ovr_suffixes and ovr_idx is not None:
                 out_filename = gdalos_util.concat_paths(out_filename, ".ovr" * ovr_idx)
-    elif out_filename:
+    if out_filename:
         out_filename = Path(out_filename)
     else:
         out_filename = ''
@@ -705,7 +707,9 @@ def gdalos_trans(
                 out_filename = out_filename.with_suffix(".temp" + outext)
     else:
         final_filename = out_filename
-    trans_filename = out_filename.with_suffix(".float" + outext) if value_scale else out_filename
+    trans_filename = out_filename
+    if (value_scale is not None) and trans_or_warp_is_needed:
+        trans_filename = trans_filename.with_suffix(".float" + outext)
     # endregion
 
     if cog_2_steps:
@@ -721,7 +725,7 @@ def gdalos_trans(
     skipped = (final_output_exists or
                ((not filename_is_ds) and
                 ((ovr_type == OvrType.existing_reuse and (not cog or cog_2_steps)) or
-                 ((filename == out_filename) and (not trans_or_warp_is_needed)))))
+                 ((filename == out_filename) and (value_scale is None) and (not trans_or_warp_is_needed)))))
 
     if final_output_exists:
         final_files.append(final_filename)
@@ -751,20 +755,21 @@ def gdalos_trans(
                 creation_options["JPEG_QUALITY" if of == GdalOutputFormat.gtiff else 'QUALITY'] = str(quality)
 
             # alpha channel is not supported with PHOTOMETRIC=YCBCR, thus we drop it or keep it as a mask band
-            if len(band_types) == 4:
-                if do_warp:
-                    raise Exception(
-                        "this mode is not supported: warp RGBA raster with JPEG output. "
-                        "You could do it in two steps: "
-                        "1. warp with lossless output, "
-                        "2. save as jpeg"
-                    )
-                else:
+        if len(band_types) == 4:
+            if jpeg_compression and do_warp:
+                raise Exception(
+                    "this mode is not supported: warp RGBA raster with JPEG output. "
+                    "You could do it in two steps: "
+                    "1. warp with lossless output, "
+                    "2. save as jpeg"
+                )
+            else:
+                if keep_alpha is None:
+                    keep_alpha = filename_is_ds or input_ext != '.gpkg'
+                if jpeg_compression or not keep_alpha:
                     translate_options["bandList"] = [1, 2, 3]
-                    if keep_alpha is None:
-                        keep_alpha = filename_is_ds or input_ext != '.gpkg'
-                    if keep_alpha:
-                        translate_options["maskBand"] = 4  # keep the alpha band as mask
+                if jpeg_compression and keep_alpha:
+                    translate_options["maskBand"] = 4  # keep the alpha band as mask
         # endregion
 
         common_options["format"] = enum_to_str(of)
@@ -829,7 +834,7 @@ def gdalos_trans(
 
                 if value_scale is None and workaround_warp_scale_bug:
                     scale_raster.assign_same_scale_and_offset_values(out_ds, ds)
-            else:
+            elif trans_or_warp_is_needed or value_scale is None:
                 if verbose and translate_options:
                     logger.info("translate options: " + str(translate_options))
                 out_ds = gdal.Translate(str(trans_filename), ds, **common_options, **translate_options)
@@ -838,7 +843,7 @@ def gdalos_trans(
                 if verbose:
                     logger.info(f'scaling {out_filename}..."')
                 out_ds = scale_raster.scale_raster(
-                    out_ds, out_filename,
+                    out_ds or ds, out_filename,
                     scale=value_scale, format=enum_to_str(of),
                     hide_nodata=hide_nodatavalue,
                     creation_options_list=creation_options_list, overwrite=overwrite)
@@ -964,7 +969,9 @@ def gdalos_trans(
                 write_info=write_info,
                 write_spec=False,
             )
-            if ret_code and verbose:
+            if not ret_code:
+                logger.error(f"cog 2nd step failed to create {final_filename}")
+            elif verbose:
                 if cog_temp_files:
                     logger.error(
                         "cog 2nd step should not have any temp files, but it has! {}".format(
@@ -993,7 +1000,7 @@ def gdalos_trans(
     missing_final_files = list(f for f in final_files if (f != '') and not os.path.exists(f))
     if missing_final_files:
         logger.error("output files are missing: {}".format(missing_final_files))
-    do_delete_temp_files = delete_temp_files and not missing_final_files
+    do_delete_temp_files = ret_code and delete_temp_files and not missing_final_files
     # region log file lists
     if verbose:
         if final_files:
