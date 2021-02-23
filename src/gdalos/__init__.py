@@ -1,5 +1,5 @@
 __pacakge_name__ = "gdalos"
-__version__ = "0.50.4"
+__version__ = "0.51.0"
 __author__ = "Idan Miara, Ben Avrahami"
 __author_email__ = "idan@miara.com"
 __license__ = "MIT"

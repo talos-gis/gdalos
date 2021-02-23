@@ -3,6 +3,7 @@ import logging
 import os
 import tempfile
 import time
+import uuid
 from numbers import Real
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, TypeVar, Union
@@ -17,6 +18,7 @@ from gdalos.gdalos_types import GdalOutputFormat, OvrType, RasterKind, GdalResam
 from gdalos.gdalos_util import no_yes
 from gdalos.partitions import Partition, make_partitions
 from gdalos.rectangle import GeoRectangle
+from osgeo_utils.auxiliary.util import PathOrDS, PathLike
 
 gdalos_version = version_tuple(gdalos.__version__)
 gdal_version = version_tuple(gdal.__version__)
@@ -111,11 +113,11 @@ default_multi_byte_nodata_value = -32768
 
 @with_param_dict("all_args")
 def gdalos_trans(
-        filename: MaybeSequence[str],
-        reference_filename: MaybeSequence[str] = None,
+        filename: MaybeSequence[PathOrDS],
+        reference_filename: MaybeSequence[PathLike] = None,
         filenames_expand: Optional[bool] = None,
         out_filename: Optional[str] = None,
-        out_path: Optional[str] = None,
+        out_path: Optional[PathLike] = None,
         return_ds: Optional[bool] = None,
         out_path_with_src_folders: bool = True,
         overwrite=False,
@@ -249,7 +251,7 @@ def gdalos_trans(
         val = gdalos_util.flatten_and_expand_file_list(val, do_expand_glob=do_expand_glob)
         if key == "filename":
             if gdalos_util.is_list_like(val) and multi_file_as_vrt:
-                vrt_path = gdalos_vrt(
+                vrt_path, _vrt_ds = gdalos_vrt(
                     val,
                     filenames_expand=False,
                     resampling_alg=resampling_alg,
@@ -325,27 +327,9 @@ def gdalos_trans(
         ovr_idx = gdalos_util.get_ovr_idx(filename, ovr_idx)
     ds = gdalos_util.open_ds(filename, ovr_idx=ovr_idx, open_options=open_options, logger=logger)
 
-    # region decide which overviews to make
-    overview_count = gdalos_util.get_ovr_count(ds)
-    if ovr_idx is not None:
-        warp_options['overviewLevel'] = 'None'  # force gdal to use the selected ovr_idx (added in GDAL >= 3.0)
-        src_ovr_last = ovr_idx + overview_count
-        if dst_ovr_count is not None:
-            if dst_ovr_count >= 0:
-                src_ovr_last = ovr_idx + min(overview_count, dst_ovr_count)
-            else:
-                # in this case we'll reopen the ds with a new ovr_idx, because we want only the last overviews
-                new_src_ovr = max(0, overview_count + dst_ovr_count + 1)
-                if new_src_ovr != ovr_idx:
-                    ovr_idx = new_src_ovr
-                    del ds
-                    ds = gdalos_util.open_ds(filename, ovr_idx=ovr_idx, open_options=open_options, logger=logger)
-                    overview_count = gdalos_util.get_ovr_count(ds)
-                    src_ovr_last = ovr_idx + overview_count
-    # endregion
-
     # filename_is_ds = not isinstance(filename, (str, Path))
     filename_is_ds = ds == filename
+    is_vsimem = not filename_is_ds and str(filename).startswith('/vsimem/')
 
     if verbose:
         logger.info(f'gdal version: {gdal_version}; cog driver support: {support_of_cog}')
@@ -377,9 +361,11 @@ def gdalos_trans(
         input_ext = None
     else:
         filename = Path(filename.strip())
-        if os.path.isdir(filename):
+        if is_vsimem:
+            pass
+        elif os.path.isdir(filename):
             raise Exception('input is a dir, not a file: "{}"'.format(filename))
-        if not os.path.isfile(filename):
+        elif not os.path.isfile(filename):
             raise OSError('file not found: "{}"'.format(filename))
         input_ext = os.path.splitext(filename)[1].lower()
 
@@ -428,8 +414,8 @@ def gdalos_trans(
                     extent = extent.intersect(zone_extent)
                 extent_was_cropped = True
         out_suffixes.append(projdef.get_canonic_name(tgt_datum, tgt_zone))
-        if kind == RasterKind.dtm and ot is None:
-            ot = gdal.GDT_Float32
+        # if kind == RasterKind.dtm and ot is None:
+        #     ot = gdal.GDT_Float32
         warp_options["dstSRS"] = pjstr_tgt_srs
     # endregion
 
@@ -458,6 +444,46 @@ def gdalos_trans(
         comp = "JPEG"
         out_suffixes.append("jpg")
     jpeg_compression = (comp == "JPEG") and (len(band_types) in (3, 4))
+
+    overview_count = gdalos_util.get_ovr_count(ds)
+    if len(band_types) >= 4:
+        if keep_alpha is None:
+            keep_alpha = filename_is_ds or input_ext != '.gpkg'
+        exclude_alpha = jpeg_compression or not keep_alpha
+        band_list_3 = [1, 2, 3]
+        # alpha channel is not supported with PHOTOMETRIC=YCBCR, thus we drop it or keep it as an external mask band
+        if do_warp and exclude_alpha:
+            # warp does not support bandList, thus we'll create an intermediate vrt to expose the first 3 bands.
+            vrt_options = dict()
+            vrt_options["bandList"] = band_list_3
+            vrt_path, ds = gdalos_vrt(ds, resampling_alg=..., vrt_options=vrt_options)
+            temp_files.append(vrt_path)
+            # for some reason sometimes the vrt has less overviews than its source
+            overview_count = gdalos_util.get_ovr_count(ds)
+            band_types = gdalos_util.get_band_types(ds)
+        else:
+            if exclude_alpha:
+                translate_options["bandList"] = band_list_3
+                if keep_alpha:
+                    translate_options["maskBand"] = 4  # keep the alpha band as mask
+    # endregion
+
+    # region decide which overviews to make
+    if ovr_idx is not None:
+        warp_options['overviewLevel'] = 'None'  # force gdal to use the selected ovr_idx (added in GDAL >= 3.0)
+        src_ovr_last = ovr_idx + overview_count
+        if dst_ovr_count is not None:
+            if dst_ovr_count >= 0:
+                src_ovr_last = ovr_idx + min(overview_count, dst_ovr_count)
+            else:
+                # in this case we'll reopen the ds with a new ovr_idx, because we want only the last overviews
+                new_src_ovr = max(0, overview_count + dst_ovr_count + 1)
+                if new_src_ovr != ovr_idx:
+                    ovr_idx = new_src_ovr
+                    del ds
+                    ds = gdalos_util.open_ds(filename, ovr_idx=ovr_idx, open_options=open_options, logger=logger)
+                    overview_count = gdalos_util.get_ovr_count(ds)
+                    src_ovr_last = ovr_idx + overview_count
     # endregion
 
     # region expand_rgb
@@ -753,23 +779,6 @@ def gdalos_trans(
                 creation_options["PHOTOMETRIC"] = "YCBCR"
             if quality:
                 creation_options["JPEG_QUALITY" if of == GdalOutputFormat.gtiff else 'QUALITY'] = str(quality)
-
-            # alpha channel is not supported with PHOTOMETRIC=YCBCR, thus we drop it or keep it as a mask band
-        if len(band_types) == 4:
-            if jpeg_compression and do_warp:
-                raise Exception(
-                    "this mode is not supported: warp RGBA raster with JPEG output. "
-                    "You could do it in two steps: "
-                    "1. warp with lossless output, "
-                    "2. save as jpeg"
-                )
-            else:
-                if keep_alpha is None:
-                    keep_alpha = filename_is_ds or input_ext != '.gpkg'
-                if jpeg_compression or not keep_alpha:
-                    translate_options["bandList"] = [1, 2, 3]
-                if jpeg_compression and keep_alpha:
-                    translate_options["maskBand"] = 4  # keep the alpha band as mask
         # endregion
 
         common_options["format"] = enum_to_str(of)
@@ -832,7 +841,7 @@ def gdalos_trans(
                     logger.info("warp options: " + str(warp_options))
                 out_ds = gdal.Warp(str(trans_filename), ds, **common_options, **warp_options)
 
-                if value_scale is None and workaround_warp_scale_bug:
+                if out_ds is not None and value_scale is None and workaround_warp_scale_bug:
                     scale_raster.assign_same_scale_and_offset_values(out_ds, ds)
             elif trans_or_warp_is_needed or value_scale is None:
                 if verbose and translate_options:
@@ -852,6 +861,9 @@ def gdalos_trans(
                 out_ds = None  # close output ds
             if ret_code:
                 final_files_for_step_1.append(out_filename)
+            else:
+                e = gdal.GetLastErrorMsg()
+                logger.error(str(e))
         except Exception as e:
             if verbose:
                 logger.error(str(e))
@@ -1017,6 +1029,8 @@ def gdalos_trans(
             if f == filename:
                 if verbose:
                     logger.error(f'somehow the input file was set as a temp file for deletion: "{f}")')
+            elif str(f).startswith('/vsimem/'):
+                gdal.Unlink(f)
             elif os.path.isfile(f):
                 try:
                     os.remove(f)
@@ -1212,46 +1226,43 @@ def gdalos_info(filename_or_ds, overwrite=True, logger=None):
 
 
 def gdalos_vrt(
-        filenames: MaybeSequence,
+        filenames: MaybeSequence[PathOrDS],
         filenames_expand: Optional[bool] = None,
         vrt_path=None,
         kind=None,
         resampling_alg=None,
         overwrite=True,
+        vrt_options: Optional[dict] = None,
         logger=None,
 ):
     if gdalos_util.is_list_like(filenames):
         flatten_filenames = gdalos_util.flatten_and_expand_file_list(filenames, do_expand_glob=filenames_expand)
     else:
         flatten_filenames = [filenames]
-    flatten_filenames = [str(f) for f in flatten_filenames]
+    flatten_filenames = [str(f) if isinstance(f, Path) else f for f in flatten_filenames]
     if not flatten_filenames:
         return None
     first_filename = flatten_filenames[0]
     if vrt_path is None:
+        vrt_path = f'/vsimem/{uuid.uuid4()}.vrt'
+    elif vrt_path is ...:
         vrt_path = first_filename + ".vrt"
-
-    if os.path.isdir(vrt_path):
-        vrt_path = os.path.join(vrt_path, os.path.basename(first_filename) + ".vrt")
-    if do_skip_if_exists(vrt_path, overwrite, logger):
-        return vrt_path
-    if os.path.isfile(vrt_path):
-        raise Exception("could not delete vrt file: {}".format(vrt_path))
-    os.makedirs(os.path.dirname(vrt_path), exist_ok=True)
-    vrt_options = dict()
+    is_vsimem = str(vrt_path).startswith('/vsimem/')
+    if not is_vsimem:
+        if os.path.isdir(vrt_path):
+            vrt_path = os.path.join(vrt_path, os.path.basename(first_filename) + ".vrt")
+        if do_skip_if_exists(vrt_path, overwrite, logger):
+            return vrt_path
+        if os.path.isfile(vrt_path):
+            raise Exception("could not delete vrt file: {}".format(vrt_path))
+        os.makedirs(os.path.dirname(vrt_path), exist_ok=True)
+    vrt_options = dict(vrt_options or dict())
     if resampling_alg is None:
         if kind in [None, ...]:
             kind = RasterKind.guess(first_filename)
         resampling_alg = kind.resampling_alg_by_kind(kind)
     if resampling_alg is not ...:
         vrt_options["resampleAlg"] = enum_to_str(resampling_alg)
-    vrt_options = gdal.BuildVRTOptions(*vrt_options)
-    out_ds = gdal.BuildVRT(vrt_path, flatten_filenames, options=vrt_options)
-    if out_ds is None:
-        return None
-    del out_ds
-    success = os.path.isfile(vrt_path)
-    if success:
-        return vrt_path
-    else:
-        return None
+    vrt_options = gdal.BuildVRTOptions(**vrt_options)
+    ds = gdal.BuildVRT(vrt_path, flatten_filenames, options=vrt_options)
+    return vrt_path, ds
