@@ -3,10 +3,9 @@ import logging
 import os
 import tempfile
 import time
-import uuid
 from numbers import Real
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple, TypeVar, Union
+from typing import List, Optional, Sequence, Tuple, Union
 
 from osgeo import gdal
 import gdalos
@@ -15,10 +14,12 @@ from gdalos.__util__ import with_param_dict
 from gdalos.calc import scale_raster
 from gdalos.gdalos_base import enum_to_str, version_tuple
 from gdalos.gdalos_types import GdalOutputFormat, OvrType, RasterKind, GdalResamplingAlg
-from gdalos.gdalos_util import no_yes
+from gdalos.gdalos_util import no_yes, do_skip_if_exists, print_progress_callback
 from gdalos.partitions import Partition, make_partitions
 from gdalos.rectangle import GeoRectangle
 from osgeo_utils.auxiliary.util import PathOrDS, PathLike
+from gdalos.gdalos_vrt import gdalos_make_vrt
+from gdalos.gdalos_types import MaybeSequence, warp_srs_base
 
 gdalos_version = version_tuple(gdalos.__version__)
 gdal_version = version_tuple(gdal.__version__)
@@ -54,50 +55,6 @@ def multi_thread_to_str(multi_thread: Union[bool, int, str]) -> str:
     return multi_thread
 
 
-def do_skip_if_exists(out_filename, overwrite, logger=None):
-    verbose = logger is not None and logger is not ...
-    skip = False
-    if os.path.isfile(out_filename):
-        if not overwrite:
-            skip = True
-            if verbose:
-                logger.warning('file "{}" exists, skip!'.format(out_filename))
-        else:
-            if verbose:
-                logger.warning('file "{}" exists, deleting...!'.format(out_filename))
-            os.remove(out_filename)
-    return skip
-
-
-def print_progress_from_to(r0, r1):
-    # print(str(round(r1*100)) + '%', end=" ")
-    i0 = 0 if (r0 is None) or (r0 > r1) else round(r0 * 100) + 1
-    i1 = round(r1 * 100) + 1
-    for i in range(i0, i1):
-        print(str(i) if i % 5 == 0 else ".", end="", flush=True)
-    if r1 >= 1:
-        print("% done!")
-
-
-def print_progress_callback(print_progress):
-    if print_progress:
-        if print_progress is ...:
-            last = None
-
-            def print_progress(prog, *_):
-                nonlocal last
-
-                r0 = last
-                r1 = prog
-                print_progress_from_to(r0, r1)
-                last = prog
-
-    return print_progress
-
-
-T = TypeVar("T")
-MaybeSequence = Union[T, Sequence[T]]
-warp_srs_base = Union[str, int, Real]
 default_multi_byte_nodata_value = -32768
 
 
@@ -251,7 +208,7 @@ def gdalos_trans(
         val = gdalos_util.flatten_and_expand_file_list(val, do_expand_glob=do_expand_glob)
         if key == "filename":
             if gdalos_util.is_list_like(val) and multi_file_as_vrt:
-                vrt_path, _vrt_ds = gdalos_vrt(
+                vrt_path, _vrt_ds = gdalos_make_vrt(
                     val,
                     filenames_expand=False,
                     resampling_alg=resampling_alg,
@@ -435,7 +392,7 @@ def gdalos_trans(
     org_comp = gdalos_util.get_image_structure_metadata(ds, "COMPRESSION")
     src_is_lossy = (org_comp is not None) and ("JPEG" in org_comp)
     if lossy is None:
-        lossy = src_is_lossy or resample_is_needed
+        lossy = src_is_lossy or input_ext == '.gpkg' or resample_is_needed
     if lossy and (kind != RasterKind.photo):
         lossy = False
     if not lossy:
@@ -456,7 +413,7 @@ def gdalos_trans(
             # warp does not support bandList, thus we'll create an intermediate vrt to expose the first 3 bands.
             vrt_options = dict()
             vrt_options["bandList"] = band_list_3
-            vrt_path, ds = gdalos_vrt(ds, resampling_alg=..., vrt_options=vrt_options)
+            vrt_path, ds = gdalos_make_vrt(ds, resampling_alg=..., vrt_options=vrt_options)
             temp_files.append(vrt_path)
             # for some reason sometimes the vrt has less overviews than its source
             overview_count = gdalos_util.get_ovr_count(ds)
@@ -1223,46 +1180,3 @@ def gdalos_info(filename_or_ds, overwrite=True, logger=None):
         return out_filename
     else:
         return None
-
-
-def gdalos_vrt(
-        filenames: MaybeSequence[PathOrDS],
-        filenames_expand: Optional[bool] = None,
-        vrt_path=None,
-        kind=None,
-        resampling_alg=None,
-        overwrite=True,
-        vrt_options: Optional[dict] = None,
-        logger=None,
-):
-    if gdalos_util.is_list_like(filenames):
-        flatten_filenames = gdalos_util.flatten_and_expand_file_list(filenames, do_expand_glob=filenames_expand)
-    else:
-        flatten_filenames = [filenames]
-    flatten_filenames = [str(f) if isinstance(f, Path) else f for f in flatten_filenames]
-    if not flatten_filenames:
-        return None
-    first_filename = flatten_filenames[0]
-    if vrt_path is None:
-        vrt_path = f'/vsimem/{uuid.uuid4()}.vrt'
-    elif vrt_path is ...:
-        vrt_path = first_filename + ".vrt"
-    is_vsimem = str(vrt_path).startswith('/vsimem/')
-    if not is_vsimem:
-        if os.path.isdir(vrt_path):
-            vrt_path = os.path.join(vrt_path, os.path.basename(first_filename) + ".vrt")
-        if do_skip_if_exists(vrt_path, overwrite, logger):
-            return vrt_path
-        if os.path.isfile(vrt_path):
-            raise Exception("could not delete vrt file: {}".format(vrt_path))
-        os.makedirs(os.path.dirname(vrt_path), exist_ok=True)
-    vrt_options = dict(vrt_options or dict())
-    if resampling_alg is None:
-        if kind in [None, ...]:
-            kind = RasterKind.guess(first_filename)
-        resampling_alg = kind.resampling_alg_by_kind(kind)
-    if resampling_alg is not ...:
-        vrt_options["resampleAlg"] = enum_to_str(resampling_alg)
-    vrt_options = gdal.BuildVRTOptions(**vrt_options)
-    ds = gdal.BuildVRT(vrt_path, flatten_filenames, options=vrt_options)
-    return vrt_path, ds

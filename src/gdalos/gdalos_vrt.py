@@ -2,15 +2,19 @@ import math
 import os
 import re
 import shutil
+import uuid
 from collections import defaultdict
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from osgeo import gdal
+from osgeo_utils.auxiliary.base import enum_to_str
 
+from gdalos import gdalos_util
 from gdalos.gdalos_extent import get_extent
-from gdalos.gdalos_util import open_ds, OpenDS
-from gdalos.rectangle import GeoRectangle
+from gdalos.gdalos_types import RasterKind, MaybeSequence
+from gdalos.gdalos_util import open_ds, OpenDS, PathOrDS, do_skip_if_exists
+from gdalos.rectangle import GeoRectangle, rect_contains
 
 
 class AutoRepr(object):
@@ -66,7 +70,33 @@ def print_ros(ros: List[RasterOverview]):
     print(x)
 
 
-def make_vrt_with_multiple_extent_overviews_from_raster_overview_list(ros: List[RasterOverview], vrt_filename, **kwargs):
+def filter_ros(ros: List[RasterOverview]):
+    ros = sorted(ros, key=lambda ro: ro.extent.area, reverse=True)
+    # return ros[0]
+    big_ros = []
+    for ro in ros:
+        rect = ro.extent
+        contained = False
+        for big_ro in big_ros:
+            big_rect = big_ro.extent
+            contained = rect_contains(big_rect, rect)
+            if contained:
+                break
+        if not contained:
+            big_ros.append(ro)
+    return big_ros
+
+
+def make_single_ro(ros: List[RasterOverview], vrt_filename):
+    if len(ros) == 1:
+        return ros[0]
+    filenames = [ro.path for ro in ros]
+    gdalos_make_vrt(filenames, vrt_path=vrt_filename)
+    ro = RasterOverview(vrt_filename)
+    return ro
+
+
+def make_vrt_with_multiple_extent_overviews_from_raster_overview_list(ros: List[RasterOverview], vrt_filename, intermediate_dir=None, **kwargs):
     if not ros:
         return None
     print_ros(ros)
@@ -105,38 +135,28 @@ def make_vrt_with_multiple_extent_overviews_from_raster_overview_list(ros: List[
         level = ro.get_level(min_r)
         d[level].append(ro)
 
-    for key in sorted(d.keys()):
+    keys = list(sorted(d.keys()))
+    ros1 = []
+    for idx, key in enumerate(keys):
         ros = d[key]
-        ros = sorted(ros, key=lambda ro: ro.extent.area, reverse=True)
-        d[key] = ros
-
-    best_ros = []
-    for key in sorted(d.keys()):
-        ros = d[key]
-        best_ros.append(ros[0])
-        for ro in ros:
-            print('{}: {}'.format(key, ro))
-    ros = best_ros
-
+        ros = filter_ros(ros)
+        vrt_for_idx = vrt_filename.with_suffix(f'.{idx:02}.vrt')
+        if intermediate_dir is not None:
+            vrt_for_idx = Path(intermediate_dir) / vrt_for_idx.parts[-1]
+        make_ros_vrt(ros, extent, vrt_for_idx)
+        ro = RasterOverview(vrt_for_idx)
+        ros1.append(ro)
+    ros = ros1
     print('best ros:')
     print_ros(ros)
-    for idx, ro in enumerate(ros):
-        # if ro.ovr < 0:
-        #     continue
-        print('{}: {}'.format(idx, ro.path))
-        single_src_vrt = ro.path.with_suffix('.{}.vrt'.format(ro.ovr_idx))
-        # single_src_vrt = (ro.path.with_name('vrt') / ro.path.name).with_suffix('.{}.vrt'.format(ro.ovr))
-        make_ros_vrt([ro], extent, single_src_vrt)
-        ro.path = single_src_vrt
-        ro.ovr_idx = 0
     return make_ros_vrt_overviews(ros, extent, vrt_filename, **kwargs)
 
 
 def vrt_add_overviews(ros: List[RasterOverview], filename_in: Path, filename_out: Path):
     # <SourceFilename relativeToVRT="1">0.vrt</SourceFilename>
 
-    rsrc_bnd = re.compile('(\s*)<SourceBand>\d+</SourceBand>\s*')
-    rSource = re.compile('(\s*)</(Simple|Complex)Source>\s*')
+    rsrc_bnd = re.compile(r'(\s*)<SourceBand>\d+</SourceBand>\s*')
+    rSource = re.compile(r'(\s*)</(Simple|Complex)Source>\s*')
 
     # <Overview>
     #   <SourceFilename relativeToVRT="1">2\2.vrt</SourceFilename>
@@ -244,22 +264,41 @@ def make_overviews_vrt(paths: List[Path], vrt_filename=None, **kwargs):
     for path in paths:
         r = RasterOverviewList(path)
         o.extend(r.o)
-    return make_vrt_with_multiple_extent_overviews_from_raster_overview_list(o, vrt_filename=vrt_filename, **kwargs)
+    return make_vrt_with_multiple_extent_overviews_from_raster_overview_list(
+        o, vrt_filename=vrt_filename, **kwargs)
 
 
-def make_overviews_vrt_dir(path: Path, pattern='*.tif', outside=True, inside=True, **kwargs):
+def filter_ovr(paths):
+    paths = [Path(p) for p in paths]
+    new = []
+    for p in paths:
+        if p.suffix != '.ovr':
+            new.append(p)
+        else:
+            parent = p.with_suffix('')
+            if parent not in paths:
+                new.append(p)
+    return new
+
+
+def make_overviews_vrt_dir(path: Path, pattern=('*.tif', '*.ovr'), outside=True, inside=True, **kwargs):
     path = Path(path)
-    paths = list(path.glob(pattern=pattern))
+    if not isinstance(pattern, (list, tuple)):
+        pattern = [pattern]
+    paths = []
+    for pat in pattern:
+        paths.extend(path.glob(pattern=pat))
+    paths = filter_ovr(paths)
 
     result = None
-    vrt_filenames=[]
+    vrt_filenames = []
     if outside:
         vrt_filenames.append(path.with_suffix('.vrt'))
     if inside:
         dir_name = Path(os.path.basename(str(path)))
         vrt_filenames.append(path / dir_name.with_suffix('.vrt'))
     for vrt_filename in vrt_filenames:
-        result = make_overviews_vrt(paths=paths, vrt_filename=vrt_filename, **kwargs)
+        result = make_overviews_vrt(paths=paths, vrt_filename=vrt_filename, intermediate_dir=path, **kwargs)
     return result
 
 
@@ -269,9 +308,53 @@ def make_overviews_vrt_super_dir(super_path: Path, **kwargs):
             make_overviews_vrt_dir(path, **kwargs)
 
 
+def gdalos_make_vrt(
+        filenames: MaybeSequence[PathOrDS],
+        filenames_expand: Optional[bool] = None,
+        vrt_path=None,
+        kind=None,
+        resampling_alg=...,
+        overwrite=True,
+        vrt_options: Optional[dict] = None,
+        logger=None,
+):
+    if gdalos_util.is_list_like(filenames):
+        flatten_filenames = gdalos_util.flatten_and_expand_file_list(filenames, do_expand_glob=filenames_expand)
+    else:
+        flatten_filenames = [filenames]
+    flatten_filenames = [str(f) if isinstance(f, Path) else f for f in flatten_filenames]
+    if not flatten_filenames:
+        return None
+    first_filename = flatten_filenames[0]
+    if vrt_path is None:
+        vrt_path = f'/vsimem/{uuid.uuid4()}.vrt'
+    elif vrt_path is ...:
+        vrt_path = first_filename + ".vrt"
+    else:
+        vrt_path = str(vrt_path)
+    is_vsimem = vrt_path.startswith('/vsimem/')
+    if not is_vsimem:
+        if os.path.isdir(vrt_path):
+            vrt_path = os.path.join(vrt_path, os.path.basename(first_filename) + ".vrt")
+        if do_skip_if_exists(vrt_path, overwrite, logger):
+            return vrt_path
+        if os.path.isfile(vrt_path):
+            raise Exception("could not delete vrt file: {}".format(vrt_path))
+        os.makedirs(os.path.dirname(vrt_path), exist_ok=True)
+    vrt_options = dict(vrt_options or dict())
+    if resampling_alg is None:
+        if kind in [None, ...]:
+            kind = RasterKind.guess(first_filename)
+        resampling_alg = kind.resampling_alg_by_kind(kind)
+    if resampling_alg is not ...:
+        vrt_options["resampleAlg"] = enum_to_str(resampling_alg)
+    vrt_options = gdal.BuildVRTOptions(**vrt_options)
+    ds = gdal.BuildVRT(vrt_path, flatten_filenames, options=vrt_options)
+    return vrt_path, ds
+
+
 if __name__ == '__main__':
-    # make_overviews_vrt_super_dir(r'd:\Maps.raw\osm')
-    # make_overviews_vrt_super_dir(r'd:\Maps\temp\x')
-    # make_overviews_vrt_super_dir(r'd:\Maps\w84geo\topo')
-    # make_overviews_vrt_super_dir(r'd:\Maps.raw\osm')
+    parent_dir = Path(r'd:\Maps.progress\osm')
+    make_overviews_vrt_dir(parent_dir / 'wikimedia-3857.xml')
+    # make_overviews_vrt_super_dir(parent_dir)
     print('done!')

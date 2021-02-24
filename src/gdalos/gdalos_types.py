@@ -1,9 +1,14 @@
 from enum import Enum, auto
+from numbers import Real
+from typing import TypeVar, Union, Sequence
 
 from osgeo import gdal
 
 from gdalos import gdalos_util
 
+T = TypeVar("T")
+MaybeSequence = Union[T, Sequence[T]]
+warp_srs_base = Union[str, int, Real]
 
 class OvrType(Enum):
     # existing_reuse or create_external_auto (by existance of src overviews)

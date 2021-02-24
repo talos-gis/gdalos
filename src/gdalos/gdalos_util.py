@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from typing import Iterator, Sequence
 
+from gdalos.rectangle import GeoRectangle
 from osgeo import ogr, osr
 
 from gdalos.gdalos_base import enum_to_str
@@ -196,3 +197,44 @@ def get_creation_options(creation_options=None,
         creation_options_list.append("{}={}".format(k, v))
 
     return creation_options_list
+
+
+def do_skip_if_exists(out_filename, overwrite, logger=None):
+    verbose = logger is not None and logger is not ...
+    skip = False
+    if os.path.isfile(out_filename):
+        if not overwrite:
+            skip = True
+            if verbose:
+                logger.warning('file "{}" exists, skip!'.format(out_filename))
+        else:
+            if verbose:
+                logger.warning('file "{}" exists, deleting...!'.format(out_filename))
+            os.remove(out_filename)
+    return skip
+
+
+def print_progress_from_to(r0, r1):
+    # print(str(round(r1*100)) + '%', end=" ")
+    i0 = 0 if (r0 is None) or (r0 > r1) else round(r0 * 100) + 1
+    i1 = round(r1 * 100) + 1
+    for i in range(i0, i1):
+        print(str(i) if i % 5 == 0 else ".", end="", flush=True)
+    if r1 >= 1:
+        print("% done!")
+
+
+def print_progress_callback(print_progress):
+    if print_progress:
+        if print_progress is ...:
+            last = None
+
+            def print_progress(prog, *_):
+                nonlocal last
+
+                r0 = last
+                r1 = prog
+                print_progress_from_to(r0, r1)
+                last = prog
+
+    return print_progress
