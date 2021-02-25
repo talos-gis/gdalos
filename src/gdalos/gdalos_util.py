@@ -225,16 +225,15 @@ def print_progress_from_to(r0, r1):
 
 
 def print_progress_callback(print_progress):
-    if print_progress:
-        if print_progress is ...:
-            last = None
+    if print_progress in [None, ...]:
+        last = None
 
-            def print_progress(prog, *_):
-                nonlocal last
+        def print_progress(prog, *_):
+            nonlocal last
 
-                r0 = last
-                r1 = prog
-                print_progress_from_to(r0, r1)
-                last = prog
+            r0 = last
+            r1 = prog
+            print_progress_from_to(r0, r1)
+            last = prog
 
     return print_progress

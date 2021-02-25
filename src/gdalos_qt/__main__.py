@@ -4,7 +4,7 @@ def gdalos_qt_main():
     from fidget.core import Fidget
     from fidget.widgets import FidgetMatrix, FidgetMinimal, FidgetQuestion
     from fidget.widgets.__util__ import CountBounds
-    from gdalos.gdalos_main import gdalos_trans
+    from gdalos.gdalos_trans import gdalos_trans
     from gdalos_qt.gdalos_widget import GdalosWidget
 
     app = QApplication(

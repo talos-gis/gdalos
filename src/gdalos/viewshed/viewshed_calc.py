@@ -14,14 +14,13 @@ from typing import Union, Sequence, Optional
 import numpy as np
 from osgeo import gdal
 
-from gdalos import gdalos_base, gdalos_main
-from gdalos import gdalos_color
+from gdalos import gdalos_base, gdalos_color, projdef, gdalos_util, gdalos_extent
 from gdalos.calc import gdal_calc, gdal_to_czml, gdalos_combine
 from gdalos.calc.discrete_mode import DiscreteMode
 from gdalos.calc.gdalos_raster_color import gdalos_raster_color
 from gdalos.gdalos_base import PathLike
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
-from gdalos.gdalos_main import projdef, gdalos_util, gdalos_trans, gdalos_extent
+from gdalos.gdalos_trans import gdalos_trans, workaround_warp_scale_bug
 from gdalos.gdalos_selector import get_projected_pj, DataSetSelector
 from gdalos.rectangle import GeoRectangle
 from gdalos.talos.geom_arc import PolygonizeSector
@@ -362,7 +361,7 @@ def viewshed_calc_to_ds(
                     # close original ds and reopen
                     ds = None
                     ds = gdalos_util.open_ds(d_path)
-                    if scale and gdalos_main.workaround_warp_scale_bug:
+                    if scale and workaround_warp_scale_bug:
                         ds.GetRasterBand(1).SetScale(scale)
                     temp_files.append(d_path)
                 if not ds:

@@ -1,0 +1,1 @@
+@python -m gdalos_qt

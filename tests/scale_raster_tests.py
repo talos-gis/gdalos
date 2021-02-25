@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from gdalos.gdalos_main import gdalos_trans, GeoRectangle
+from gdalos.gdalos_trans import gdalos_trans, GeoRectangle
 from gdalos.calc.scale_raster import scale_raster
 
 

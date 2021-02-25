@@ -1,5 +1,7 @@
+version = (0, 53, 0)
+
 __pacakge_name__ = "gdalos"
-__version__ = "0.52.0"
+__version__ = '.'.join(str(v) for v in version)
 __author__ = "Idan Miara, Ben Avrahami"
 __author_email__ = "idan@miara.com"
 __license__ = "MIT"

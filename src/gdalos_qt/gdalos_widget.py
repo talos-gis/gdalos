@@ -17,7 +17,7 @@ from fidget.widgets import (
     FidgetTuple,
     inner_fidget,
 )
-from gdalos.gdalos_main import GeoRectangle, OvrType, RasterKind, GdalResamplingAlg, GdalOutputFormat
+from gdalos.gdalos_trans import GeoRectangle, OvrType, RasterKind, GdalResamplingAlg, GdalOutputFormat
 from gdalos_qt.crs_widget import CrsWidget
 from gdalos_qt.nodatavalue_widget import NodatavalueWidgetSrc, NodatavalueWidgetDst
 
@@ -207,7 +207,7 @@ class GdalosWidget(FidgetConverter):
                         ),
                     ),
                     (
-                        "src_win",
+                        "srcwin",
                         FidgetOptional.template(
                             FidgetConverter.template(
                                 FidgetTuple.template(

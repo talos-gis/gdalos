@@ -1,6 +1,6 @@
 from numbers import Real
 from osgeo import gdal
-from gdalos.gdalos_main import gdalos_trans, GeoRectangle, gdalos_extent, gdalos_util, projdef
+from gdalos.gdalos_trans import gdalos_trans, GeoRectangle, gdalos_extent, gdalos_util, projdef
 from pathlib import Path
 
 # https://www.programcreek.com/python/example/101827/gdal.RasterizeLayer

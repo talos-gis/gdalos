@@ -1,3 +1,5 @@
+import glob
+
 from setuptools import setup, find_packages
 
 from src.gdalos import (
@@ -45,5 +47,6 @@ setup(
     extras_require={
         "qt": ["fidget[qt]"],
     },
+    scripts=glob.glob('scripts/*'),
     python_requires=">=3.6.0",
 )
