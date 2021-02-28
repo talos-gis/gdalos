@@ -1,4 +1,4 @@
-version = (0, 53, 0)
+version = (0, 53, 1)
 
 __pacakge_name__ = "gdalos"
 __version__ = '.'.join(str(v) for v in version)

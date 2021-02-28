@@ -13,6 +13,7 @@ from osgeo import gdal
 from osgeo_utils.gdal_calc import GDALDataTypeNames
 
 from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef, __version__
+from gdalos import version as gdalos_version  # noqa
 from gdalos.__util__ import with_param_dict
 from gdalos.calc import scale_raster
 from gdalos.gdalos_base import enum_to_str, version_tuple
@@ -798,7 +799,7 @@ def gdalos_trans(
         if creation_options:
             common_options["creationOptions"] = creation_options_list
 
-        if print_progress:
+        if print_progress or print_progress is None:
             common_options["callback"] = print_progress_callback(print_progress)
 
         if resample_is_needed:
