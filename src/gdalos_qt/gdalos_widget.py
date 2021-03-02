@@ -50,7 +50,7 @@ class GdalosWidget(FidgetConverter):
                         ),
 
                     ),
-                    FidgetCheckBox.template("prefer_2_step_cog", initial_value=True),
+                    FidgetCheckBox.template("prefer_2_step_cog", initial_value=False),
                     FidgetCheckBox.template("delete_temp_files", initial_value=True),
                     FidgetCheckBox.template("overwrite", initial_value=False),
                     (
