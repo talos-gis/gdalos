@@ -788,8 +788,14 @@ def gdalos_trans(
                 creation_options["BLOCKYSIZE"] = block_size
             elif of == GdalOutputFormat.cog:
                 creation_options["BLOCKSIZE"] = block_size
-        if cog and not cog_2_steps and of != GdalOutputFormat.cog:
-            creation_options["COPY_SRC_OVERVIEWS"] = "YES"
+        if cog and not cog_2_steps:
+            if of == GdalOutputFormat.cog:
+                creation_options["OVERVIEWS"] = \
+                    "NONE" if ovr_type == OvrType.no_overviews else \
+                    "AUTO" if ovr_type == OvrType.existing_reuse else \
+                    "IGNORE_EXISTING"
+            elif of == GdalOutputFormat.gtiff:
+                creation_options["COPY_SRC_OVERVIEWS"] = no_yes[ovr_type == OvrType.existing_reuse]
 
         creation_options_list = options_dict_to_list(creation_options)
         if creation_options:
