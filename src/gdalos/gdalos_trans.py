@@ -12,11 +12,12 @@ from typing import List, Optional, Sequence, Tuple, Union
 from osgeo import gdal
 from osgeo_utils.gdal_calc import GDALDataTypeNames
 
-from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef, __version__
-from gdalos import version as gdalos_version  # noqa
+from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef
+from gdalos.gdalos_versions import gdalos_version, gdal_version, gdal_cog_support, gdal_multi_thread_support
+from gdalos.gdalos_versions import gdal_workaround_warp_scale_bug as workaround_warp_scale_bug
 from gdalos.__util__ import with_param_dict
 from gdalos.calc import scale_raster
-from gdalos.gdalos_base import enum_to_str, version_tuple
+from gdalos.gdalos_base import enum_to_str
 from gdalos.gdalos_types import GdalOutputFormat, OvrType, RasterKind, GdalResamplingAlg
 from gdalos.gdalos_util import no_yes, do_skip_if_exists, print_progress_callback
 from gdalos.partitions import Partition, make_partitions
@@ -24,11 +25,6 @@ from gdalos.rectangle import GeoRectangle
 from osgeo_utils.auxiliary.util import PathOrDS, PathLike
 from gdalos.gdalos_vrt import gdalos_make_vrt
 from gdalos.gdalos_types import MaybeSequence, warp_srs_base
-
-gdal_version = version_tuple(gdal.__version__)
-support_of_cog = gdal_version >= (3, 1)
-multi_thread_support_available = gdal_version >= (3, 2)
-workaround_warp_scale_bug = gdal_version < (3, 3)  # workaround https://github.com/OSGeo/gdal/issues/3232
 
 
 def get_cuttent_time_string():
@@ -321,7 +317,7 @@ def gdalos_trans(
     is_vsimem = not filename_is_ds and str(filename).startswith('/vsimem/')
 
     if verbose:
-        logger.info(f'gdal version: {gdal_version}; cog driver support: {support_of_cog}')
+        logger.info(f'gdal version: {gdal_version}; cog driver support: {gdal_cog_support}')
     if cog is None:
         cog = not filename_is_ds
     if ovr_type is None:
@@ -337,7 +333,7 @@ def gdalos_trans(
         return_ds = of == GdalOutputFormat.mem
     if of is None:
         of = GdalOutputFormat.mem if return_ds else GdalOutputFormat.cog if (
-                cog and support_of_cog) else GdalOutputFormat.gtiff
+                cog and gdal_cog_support) else GdalOutputFormat.gtiff
 
     if of == GdalOutputFormat.cog:
         cog = True
@@ -751,7 +747,7 @@ def gdalos_trans(
         spec_filename = gdalos_util.concat_paths(out_filename, ".spec")
         logger_handlers.append(gdalos_logger.set_file_logger(logger, spec_filename))
         logger.debug('spec file handler added: "{}"'.format(spec_filename))
-        logger.debug("gdalos versoin: {}".format(__version__))
+        logger.debug("gdalos versoin: {}".format(gdalos_version))
         aux_files.append(spec_filename)
         # logger.debug('debug')
         # logger.info('info')
@@ -1129,7 +1125,7 @@ def gdalos_ovr(
     if config_options is None:
         config_options = dict()
 
-    if multi_thread and multi_thread_support_available:
+    if multi_thread and gdal_multi_thread_support:
         multi_thread = multi_thread_to_str(multi_thread)
         config_options['GDAL_NUM_THREADS'] = multi_thread
 

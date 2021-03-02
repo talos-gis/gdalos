@@ -149,7 +149,3 @@ def make_pairs(x_arr, y_arr, fill_mode):
     result = make_xy_list(pair_list)
     return result
 
-
-def version_tuple(version: str) -> Tuple[int]:
-    return tuple(int(s) for s in str(version).split('.') if s.isdigit())[:3]
-
