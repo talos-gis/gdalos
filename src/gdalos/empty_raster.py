@@ -49,7 +49,7 @@ def create_empty_raster_by_extent(pixel_size, srs, extent: GeoRectangle, extent_
     create_empty_raster(size=size, gt=gt, srs=srs, **kwargs)
 
 
-if __name__ == '__main__':
+def test():
     o_extent = GeoRectangle.from_min_max(35, 36, 31, 32)
     o_srs = 36
     o_extent_srs = 0
@@ -63,3 +63,5 @@ if __name__ == '__main__':
         val=o_val, ndv=o_ndv, creation_options=creation_opt)
 
 
+if __name__ == '__main__':
+    test()

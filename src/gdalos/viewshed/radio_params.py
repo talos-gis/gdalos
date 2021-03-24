@@ -59,3 +59,4 @@ class RadioParams(object):
         if isinstance(d['calc_type'], str):
             d['calc_type'] = RadioCalcType[d['calc_type']]
         return d
+
