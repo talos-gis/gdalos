@@ -27,7 +27,8 @@ from gdalos.talos.geom_arc import PolygonizeSector
 from gdalos.talos.ogr_util import create_layer_from_geometries
 from gdalos.viewshed import viewshed_params
 from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
-from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams
+from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams, dict_of_selected_items, \
+    dict_of_reduce_if_same
 from osgeo_utils.auxiliary.extent_util import Extent
 
 talos = None
@@ -294,7 +295,8 @@ def viewshed_calc_to_ds(
                 if vp.is_radio():
                     if not hasattr(talos, 'GS_SetRadioParameters'):
                         raise Exception('This version does not support radio')
-                    talos.GS_SetRadioParameters(**vp.get_radio_as_talos_params())
+                    radio_params = vp.get_radio_as_talos_params(0)
+                    talos.GS_SetRadioParameters(**radio_params)
 
                 if 'GS_Viewshed_Calc2' in dir(talos):
                     ras = talos.GS_Viewshed_Calc2(**inputs)
@@ -580,7 +582,6 @@ def los_calc(
         backend = ViewshedBackend[backend]
 
     if backend == ViewshedBackend.talos:
-        radio_params = vp.get_radio_as_talos_params()
         o_points, t_points = gdalos_base.make_pairs(o_points, t_points, vp.ot_fill)
         vp.oxy = list(o_points)
         vp.txy = list(t_points)
@@ -611,11 +612,22 @@ def los_calc(
 
             if hasattr(talos, 'GS_SetCalcModule'):
                 talos.GS_SetCalcModule(vp.get_calc_module())
-            if vp.is_radio():
-                if not hasattr(talos, 'GS_SetRadioParameters'):
-                    raise Exception('This version does not support radio')
+            radio_params = vp.get_radio_as_talos_params()
+            if radio_params is not None and not hasattr(talos, 'GS_SetRadioParameters'):
+                raise Exception('This version does not support radio')
+
+            dict_of_selected_items(radio_params, index=0)
+            # multi_radio_params = dict_of_selected_items(radio_params, check_only=True)
+            multi_radio_params = dict_of_reduce_if_same(radio_params)
+            if multi_radio_params:
+                # raise Exception('unsupported multiple radio parameters')
+                dict_of_selected_items(radio_params, index=0)
                 talos.GS_SetRadioParameters(**radio_params)
-            result = talos.GS_Radio_Calc(**inputs)
+                result = talos.GS_Radio_Calc(**inputs)
+            else:
+                if radio_params:
+                    talos.GS_SetRadioParameters(**radio_params)
+                result = talos.GS_Radio_Calc(**inputs)
             if result:
                 raise Exception('talos calc error')
 

@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Sequence, Optional
 
 import numpy as np
 from osgeo import gdal
@@ -98,8 +98,43 @@ class LOSParams(object):
     def is_radio(self):
         return self.radio_parameters is not None
 
-    def get_radio_as_talos_params(self):
-        return self.radio_parameters.get_dict()
+    def get_radio_as_talos_params(self, index: Optional[int] = None):
+        if self.radio_parameters is None:
+            return None
+        d = self.radio_parameters.get_dict()
+        dict_of_selected_items(d, index)
+        return d
+
+
+def all_same(items):
+    return all(x == items[0] for x in items)
+
+
+def dict_of_reduce_if_same(d: dict):
+    if d is None:
+        return None
+    is_multi = False
+    for k, v in d.items():
+        if isinstance(d[k], Sequence):
+            if all_same(d[k]):
+                d[k] = d[k][0]
+            else:
+                is_multi = True
+    return is_multi
+
+
+def dict_of_selected_items(d: dict, index: Optional[int] = None, check_only: bool = False):
+    if d is None or (index is None and not check_only):
+        return None
+    is_multi = False
+    for k, v in d.items():
+        if isinstance(d[k], Sequence):
+            is_multi = True
+            if check_only:
+                return is_multi
+            else:
+                d[k] = d[k][index]
+    return is_multi
 
 
 class MultiPointParams(LOSParams):
