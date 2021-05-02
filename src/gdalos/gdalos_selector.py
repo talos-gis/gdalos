@@ -4,7 +4,7 @@ from numbers import Real
 from typing import List, Union
 
 from gdalos import projdef, gdalos_util
-from gdalos.gdalos_base import SequanceNotString, PathLike
+from gdalos.gdalos_base import SequenceNotString, PathLikeOrStr
 from gdalos.gdalos_util import OpenDS
 
 
@@ -14,7 +14,7 @@ class DataSetSelector:
     __slots__ = ['ds_list', 'centers']
     regex = re.compile(r'w84u([-+]?[0-9]*\.?[0-9]+)')
 
-    def __init__(self, lst: Union[PathLike, SequanceNotString]):
+    def __init__(self, lst: Union[PathLikeOrStr, SequenceNotString]):
         self.ds_list: List[OpenDS] = []
         lst = gdalos_util.flatten_and_expand_file_list(lst, do_expand_glob=True, always_return_list=True)
 
@@ -32,11 +32,11 @@ class DataSetSelector:
     def get_centers(self) -> List[Real]:
         return list(self.get_center(item.filename) for item in self.ds_list)
 
-    def get_center(self, filename: PathLike) -> Real:
+    def get_center(self, filename: PathLikeOrStr) -> Real:
         filename = str(filename)
         result = self.regex.search(filename)
         float_zone = float(result.group(1))
-        return projdef.get_zone_center(float_zone)
+        return projdef.get_utm_zone_center(float_zone)
 
     def get_item_geo(self, x, y):
         return None
@@ -61,7 +61,7 @@ class DataSetSelector:
             if best is None:
                 raise Exception(f'could not find appropriate input file for x: {x}')
             print(
-                f'x: {x} selected center: {best_center} best_zone: {projdef.get_zone_by_lon(x, True)} filename: {best.filename}')
+                f'x: {x} selected center: {best_center} best_zone: {projdef.get_utm_zone_by_lon(x, True)} filename: {best.filename}')
         return best.filename, best.__enter__()
 
 

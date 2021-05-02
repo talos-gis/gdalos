@@ -4,6 +4,9 @@ from itertools import chain, cycle, product, tee
 
 from osgeo_utils.auxiliary.base import *  # noqa
 
+PathLike = PathLikeOrStr
+SequanceNotString = SequenceNotString
+
 
 def fill_arrays(*args):
     max_len = max(len(x) for x in args)

@@ -18,7 +18,7 @@ from gdalos import gdalos_base, gdalos_color, projdef, gdalos_util, gdalos_exten
 from gdalos.calc import gdal_calc, gdal_to_czml, gdalos_combine
 from gdalos.calc.discrete_mode import DiscreteMode
 from gdalos.calc.gdalos_raster_color import gdalos_raster_color
-from gdalos.gdalos_base import PathLike
+from gdalos.gdalos_base import PathLikeOrStr
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
 from gdalos.gdalos_trans import gdalos_trans, workaround_warp_scale_bug
 from gdalos.gdalos_selector import get_projected_pj, DataSetSelector
@@ -30,6 +30,7 @@ from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
 from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams, dict_of_selected_items, \
     dict_of_reduce_if_same
 from osgeo_utils.auxiliary.extent_util import Extent
+from osgeo_utils.auxiliary.util import get_ovr_idx
 
 talos = None
 
@@ -100,7 +101,7 @@ def viewshed_calc(output_filename, of='GTiff', **kwargs):
 
 def viewshed_calc_to_ds(
         vp_array,
-        input_filename: Union[gdal.Dataset, PathLike, DataSetSelector],
+        input_filename: Union[gdal.Dataset, PathLikeOrStr, DataSetSelector],
         extent=Extent.UNION, cutline=None, operation: CalcOperation = CalcOperation.count,
         in_coords_srs=None, out_crs=None,
         color_palette: ColorPaletteOrPathOrStrings = None,
@@ -112,7 +113,7 @@ def viewshed_calc_to_ds(
         files=None):
     input_selector = None
     input_ds = None
-    if isinstance(input_filename, PathLike.__args__):
+    if isinstance(input_filename, PathLikeOrStr.__args__):
         input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
     elif isinstance(input_filename, DataSetSelector):
         input_selector = input_filename
@@ -207,7 +208,7 @@ def viewshed_calc_to_ds(
 
                 # figure out the input, output and intermediate srs
                 # the intermediate srs will be used for combining the output rasters, if needed
-                pjstr_input_srs = projdef.get_srs_pj_from_ds(input_ds)
+                pjstr_input_srs = projdef.get_srs_pj(input_ds)
                 pjstr_output_srs = projdef.get_proj_string(out_crs) if out_crs is not None else \
                     pjstr_input_srs if input_selector is None else pjstr_4326
                 if input_selector is None:
@@ -424,7 +425,7 @@ def viewshed_calc_to_ds(
         for i in range(len(files)):
             files[i] = None  # close calc input ds(s)
 
-    combined_post_process_needed = cutline or not projdef.proj_is_equivalent(pjstr_inter_srs, pjstr_output_srs)
+    combined_post_process_needed = cutline or not projdef.are_srs_equivalent(pjstr_inter_srs, pjstr_output_srs)
     if combined_post_process_needed:
         is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
         ds = gdalos_trans(ds, out_filename=d_path, warp_srs=pjstr_output_srs,
@@ -461,7 +462,7 @@ def viewshed_calc_to_ds(
 
 def los_calc(
         vp,
-        input_filename: Union[gdal.Dataset, PathLike, DataSetSelector],
+        input_filename: Union[gdal.Dataset, PathLikeOrStr, DataSetSelector],
         in_coords_srs=None, out_crs=None,
         bi=1, ovr_idx=0, co=None, of='xyz',
         backend: ViewshedBackend = None,
@@ -469,7 +470,7 @@ def los_calc(
         mock=False):
     input_selector = None
     input_ds = None
-    if isinstance(input_filename, PathLike.__args__):
+    if isinstance(input_filename, PathLikeOrStr.__args__):
         input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
     elif isinstance(input_filename, DataSetSelector):
         input_selector = input_filename
@@ -541,7 +542,7 @@ def los_calc(
     # figure out the input, output and intermediate srs
     # the intermediate srs will be used for combining the output rasters, if needed
     if input_ds is not None:
-        pjstr_input_srs = projdef.get_srs_pj_from_ds(input_ds)
+        pjstr_input_srs = projdef.get_srs_pj(input_ds)
         pjstr_output_srs = projdef.get_proj_string(out_crs) if out_crs is not None else \
             pjstr_input_srs if input_selector is None else pjstr_4326
         if input_selector is None:
@@ -603,7 +604,8 @@ def los_calc(
             if dtm_open_err != 0:
                 raise Exception('talos could not open input file {}'.format(projected_filename))
             talos.GS_SetProjectCRSFromActiveDTM()
-            talos.GS_DtmSelectOvle(ovr_idx or 0)
+            ovr_idx = get_ovr_idx(projected_filename, ovr_idx)
+            talos.GS_DtmSelectOvle(ovr_idx)
 
             refraction_coeff = vp.refraction_coeff
             if isinstance(refraction_coeff, Sequence):

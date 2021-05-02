@@ -17,9 +17,9 @@ czml_metadata_name = 'colors'
 def gdal_to_czml(ds:gdal.Dataset, name=None, out_filename=None, description=None):
     if description is None:
         description = ds.GetMetadataItem(czml_metadata_name)
-    pjstr_src_srs = projdef.get_srs_pj_from_ds(ds)
-    pjstr_tgt_srs = projdef.get_srs_pj_from_epsg()
-    if not projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs):
+    pjstr_src_srs = projdef.get_srs_pj(ds)
+    pjstr_tgt_srs = projdef.get_srs_pj(4326)
+    if not projdef.are_srs_equivalent(pjstr_src_srs, pjstr_tgt_srs):
         ds = gdalos_trans(ds, warp_srs=pjstr_tgt_srs, of='MEM', ovr_type=None, write_spec=False)
 
     # calculate the extent

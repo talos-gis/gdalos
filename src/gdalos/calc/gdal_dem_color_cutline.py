@@ -7,6 +7,8 @@ from gdalos.calc import gdal_to_czml
 from gdalos.gdalos_color import ColorPalette, get_file_from_strings
 from gdalos import gdalos_util
 from gdalos.calc.gdalos_raster_color import DiscreteMode, gdalos_raster_color
+from gdalos.backports.ogr_utils import ogr_create_geometries_from_wkt
+
 import copy
 
 
@@ -47,7 +49,7 @@ def gdal_crop(ds: gdal.Dataset, out_filename: str, output_format: str = 'MEM',
         elif isinstance(cutline, Sequence):
             temp_filename = tempfile.mktemp(suffix='.gpkg')
             cutline_filename = temp_filename
-            gdalos_util.wkt_write_ogr(cutline_filename, cutline, of='GPKG')
+            ogr_create_geometries_from_wkt(cutline_filename, cutline, of='GPKG', srs=4326)
         warp_options['cutlineDSName'] = cutline_filename
     # else:
     #     raise Exception("extent is unknown {}".format(extent))

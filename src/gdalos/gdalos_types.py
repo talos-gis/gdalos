@@ -10,6 +10,7 @@ T = TypeVar("T")
 MaybeSequence = Union[T, Sequence[T]]
 warp_srs_base = Union[str, int, Real]
 
+
 class OvrType(Enum):
     # existing_reuse or create_external_auto (by existance of src overviews)
     auto_select = auto()

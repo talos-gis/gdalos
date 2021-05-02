@@ -1,7 +1,14 @@
-from gdalos import gdalos_util
-from osgeo_utils.auxiliary.rectangle import get_points_extent
-from osgeo_utils.auxiliary.extent_util import *  # noqa
+from numbers import Real
 
+from gdalos import gdalos_util
+from osgeo_utils.auxiliary.base import Real2D
+from osgeo_utils.auxiliary.rectangle import get_points_extent
+
+# backwards compatibility
+from osgeo_utils.auxiliary.extent_util import *  # noqa
+from gdalos.extent_utils_backport import *  # noqa
+from gdalos.backports.ogr_utils import ogr_get_layer_extent as get_vec_extent  # noqa
+translate_extent = transform_extent
 
 # Geotransform:
 # 0 = x-coordinate of the upper-left corner of the upper-left pixel
@@ -22,59 +29,17 @@ from osgeo_utils.auxiliary.extent_util import *  # noqa
 # The pixel/line location of the center of the top left pixel would therefore be (0.5,0.5).
 
 
-def calc_dx_dy(extent: GeoRectangle, sample_count: int):
-    (min_x, max_x, min_y, max_y) = extent.min_max
-    w = max_x - min_x
-    h = max_y - min_y
-    pix_area = w * h / sample_count
-    if pix_area <= 0 or w <= 0 or h <= 0:
-        return 0, 0
-    pix_len = math.sqrt(pix_area)
-    return pix_len, pix_len
-
-
-def translate_extent(extent: GeoRectangle, transform, sample_count=1000):
-    if transform is None:
-        return extent
-    maxf = float("inf")
-    (out_min_x, out_max_x, out_min_y, out_max_y) = (maxf, -maxf, maxf, -maxf)
-
-    dx, dy = calc_dx_dy(extent, sample_count)
-    if dx == 0:
-        return GeoRectangle.empty()
-
-    y = float(extent.min_y)
-    while y <= extent.max_y + dy:
-        x = float(extent.min_x)
-        while x <= extent.max_x + dx:
-            tx, ty, tz = transform.TransformPoint(x, y)
-            x += dx
-            if not math.isfinite(tz):
-                continue
-            out_min_x = min(out_min_x, tx)
-            out_max_x = max(out_max_x, tx)
-            out_min_y = min(out_min_y, ty)
-            out_max_y = max(out_max_y, ty)
-        y += dy
-
-    return GeoRectangle.from_min_max(out_min_x, out_max_x, out_min_y, out_max_y)
-
-
-def get_geotransform_and_size(ds):
-    return ds.GetGeoTransform(), (ds.RasterXSize, ds.RasterYSize)
-
-
-def get_points_extent_from_ds(ds):
+def get_points_extent_from_ds(ds: gdal.Dataset) -> Tuple[Sequence[Real2D], GeoTransform]:
     geo_transform, size = get_geotransform_and_size(ds)
     points_extent = get_points_extent(geo_transform, *size)
     return points_extent, geo_transform
 
 
-def dist(p1x, p1y, p2x, p2y):
+def dist(p1x: Real, p1y: Real, p2x: Real, p2y: Real) -> float:
     return math.sqrt((p2y - p1y) ** 2 + (p2x - p1x) ** 2)
 
 
-def transform_resolution_p(transform, dx, dy, px, py):
+def transform_resolution_p(transform: osr.CoordinateTransformation, dx: Real, dy: Real, px: Real, py: Real) -> float:
     p1x, p1y, *_ = transform.TransformPoint(px, py + dx, 0)
     p2x, p2y, *_ = transform.TransformPoint(px, py + dy, 0)
     return dist(p1x, p1y, p2x, p2y)
@@ -102,7 +67,7 @@ def transform_resolution_old(transform, input_res, extent: GeoRectangle):
 
 def transform_resolution(
     transform, input_res, extent: GeoRectangle, equal_res=..., sample_count=1000):
-    dx, dy = calc_dx_dy(extent, sample_count)
+    dx, dy = calc_dx_dy_from_extent_and_count(extent, sample_count)
 
     calc_only_res_y = equal_res is ...
     out_x = []
@@ -145,19 +110,6 @@ def round_to_sig(d, extra_digits=-5):
         digits = int(math.floor(math.log10(abs(d))))
     digits = digits + extra_digits
     return round(d, -digits)
-
-
-def get_vec_extent(lyr):
-    result = None
-    for feature in lyr:
-        geom = feature.GetGeometryRef()
-        envelope = geom.GetEnvelope()
-        r = GeoRectangle.from_min_max(*envelope)
-        if result is None:
-            result = r
-        else:
-            result = result.union(r)
-    return result
 
 
 def get_extent(filename_or_ds) -> GeoRectangle:
@@ -214,6 +166,7 @@ def make_temp_vrt_old(filename, ds, data_type, projection, bands_count, gt, dime
         band.SetMetadataItem("source_%i" % j, source, 'new_vrt_sources')
         band = None  # close band
     return vrt_filename, vrt_ds
+
 
 # def GetExtent(gt,cols,rows):
 #     ''' Return list of corner coordinates from a gt

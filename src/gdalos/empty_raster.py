@@ -43,7 +43,7 @@ def create_empty_raster_by_extent(pixel_size, srs, extent: GeoRectangle, extent_
     if extent_srs is not None:
         extent_srs = projdef.get_proj_string(extent_srs)  # 'EPSG:4326'
         transform = projdef.get_transform(extent_srs, srs)
-        extent = gdalos_extent.translate_extent(extent, transform)
+        extent = gdalos_extent.transform_extent(extent, transform)
 
     size, gt = gt_and_size_from_rect(extent, pixel_size=pixel_size)
     create_empty_raster(size=size, gt=gt, srs=srs, **kwargs)

@@ -56,14 +56,14 @@ def gdalos_rasterize(
     if out_filename is None:
         dstDs = gdalos_util.open_ds(in_filename, gdal.GA_Update)
     else:
-        pj4326 = projdef.get_srs_pj_from_epsg()
+        pj4326 = projdef.get_srs_pj(4326)
         if extent is ...:
-            cov_pj_srs = projdef.get_srs_pj_from_ds(shp)
+            cov_pj_srs = projdef.get_srs_pj(shp)
             if not cov_pj_srs:
                 cov_pj_srs = pj4326
-            cov_extent = gdalos_extent.get_vec_extent(shp.GetLayer())
+            cov_extent = ogr_get_layer_extent(shp.GetLayer())
             transform = projdef.get_transform(cov_pj_srs, pj4326)
-            extent = gdalos_extent.translate_extent(cov_extent, transform)
+            extent = gdalos_extent.transform_extent(cov_extent, transform)
 
         dstDs = gdalos_trans(in_filename, out_filename, extent=extent,
                              cog=False, ovr_type=None, return_ds=True, **kwargs)

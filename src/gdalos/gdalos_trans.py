@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import List, Optional, Sequence, Tuple, Union
 
 from osgeo import gdal
+
+from gdalos.backports.ogr_utils import ogr_create_geometries_from_wkt
 from osgeo_utils.gdal_calc import GDALDataTypeNames
 
 from gdalos import gdalos_util, gdalos_logger, gdalos_extent, projdef
@@ -19,12 +21,13 @@ from gdalos.__util__ import with_param_dict
 from gdalos.calc import scale_raster
 from gdalos.gdalos_base import enum_to_str
 from gdalos.gdalos_types import GdalOutputFormat, OvrType, RasterKind, GdalResamplingAlg
-from gdalos.gdalos_util import no_yes, do_skip_if_exists, print_progress_callback
+from gdalos.gdalos_util import do_skip_if_exists
 from gdalos.partitions import Partition, make_partitions
 from gdalos.rectangle import GeoRectangle
-from osgeo_utils.auxiliary.util import PathOrDS, PathLike
+from osgeo_utils.auxiliary.util import PathOrDS, PathLikeOrStr
 from gdalos.gdalos_vrt import gdalos_make_vrt
 from gdalos.gdalos_types import MaybeSequence, warp_srs_base
+from osgeo_utils.auxiliary.progress import get_progress_callback
 
 
 def get_cuttent_time_string():
@@ -78,10 +81,10 @@ gdalos_trans_sequence_keys = [
 @with_param_dict("all_args")
 def gdalos_trans(
         filename: MaybeSequence[PathOrDS],
-        reference_filename: MaybeSequence[PathLike] = None,
+        reference_filename: MaybeSequence[PathLikeOrStr] = None,
         filenames_expand: Optional[bool] = None,
         out_filename: Optional[str] = None,
-        out_path: Optional[PathLike] = None,
+        out_path: Optional[PathLikeOrStr] = None,
         return_ds: Optional[bool] = None,
         out_path_with_src_folders: Optional[bool] = None,
         overwrite: Optional[bool] = None,
@@ -225,7 +228,6 @@ def gdalos_trans(
     if isinstance(kind, str):
         kind = RasterKind[kind]
 
-
     if isinstance(partition, int):
         partition = None if partition <= 1 else make_partitions(partition)
         all_args["partition"] = partition
@@ -359,7 +361,7 @@ def gdalos_trans(
 
     if sparse_ok is None:
         sparse_ok = not filename_is_ds and str(Path(filename).suffix).lower() == '.vrt'
-    creation_options["SPARSE_OK"] = no_yes[bool(sparse_ok)]
+    creation_options["SPARSE_OK"] = str(bool(sparse_ok))
 
     extent_was_cropped = False
     input_is_vrt = input_ext == ".vrt"
@@ -376,15 +378,16 @@ def gdalos_trans(
         value_scale = None
 
     # region warp CRS handling
-    pjstr_src_srs = projdef.get_srs_pj_from_ds(ds)
+    pjstr_src_srs = projdef.get_srs_pj(ds)
     pjstr_tgt_srs = None
     tgt_zone = None
+    tgt_datum = None
     if warp_srs is not None:
         pjstr_tgt_srs, tgt_zone1 = projdef.parse_proj_string_and_zone(warp_srs)
-        tgt_datum, tgt_zone = projdef.get_datum_and_zone_from_projstring(pjstr_tgt_srs)
+        tgt_datum, tgt_zone = projdef.get_datum_and_zone_from_srs(pjstr_tgt_srs)
         if tgt_zone1:
             tgt_zone = tgt_zone1
-        if projdef.proj_is_equivalent(pjstr_src_srs, pjstr_tgt_srs):
+        if projdef.are_srs_equivalent(pjstr_src_srs, pjstr_tgt_srs):
             warp_srs = None  # no warp is really needed here
     if warp_srs is not None:
         if extent_aligned is None:
@@ -410,7 +413,7 @@ def gdalos_trans(
         elif isinstance(cutline, Sequence):
             cutline_filename = tempfile.mktemp(suffix='.gpkg')
             temp_files.append(cutline_filename)
-            gdalos_util.wkt_write_ogr(cutline_filename, cutline, of='GPKG')
+            ogr_create_geometries_from_wkt(cutline_filename, cutline, of='GPKG', srs=4326)
         warp_options['cutlineDSName'] = cutline_filename
 
     do_warp = warp_srs is not None or cutline is not None
@@ -510,19 +513,19 @@ def gdalos_trans(
     if org_extent_in_src_srs.is_empty():
         raise Exception(f"no input extent: {filename} [{org_extent_in_src_srs}]")
     out_extent_in_src_srs = org_extent_in_src_srs
+    pjstr_4326 = projdef.get_srs_pj(4326)  # 'EPSG:4326'
     if extent is not None or partition is not None:
-        pjstr_4326 = projdef.get_proj_string("w")  # 'EPSG:4326'
         transform = projdef.get_transform(pjstr_src_srs, pjstr_4326)
         src_srs_is_4326 = transform is None
         if extent is None:
-            extent = gdalos_extent.translate_extent(org_extent_in_src_srs, transform)
+            extent = gdalos_extent.transform_extent(org_extent_in_src_srs, transform)
         if pjstr_tgt_srs is None:
             pjstr_tgt_srs = pjstr_src_srs
             transform = None
         else:
             transform = projdef.get_transform(pjstr_src_srs, pjstr_tgt_srs)
 
-        org_extent_in_tgt_srs = gdalos_extent.translate_extent(org_extent_in_src_srs, transform)
+        org_extent_in_tgt_srs = gdalos_extent.transform_extent(org_extent_in_src_srs, transform)
         if org_extent_in_tgt_srs.is_empty():
             raise Exception(f"no input extent: {filename} [{org_extent_in_tgt_srs}]")
 
@@ -532,7 +535,7 @@ def gdalos_trans(
                 # because the projected srs bounds might be wider then the 'valid' zone bounds
                 extent = extent.intersect(org_extent_in_src_srs)
             transform = projdef.get_transform(pjstr_4326, pjstr_tgt_srs)
-            out_extent_in_tgt_srs = gdalos_extent.translate_extent(extent, transform)
+            out_extent_in_tgt_srs = gdalos_extent.transform_extent(extent, transform)
         else:
             out_extent_in_tgt_srs = extent
         if extent_crop_to_minimal:
@@ -541,7 +544,7 @@ def gdalos_trans(
         if out_extent_in_tgt_srs != org_extent_in_tgt_srs:
             extent_was_cropped = True
             transform = projdef.get_transform(pjstr_tgt_srs, pjstr_4326)
-            extent = gdalos_extent.translate_extent(out_extent_in_tgt_srs, transform)
+            extent = gdalos_extent.transform_extent(out_extent_in_tgt_srs, transform)
 
         if out_extent_in_tgt_srs.is_empty():
             raise Exception(f"no output extent: {filename} [{out_extent_in_tgt_srs}]")
@@ -560,7 +563,7 @@ def gdalos_trans(
         warp_options["outputBounds"] = out_extent_in_tgt_srs_part.ldru
 
         transform = projdef.get_transform(pjstr_4326, pjstr_src_srs)
-        out_extent_in_src_srs = gdalos_extent.translate_extent(extent, transform)
+        out_extent_in_src_srs = gdalos_extent.transform_extent(extent, transform)
         if extent_crop_to_minimal:
             out_extent_in_src_srs = out_extent_in_src_srs.intersect(org_extent_in_src_srs)
         if out_extent_in_src_srs.is_empty():
@@ -665,7 +668,7 @@ def gdalos_trans(
             out_extent_in_4326 = extent
             if extent_was_cropped and (out_extent_in_src_srs is not None):
                 transform = projdef.get_transform(pjstr_src_srs, pjstr_4326)
-                out_extent_in_4326 = gdalos_extent.translate_extent(
+                out_extent_in_4326 = gdalos_extent.transform_extent(
                     out_extent_in_src_srs, transform
                 )
             if out_extent_in_4326 is not None:
@@ -771,12 +774,12 @@ def gdalos_trans(
 
         common_options["format"] = enum_to_str(of)
         if of in [GdalOutputFormat.gtiff, GdalOutputFormat.cog]:
-            creation_options["BIGTIFF"] = gdalos_util.get_big_tiff(big_tiff)
+            creation_options["BIGTIFF"] = gdalos_util.get_bigtiff_creation_option_value(big_tiff)
             creation_options["COMPRESS"] = comp
 
-        tiled = gdalos_util.get_tiled(tiled)
+        tiled = gdalos_util.is_true(tiled)
         if of == GdalOutputFormat.gtiff:
-            creation_options["TILED"] = no_yes[tiled]
+            creation_options["TILED"] = str(tiled)
         if tiled and block_size is not None:
             # if block_size is ...:
             #     block_size = 256  # default gdal block_size
@@ -795,14 +798,14 @@ def gdalos_trans(
                     "AUTO" if ovr_type == OvrType.existing_reuse else \
                     "IGNORE_EXISTING"
             elif of == GdalOutputFormat.gtiff:
-                creation_options["COPY_SRC_OVERVIEWS"] = no_yes[ovr_type == OvrType.existing_reuse]
+                creation_options["COPY_SRC_OVERVIEWS"] = str(ovr_type == OvrType.existing_reuse)
 
         creation_options_list = options_dict_to_list(creation_options)
         if creation_options:
             common_options["creationOptions"] = creation_options_list
 
         if print_progress or print_progress is None:
-            common_options["callback"] = print_progress_callback(print_progress)
+            common_options["callback"] = get_progress_callback(print_progress)
 
         if resample_is_needed:
             if resampling_alg is None:
@@ -1142,7 +1145,7 @@ def gdalos_ovr(
     if resampling_alg is not ...:
         ovr_options["resampling"] = enum_to_str(resampling_alg)
     if print_progress or print_progress is None:
-        ovr_options["callback"] = print_progress_callback(print_progress)
+        ovr_options["callback"] = get_progress_callback(print_progress)
 
     if comp is None:
         comp = gdalos_util.get_image_structure_metadata(filename, "COMPRESSION")

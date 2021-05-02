@@ -43,7 +43,7 @@ setup(
     classifiers=classifiers,
     packages=packages,
     package_dir=package_dir,
-    install_requires=['gdal>=3.0.0', 'gdal-utils>=3.3.0.5', 'numpy!=1.19.4'],
+    install_requires=['gdal>=3.0.0', 'gdal-utils>=3.3.0.7', 'numpy!=1.19.4'],
     extras_require={
         "qt": ["fidget[qt]"],
     },
