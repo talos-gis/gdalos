@@ -79,3 +79,25 @@ def do_skip_if_exists(out_filename, overwrite, logger=None):
                 logger.warning('file "{}" exists, deleting...!'.format(out_filename))
             os.remove(out_filename)
     return skip
+
+
+def set_scales_and_offsets(bands: Union[PathOrDS, MaybeSequence[gdal.Band]],
+                           scales: Optional[MaybeSequence[Real]] = None,
+                           offsets: Optional[MaybeSequence[Real]] = None):
+    if isinstance(bands, PathOrDS.__args__):
+        bands = get_bands(bands)
+    if scales is None:
+        scales = 1
+    if offsets is None:
+        offsets = 0
+    if not isinstance(bands, Sequence):
+        bands = [bands]
+    if not isinstance(scales, Sequence):
+        scales = [scales] * len(bands)
+    if not isinstance(offsets, Sequence):
+        offsets = [offsets] * len(bands)
+
+    for bnd, scale, offset in zip(bands, scales, offsets):
+        bnd.SetScale(scale)
+        bnd.SetOffset(offset)
+    offsets = [bnd.GetOffset() or 0 for bnd in bands]
