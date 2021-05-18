@@ -112,6 +112,7 @@ def gdalos_trans(
         extent_in_4326: Optional[bool] = None,
         extent_crop_to_minimal: Optional[bool] = None,
         extent_aligned: Optional[bool] = None,
+        extent_silent_fail_if_empty: Optional[bool] = None,
         srcwin: Optional[Sequence[int]] = None,
         cutline: Optional[Union[str, List[str]]] = None,
         out_res: Optional[Union[type(...), Real, Tuple[Real, Real]]] = None,  # None -> gdalos default; ... -> gdal default
@@ -178,8 +179,8 @@ def gdalos_trans(
         ovr_idx = None
     if lossy is ...:
         lossy = None
-    if print_progress is ...:
-        print_progress = None
+    if print_progress is None:
+        print_progress = ...
     if logger is ...:
         logger = None
 
@@ -547,7 +548,12 @@ def gdalos_trans(
             extent = gdalos_extent.transform_extent(out_extent_in_tgt_srs, transform)
 
         if out_extent_in_tgt_srs.is_empty():
-            raise Exception(f"no output extent: {filename} [{out_extent_in_tgt_srs}]")
+            msg = f"no output extent: {filename} [{out_extent_in_tgt_srs}]"
+            if extent_silent_fail_if_empty:
+                logger.warning(msg)
+                return None
+            else:
+                raise Exception(msg)
 
         if partition:
             out_extent_in_tgt_srs_part = out_extent_in_tgt_srs.get_partition(partition)
@@ -1094,7 +1100,7 @@ def gdalos_ovr(
         ovr_options: dict = None,
         ovr_files: list = None,
         multi_thread: Union[bool, int, str] = True,
-        print_progress: bool = True,
+        print_progress: Optional[bool] = None,
         logger=None,
 ):
     verbose = logger is not None and logger is not ...
@@ -1145,7 +1151,7 @@ def gdalos_ovr(
     if resampling_alg is not ...:
         ovr_options["resampling"] = enum_to_str(resampling_alg)
     if print_progress or print_progress is None:
-        ovr_options["callback"] = get_progress_callback(print_progress)
+        ovr_options["callback"] = get_progress_callback(print_progress or ...)
 
     if comp is None:
         comp = gdalos_util.get_image_structure_metadata(filename, "COMPRESSION")
