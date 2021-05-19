@@ -1,5 +1,7 @@
 from numbers import Real
 from osgeo import gdal
+
+from gdalos.backports.ogr_utils import ogr_get_layer_extent
 from gdalos.gdalos_trans import gdalos_trans, GeoRectangle, gdalos_extent, gdalos_util, projdef
 from pathlib import Path
 

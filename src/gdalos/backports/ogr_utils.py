@@ -55,13 +55,5 @@ def ogr_create_geometries_from_wkt(path: PathLikeOrStr, wkt_list: Sequence[str],
 
 
 def ogr_get_layer_extent(lyr: ogr.Layer) -> GeoRectangle:
-    result = None
-    for feature in lyr:
-        geom = feature.GetGeometryRef()
-        envelope = geom.GetEnvelope()
-        r = GeoRectangle.from_min_max(*envelope)
-        if result is None:
-            result = r
-        else:
-            result = result.union(r)
-    return result
+    r = GeoRectangle.from_min_max(*lyr.GetExtent())
+    return r
