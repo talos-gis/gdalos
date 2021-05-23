@@ -38,12 +38,16 @@ talos = None
 class ViewshedBackend(Enum):
     gdal = 0
     talos = 1
+    radio = 2
+    rfmodel = 3
     # radio = 2
     # t_radio = 3
     # z_radio = 4
 
 
+default_LOSBackend = ViewshedBackend.talos
 default_ViewshedBackend = ViewshedBackend.gdal
+default_RFBackend = ViewshedBackend.rfmodel
 
 
 class CalcOperation(Enum):
@@ -117,9 +121,6 @@ def viewshed_calc_to_ds(
         input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
     elif isinstance(input_filename, DataSetSelector):
         input_selector = input_filename
-        if input_selector.get_map_count() == 1:
-            input_filename = input_selector.get_map(0)
-            input_selector = None
     else:
         input_ds = input_filename
 
@@ -463,6 +464,7 @@ def viewshed_calc_to_ds(
 def los_calc(
         vp,
         input_filename: Union[gdal.Dataset, PathLikeOrStr, DataSetSelector],
+        del_s: float,
         in_coords_srs=None, out_crs=None,
         bi=1, ovr_idx=0, co=None, of='xyz',
         backend: ViewshedBackend = None,
@@ -474,9 +476,6 @@ def los_calc(
         input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
     elif isinstance(input_filename, DataSetSelector):
         input_selector = input_filename
-        if input_selector.get_map_count() == 1:
-            input_filename = input_selector.get_map(0)
-            input_selector = None
     else:
         input_ds = input_filename
 
@@ -552,17 +551,27 @@ def los_calc(
 
         input_srs = projdef.get_srs_from_ds(input_ds)
         input_raster_is_projected = input_srs.IsProjected()
+
+        is_radio = vp.radio_parameters is not None
+        if isinstance(backend, str):
+            backend = ViewshedBackend[backend]
+        if backend == ViewshedBackend.radio and not is_radio:
+            raise Exception('No radio parameters were provided')
+        if backend is None or backend == ViewshedBackend.radio:
+            backend = default_RFBackend if (is_radio and not input_raster_is_projected) else default_LOSBackend
+
+        backend_requires_projected_ds = backend != ViewshedBackend.rfmodel
+
         if input_raster_is_projected:
             transform_coords_to_raster = projdef.get_transform(in_coords_srs, pjstr_input_srs)
-        else:
-            raise Exception(f'input raster has to be projected')
-        if input_raster_is_projected:
             projected_filename = input_filename
             if transform_coords_to_raster:
                 o_points = transform_coords_to_raster.TransformPoints(o_points)
                 t_points = transform_coords_to_raster.TransformPoints(t_points)
+        elif backend_requires_projected_ds:
+            raise Exception(f'input raster has to be projected')
         else:
-            raise Exception('currently only projected input raster is supported')
+            pass
             # projected_pj = get_projected_pj(geo_o[0][0], geo_o[0][1])
             # transform_coords_to_raster = projdef.get_transform(in_coords_srs, projected_pj)
             # vp.ox, vp.oy, _ = transform_coords_to_raster.TransformPoints(vp.ox, vp.oy)
@@ -577,15 +586,24 @@ def los_calc(
             #     raise Exception('input raster projection faild')
             # # input_ds = projected_ds
 
-    if backend is None:
-        backend = default_ViewshedBackend
-    elif isinstance(backend, str):
-        backend = ViewshedBackend[backend]
+    o_points, t_points = gdalos_base.make_pairs(o_points, t_points, vp.ot_fill)
+    vp.oxy = list(o_points)
+    vp.txy = list(t_points)
 
-    if backend == ViewshedBackend.talos:
-        o_points, t_points = gdalos_base.make_pairs(o_points, t_points, vp.ot_fill)
-        vp.oxy = list(o_points)
-        vp.txy = list(t_points)
+    if backend == ViewshedBackend.rfmodel:
+        from rfmodel.rfmodel import calc_path_loss_lonlat_multi
+        from tirem.tirem3 import calc_tirem_loss
+
+        inputs = vp.get_as_rfmodel_params(del_s=del_s)
+        output_arrays = calc_path_loss_lonlat_multi(calc_tirem_loss, input_ds, **inputs)
+
+        res = collections.OrderedDict()
+        output_names = vp.mode
+        mode_map = dict(PathLoss=1, FreeSpaceLoss=2)
+        for idx, name in enumerate(output_names):
+            res[name] = output_arrays[mode_map[name]]
+
+    elif backend == ViewshedBackend.talos:
         inputs = vp.get_as_talos_params()
 
         if not mock:
@@ -654,7 +672,7 @@ def los_calc(
         os.makedirs(os.path.dirname(str(output_filename)), exist_ok=True)
         output_filename = Path(output_filename)
         if of == 'json':
-            res['r'] = [projected_filename]
+            res['r'] = [input_filename]
             with open(output_filename, 'w') as outfile:
                 json_dump = {k: v.tolist() if isinstance(v, np.ndarray) else str(v) for k, v in res.items()}
                 json.dump(json_dump, outfile, indent=2)

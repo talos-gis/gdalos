@@ -1,4 +1,3 @@
-# calc_type
 from collections import Sequence
 from enum import IntEnum
 
@@ -49,14 +48,26 @@ class RadioParams(object):
             if isinstance(val, Sequence):
                 setattr(self, attr, val[0])
 
+    def fix_polarization(self):
+        if isinstance(self.polarity, str):
+            p = self.polarity[0].lower()
+            self.polarity = \
+                RadioPolarity.Vertical if p in ['v', int(RadioPolarity.Vertical), bool(RadioPolarity.Vertical)] \
+                else RadioPolarity.Horizontal
+        return self.polarity
+
     def get_dict(self):
+        self.fix_polarization()
         d = gdalos_base.get_dict(self)
-        polarity = d['polarity']
-        if isinstance(polarity, str):
-            polarity = polarity[0].lower()
-            polarity = RadioPolarity.Vertical if polarity in ['v', int(RadioPolarity.Vertical)] else RadioPolarity.Horizontal
-            d['polarity'] = polarity
         if isinstance(d['calc_type'], str):
             d['calc_type'] = RadioCalcType[d['calc_type']]
         return d
+
+    def as_rfmodel_params(self):
+        self.fix_polarization()
+        return dict(
+            frequency=self.frequency, polarization=self.polarity,
+            refractivity=self.refractivity, conductivity=self.conductivity,
+            permittivity=self.permittivity, humidity=self.humidity)
+
 

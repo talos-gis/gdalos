@@ -226,6 +226,20 @@ class MultiPointParams(LOSParams):
 
         return d
 
+    def get_as_rfmodel_params(self, del_s: float) -> dict:
+        d = dict(
+            count=len(self.ox),
+            main_options=dict(
+                tx_antenna_height=self.oz,
+                rx_antenna_height=self.oz,
+                tx_msl=self.omsl,
+                rx_msl=self.tmsl,
+            ),
+            profile_options=dict(lon1=self.ox, lat1=self.oy, lon2=self.tx, lat2=self.ty, del_s=del_s),
+            rfmodel_options=self.radio_parameters.as_rfmodel_params(),
+        )
+        return d
+
 
 class ViewshedParams(LOSParams):
     __slots__ = ('max_r', 'min_r', 'min_r_shave', 'max_r_slant',

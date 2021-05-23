@@ -134,7 +134,7 @@ def make_points_list(x_arr, y_arr, mode: FillMode):
 def make_xy_list(pair_list):
     if isinstance(pair_list[0], Sequence):
         xs, ys = tee(pair_list)
-        xs, ys = (x[0] for x in xs), (y[1] for y in ys)
+        xs, ys = list(x[0] for x in xs), list(y[1] for y in ys)
         # r = [list(x[i]) for x in (tee(pair_arr)) for i in range(pair_arr)]
 
         # xs = []

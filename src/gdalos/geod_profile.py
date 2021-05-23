@@ -12,9 +12,10 @@ from osgeo_utils.samples.gdallocationinfo import gdallocationinfo
 g_wgs84 = Geod(ellps='WGS84')
 
 
-def geod_profile(filename_or_ds: PathOrDS, band_nums=None, srs=4326, ovr_idx: Optional[Union[int, float]]=None,
+def geod_profile(filename_or_ds: PathOrDS, band_nums=None, srs=4326, ovr_idx: Optional[Union[int, float]] = None,
                  g: Geod = None, only_geod: bool = False,
-                 initial_idx: int = 0, terminus_idx: int = 0, **kwargs) -> Tuple[GeodIntermediateReturn, np.array]:
+                 initial_idx: int = 0, terminus_idx: int = 0, **kwargs) -> \
+        Tuple[GeodIntermediateReturn, Optional[np.ndarray]]:
     if g is None:
         g = g_wgs84
     geod_res = g.inv_intermediate(initial_idx=initial_idx, terminus_idx=terminus_idx, **kwargs)
