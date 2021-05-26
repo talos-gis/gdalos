@@ -2,9 +2,8 @@ import timeit
 from typing import Tuple, Optional, Union
 
 from osgeo import osr
-from pyproj import Geod
+from pyproj.geod import Geod, GeodIntermediateReturn
 import numpy as np
-from gdalos.backports.geod_backport import Geod, GeodIntermediateReturn
 
 from osgeo_utils.auxiliary.util import PathOrDS
 from osgeo_utils.samples.gdallocationinfo import gdallocationinfo
