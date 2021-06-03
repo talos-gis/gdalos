@@ -74,18 +74,23 @@ def czml_gdaldem_crop_and_color(
         discrete_mode=DiscreteMode.interp,
         process_palette=None,
         common_options: dict = None):
+
+    do_color = color_palette is not None
+    output_format_crop = 'MEM' if do_color else output_format
+    out_filename_crop = '' if do_color else out_filename
+
     ds = gdalos_crop(
-        ds, out_filename=out_filename, output_format=output_format,
+        ds, out_filename=out_filename_crop, output_format=output_format_crop,
         extent=extent, cutline=cutline,
         common_options=common_options)
 
     min_max = gdalos_util.get_raster_min_max(ds) if process_palette and color_palette.has_percents else None
 
-    # output_format_crop = 'MEM' if do_color else output_format
-    ds = gdalos_raster_color(
-        ds, color_palette=color_palette,
-        out_filename=out_filename, output_format=output_format,
-        discrete_mode=discrete_mode)
+    if do_color:
+        ds = gdalos_raster_color(
+            ds, color_palette=color_palette,
+            out_filename=out_filename, output_format=output_format,
+            discrete_mode=discrete_mode)
 
     if ds is None:
         raise Exception('fail to color')

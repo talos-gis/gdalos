@@ -10,6 +10,7 @@ from pathlib import Path
 from gdalos.calc.discrete_mode import DiscreteMode
 from gdalos import gdalos_util
 from gdalos.calc import gdal_to_czml
+from osgeo_utils.auxiliary.color_table import get_color_table
 
 
 def cont2discrete_array(arr, values, discrete_mode: DiscreteMode, dtype=np.uint8):
@@ -43,7 +44,7 @@ def cont2discrete_array(arr, values, discrete_mode: DiscreteMode, dtype=np.uint8
 
 def gdalos_raster_color(filename_or_ds: gdal.Dataset,
                         color_palette: ColorPalette,
-                        out_filename: str=None, output_format: str = None,
+                        out_filename: str = None, output_format: str = None,
                         discrete_mode=DiscreteMode.interp) -> gdal.Dataset:
     ds = gdalos_util.open_ds(filename_or_ds)
 
@@ -85,7 +86,7 @@ def gdalos_raster_color(filename_or_ds: gdal.Dataset,
         calc_kwargs = dict(x=ds)
         user_namespace = dict(f=f)
         color_palette_copy.to_serial_values()
-        color_table = color_palette_copy.get_color_table()
+        color_table = get_color_table(color_palette_copy)
 
         meta = gdal_to_czml.make_czml_description(color_palette_copy)
 

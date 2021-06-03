@@ -6,6 +6,7 @@ from pathlib import Path
 from gdalos.gdalos_trans import gdalos_util, gdalos_extent, GeoRectangle
 from gdalos.calc import gdal_calc
 from gdalos.gdalos_color import ColorPalette
+from osgeo_utils.auxiliary.color_table import get_color_table
 from osgeo_utils.gdalcompare import find_diff
 from gdalos.calc import gdalos_combine
 
@@ -126,7 +127,7 @@ if __name__ == '__main__':
     pal = ColorPalette()
     pal.read(color_filename)
     pal.write_color_file(color_filename.with_suffix('.txt'))
-    color_table = pal.get_color_table()
+    color_table = get_color_table(pal)
     alpha_pattern = '1*({}>3)'
 
     path = Path('/home/idan/maps/comb/vs')
