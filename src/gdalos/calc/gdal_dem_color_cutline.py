@@ -4,7 +4,7 @@ from typing import Optional, Sequence, List, Union
 from osgeo import gdal, ogr, osr
 from gdalos.rectangle import GeoRectangle
 from gdalos.calc import gdal_to_czml
-from gdalos.gdalos_color import ColorPalette, get_file_from_strings
+from gdalos.gdalos_color import ColorPalette
 from gdalos import gdalos_util
 from gdalos.calc.gdalos_raster_color import DiscreteMode, gdalos_raster_color
 from gdalos.backports.ogr_utils import ogr_create_geometries_from_wkt
