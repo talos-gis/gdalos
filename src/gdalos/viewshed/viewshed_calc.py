@@ -110,7 +110,7 @@ def viewshed_calc_to_ds(
         in_coords_srs=None, out_crs=None,
         color_palette: ColorPaletteOrPathOrStrings = None,
         discrete_mode: DiscreteMode = DiscreteMode.interp,
-        bi=1, ovr_idx=0, co=None,
+        bi=1, ovr_idx=0, co=None, threads=0,
         vp_slice=None,
         backend: ViewshedBackend = None,
         temp_files=None,
@@ -283,6 +283,7 @@ def viewshed_calc_to_ds(
                 dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
                 talos.GS_SetProjectCRSFromActiveDTM()
                 talos.GS_DtmSelectOvle(ovr_idx or 0)
+                talos.GS_DtmSetCalcThreadsCount(threads or 0)
                 if dtm_open_err != 0:
                     raise Exception('talos could not open input file {}'.format(projected_filename))
                 talos.GS_SetRefractionCoeff(vp.refraction_coeff)
@@ -466,7 +467,7 @@ def los_calc(
         input_filename: Union[gdal.Dataset, PathLikeOrStr, DataSetSelector],
         del_s: float,
         in_coords_srs=None, out_crs=None,
-        bi=1, ovr_idx=0, co=None, of='xyz',
+        bi=1, ovr_idx=0, co=None, threads=0, of='xyz',
         backend: ViewshedBackend = None,
         output_filename=None,
         mock=False):
@@ -624,6 +625,7 @@ def los_calc(
             talos.GS_SetProjectCRSFromActiveDTM()
             ovr_idx = get_ovr_idx(projected_filename, ovr_idx)
             talos.GS_DtmSelectOvle(ovr_idx)
+            talos.GS_DtmSetCalcThreadsCount(threads or 0)
 
             refraction_coeff = vp.refraction_coeff
             if isinstance(refraction_coeff, Sequence):
