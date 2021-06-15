@@ -1,8 +1,10 @@
-from gdalos.talos.util import NormalizeAngleDeg
+from typing import Tuple
+
+from gdalos.talos.util import NormalizeAngleDeg, NormalizeAngles
 from gdalos.talos.gen_consts import M_PI_180, M_2PI
 
 
-def GetFromToAngle(DirectionDeg, ApertureDeg: float) -> (float, float):
+def GetFromToAngle(DirectionDeg: float, ApertureDeg: float) -> Tuple[float, float]:
     if ApertureDeg >= 360 - 1e-10:
         AFromRad = 0
         AToRad = 0
@@ -14,3 +16,12 @@ def GetFromToAngle(DirectionDeg, ApertureDeg: float) -> (float, float):
             AFromRad = AFromRad - M_2PI
     return AFromRad, AToRad
 
+
+def h_azimuth_and_aperture_from_az(startAz: float, endAz: float, FullCircle: float = 360) -> Tuple[float, float]:
+    startAz, endAz = NormalizeAngles(startAz, endAz, FullCircle)
+    return (endAz + startAz) / 2, endAz - startAz
+
+
+def v_elevation_and_aperture_from_az(startAz: float, endAz: float, FullCircle: float = 360) -> Tuple[float, float]:
+    startAz, endAz = NormalizeAngles(startAz, endAz, FullCircle)
+    return (endAz + startAz) / 2, endAz - startAz
