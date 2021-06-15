@@ -282,7 +282,8 @@ def viewshed_calc_to_ds(
 
                 dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
                 talos.GS_SetProjectCRSFromActiveDTM()
-                talos.GS_DtmSelectOvle(ovr_idx or 0)
+                ovr_idx = get_ovr_idx(projected_filename, ovr_idx)
+                talos.GS_DtmSelectOvle(ovr_idx)
                 talos.GS_DtmSetCalcThreadsCount(threads or 0)
                 if dtm_open_err != 0:
                     raise Exception('talos could not open input file {}'.format(projected_filename))
