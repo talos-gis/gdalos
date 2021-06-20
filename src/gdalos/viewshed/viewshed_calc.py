@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Union, Sequence, Optional
 
 import numpy as np
+
 from osgeo import gdal
 
 from gdalos import gdalos_base, gdalos_color, projdef, gdalos_util, gdalos_extent
@@ -31,6 +32,7 @@ from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams, di
     dict_of_reduce_if_same
 from osgeo_utils.auxiliary.extent_util import Extent
 from osgeo_utils.auxiliary.util import get_ovr_idx
+from gdalos.backports.osr_utm_util import utm_convergence
 
 talos = None
 
@@ -223,6 +225,8 @@ def viewshed_calc_to_ds(
                     transform_coords_to_raster = projdef.get_transform(in_coords_srs, pjstr_input_srs)
                 else:
                     raise Exception(f'input raster has to be projected')
+            zone_lon0 = input_srs.GetProjParm('central_meridian')
+            vp.convergence = utm_convergence(vp.ox, vp.oy, zone_lon0)
             if input_raster_is_projected:
                 projected_filename = input_filename
                 if transform_coords_to_raster:
@@ -239,7 +243,7 @@ def viewshed_calc_to_ds(
                     input_ds, out_filename=projected_filename, warp_srs=projected_pj,
                     extent=extent, return_ds=True, write_info=False, write_spec=False)
                 if not projected_ds:
-                    raise Exception('input raster projection faild')
+                    raise Exception('input raster projection failed')
                 input_ds = projected_ds
 
             if backend is None:
@@ -352,7 +356,7 @@ def viewshed_calc_to_ds(
             warp_result = (input_selector is not None)
             if warp_result or cut_sector:
                 if cut_sector:
-                    ring = PolygonizeSector(vp.ox, vp.oy, vp.max_r, vp.max_r, vp.azimuth, vp.h_aperture)
+                    ring = PolygonizeSector(vp.ox, vp.oy, vp.max_r, vp.max_r, vp.get_grid_azimuth(), vp.h_aperture)
                     calc_cutline = tempfile.mktemp(suffix='.gpkg')
                     temp_files.append(calc_cutline)
                     create_layer_from_geometries([ring], calc_cutline)

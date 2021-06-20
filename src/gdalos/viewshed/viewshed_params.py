@@ -244,7 +244,7 @@ class MultiPointParams(LOSParams):
 class ViewshedParams(LOSParams):
     __slots__ = ('max_r', 'min_r', 'min_r_shave', 'max_r_slant',
                  'azimuth', 'h_aperture', 'elevation', 'v_aperture',
-                 'vv', 'iv', 'ov', 'ndv', 'out_res')
+                 'vv', 'iv', 'ov', 'ndv', 'out_res', 'convergence')
 
     def __init__(self):
         super().__init__()
@@ -265,7 +265,11 @@ class ViewshedParams(LOSParams):
         self.ov = viewshed_out_of_range
         self.ndv = viewshed_ndv
 
+        self.convergence = 0
         self.out_res = None
+
+    def get_grid_azimuth(self):
+        return self.azimuth - self.convergence
 
     def is_omni_h(self):
         return not self.h_aperture or abs(self.h_aperture - 360) < 0.0001
@@ -315,6 +319,7 @@ class ViewshedParams(LOSParams):
                 d['tz'] = slack_dummy_height
         d['out_res'] = d['out_res'] or 0
         d['result_dt'] = self.get_result_dt()
+        d['Direction'] = self.get_grid_azimuth()
         return d
 
 
