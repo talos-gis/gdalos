@@ -8,6 +8,7 @@ class RadioCalcType(IntEnum):
     FOS = 0
     TerrainElev = 1
     ElevationAngleCalc = 2
+    LOSRange = 3
 
     FreeSpaceLoss = 10
     PathLoss = 11
@@ -23,7 +24,7 @@ class RadioPolarity(IntEnum):
 
 
 class RadioParams(object):
-    __slots__ = ('frequency', 'KFactor', 'polarity', 'calc_type',
+    __slots__ = ('frequency', 'KFactor', 'polarity', #'calc_mode',
                  'refractivity', 'conductivity', 'permittivity', 'humidity',
                  'power_diff', 'fill_center', 'profile_extension')
 
@@ -31,7 +32,7 @@ class RadioParams(object):
         self.frequency = 3333.0
         self.KFactor = 0
         self.polarity = RadioPolarity.Horizontal
-        self.calc_type = RadioCalcType.PathLoss
+        # self.calc_mode = RadioCalcType.PathLoss
 
         self.refractivity = 333.0
         self.conductivity = 3.0
@@ -59,8 +60,6 @@ class RadioParams(object):
     def get_dict(self):
         self.fix_polarization()
         d = gdalos_base.get_dict(self)
-        if isinstance(d['calc_type'], str):
-            d['calc_type'] = RadioCalcType[d['calc_type']]
         return d
 
     def as_rfmodel_params(self):

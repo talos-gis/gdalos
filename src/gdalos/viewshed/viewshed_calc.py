@@ -27,6 +27,7 @@ from gdalos.rectangle import GeoRectangle
 from gdalos.talos.geom_arc import PolygonizeSector
 from gdalos.talos.ogr_util import create_layer_from_geometries
 from gdalos.viewshed import viewshed_params
+from gdalos.viewshed.radio_params import RadioCalcType
 from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
 from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams, dict_of_selected_items, \
     dict_of_reduce_if_same
@@ -45,6 +46,9 @@ class ViewshedBackend(Enum):
     # radio = 2
     # t_radio = 3
     # z_radio = 4
+
+    def requires_projected_ds(self):
+        return self in [ViewshedBackend.gdal, ViewshedBackend.talos]
 
 
 default_LOSBackend = ViewshedBackend.talos
@@ -250,6 +254,8 @@ def viewshed_calc_to_ds(
                 backend = default_ViewshedBackend
             elif isinstance(backend, str):
                 backend = ViewshedBackend[backend]
+            if backend == ViewshedBackend.radio:
+                backend = ViewshedBackend.talos
 
             is_base_calc = True
             if backend == ViewshedBackend.gdal:
@@ -472,7 +478,7 @@ def los_calc(
         input_filename: Union[gdal.Dataset, PathLikeOrStr, DataSetSelector],
         del_s: float,
         in_coords_srs=None, out_crs=None,
-        bi=1, ovr_idx=0, co=None, threads=0, of='xyz',
+        bi=1, ovr_idx=0, threads=0, of='xyz',
         backend: ViewshedBackend = None,
         output_filename=None,
         mock=False):
@@ -565,8 +571,13 @@ def los_calc(
             raise Exception('No radio parameters were provided')
         if backend is None or backend == ViewshedBackend.radio:
             backend = default_RFBackend if (is_radio and not input_raster_is_projected) else default_LOSBackend
+        if vp.calc_mode is None:
+            raise Exception('calc_mode is None')
+        elif not isinstance(vp.calc_mode, (tuple, list)):
+            vp.calc_mode = [vp.calc_mode]
+        vp.calc_mode = [RadioCalcType[x] if isinstance(x, str) else x for x in vp.calc_mode]
 
-        backend_requires_projected_ds = backend != ViewshedBackend.rfmodel
+        backend_requires_projected_ds = backend.requires_projected_ds()
 
         if input_raster_is_projected:
             transform_coords_to_raster = projdef.get_transform(in_coords_srs, pjstr_input_srs)
@@ -595,7 +606,9 @@ def los_calc(
     o_points, t_points = gdalos_base.make_pairs(o_points, t_points, vp.ot_fill)
     vp.oxy = list(o_points)
     vp.txy = list(t_points)
-
+    output_names = [x.name for x in vp.calc_mode]
+    res = collections.OrderedDict()
+    res['backend'] = backend.name
     if backend == ViewshedBackend.rfmodel:
         from rfmodel.rfmodel import calc_path_loss_lonlat_multi
         from tirem.tirem3 import calc_tirem_loss
@@ -603,8 +616,6 @@ def los_calc(
         inputs = vp.get_as_rfmodel_params(del_s=del_s)
         output_arrays = calc_path_loss_lonlat_multi(calc_tirem_loss, input_ds, **inputs)
 
-        res = collections.OrderedDict()
-        output_names = vp.mode
         mode_map = dict(PathLoss=1, FreeSpaceLoss=2)
         for idx, name in enumerate(output_names):
             res[name] = output_arrays[mode_map[name]]
@@ -640,36 +651,32 @@ def los_calc(
             if hasattr(talos, 'GS_SetCalcModule'):
                 talos.GS_SetCalcModule(vp.get_calc_module())
             radio_params = vp.get_radio_as_talos_params()
-            if radio_params is not None and not hasattr(talos, 'GS_SetRadioParameters'):
-                raise Exception('This version does not support radio')
+            if radio_params:
+                if not hasattr(talos, 'GS_SetRadioParameters'):
+                    raise Exception('This version does not support radio')
 
-            dict_of_selected_items(radio_params, index=0)
-            # multi_radio_params = dict_of_selected_items(radio_params, check_only=True)
-            multi_radio_params = dict_of_reduce_if_same(radio_params)
-            if multi_radio_params:
-                # raise Exception('unsupported multiple radio parameters')
+                # multi_radio_params = dict_of_reduce_if_same(radio_params)
+                # if multi_radio_params:
+                #     # raise Exception('unsupported multiple radio parameters')
+                #     talos.GS_SetRadioParameters(**radio_params)
+                #     result = talos.GS_Radio_Calc(**inputs)
+                # else:
                 dict_of_selected_items(radio_params, index=0)
                 talos.GS_SetRadioParameters(**radio_params)
-                result = talos.GS_Radio_Calc(**inputs)
-            else:
-                if radio_params:
-                    talos.GS_SetRadioParameters(**radio_params)
-                result = talos.GS_Radio_Calc(**inputs)
+
+            result = talos.GS_Radio_Calc(**inputs)
             if result:
                 raise Exception('talos calc error')
 
         input_names = ['ox', 'oy', 'oz', 'tx', 'ty', 'tz']
-        # input_names = ['ox', 'oy', 'tx', 'ty']
 
-        output_names = vp.mode
         output_arrays = inputs['AIO_re']
         output_arrays = [output_arrays[i] for i in range(len(output_arrays))]
 
-        res = collections.OrderedDict()
         for name in input_names:
             res[name] = inputs[f'AIO_{name}']
         for idx, name in enumerate(output_names):
-            res[vp.mode[idx]] = output_arrays[idx]
+            res[name] = output_arrays[idx]
     else:
         raise Exception('unknown or unsupported backend {}'.format(backend))
 

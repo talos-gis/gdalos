@@ -27,7 +27,7 @@ atmospheric_refraction_coeff = 1/7
 
 class LOSParams(object):
     __slots__ = ['ox', 'oy', 'oz', 'tz', 'omsl', 'tmsl',
-                 'refraction_coeff', 'mode', 'radio_parameters', 'xy_fill', 'ot_fill']
+                 'refraction_coeff', 'calc_mode', 'radio_parameters', 'xy_fill', 'ot_fill']
 
     def __init__(self):
         self.ox = None
@@ -38,7 +38,7 @@ class LOSParams(object):
         self.tmsl = False  # target MSL
 
         self.refraction_coeff = atmospheric_refraction_coeff
-        self.mode = None
+        self.calc_mode = None
         self.radio_parameters = None
         self.xy_fill = FillMode.zip_cycle
         self.ot_fill = FillMode.zip_cycle
@@ -102,6 +102,10 @@ class LOSParams(object):
         if self.radio_parameters is None:
             return None
         d = self.radio_parameters.get_dict()
+        calc_mode = self.calc_mode
+        if isinstance(calc_mode, str):
+            calc_mode = RadioCalcType[calc_mode]
+        d['calc_type'] = calc_mode
         dict_of_selected_items(d, index)
         return d
 
@@ -144,7 +148,6 @@ class MultiPointParams(LOSParams):
         super(MultiPointParams, self).__init__()
         self.tx = None
         self.ty = None
-        self.mode = None
         self.results = None
 
     def make_xy_lists(self):
@@ -166,26 +169,27 @@ class MultiPointParams(LOSParams):
         input_names = ['ox', 'oy', 'oz', 'tx', 'ty', 'tz']
         vp_params = \
             ['omsl', 'tmsl'] + \
-            ['mode'] + \
+            ['calc_mode'] + \
             input_names + \
             ['results']
         vector_dtype = np.float32
-        mode_data_type = np.int32
+        calc_mode_data_type = np.int32
         scalar_names = ['ObsMSL', 'TarMSL']
-        mode_vector_name = 'A_mode'
-        result_vector_name = 'AIO_re'
+        calc_mode_vector_name = 'A_mode'
+        result_vector_name = 'AIO_re'  # this vector holds enum values of the requested results
         input_vector_names = [f'AIO_{x}' for x in input_names]
         io_vector_names = input_vector_names + [result_vector_name]
         vector_names = {
-            mode_data_type: [mode_vector_name],
+            calc_mode_data_type: [calc_mode_vector_name],
             vector_dtype: io_vector_names,
         }
 
         talos_params = \
             scalar_names + \
-            vector_names[mode_data_type] + \
+            vector_names[calc_mode_data_type] + \
             vector_names[vector_dtype]
 
+        # create a dict that map input param names to the respectable values in self
         d = {k1: getattr(self, k0) for k0, k1 in
              zip(vp_params, talos_params)}
 
@@ -193,11 +197,8 @@ class MultiPointParams(LOSParams):
             if isinstance(d[name], Sequence):
                 d[name] = d[name][0]
 
-        if d[mode_vector_name] is None:
-            d[mode_vector_name] = np.array([RadioCalcType.PathLoss], dtype=mode_data_type)
-        elif not isinstance(d[mode_vector_name], np.ndarray):
-            if isinstance(d[mode_vector_name], (tuple, list)):
-                d[mode_vector_name] = [RadioCalcType[x] for x in d[mode_vector_name]]
+        if d[calc_mode_vector_name] is None:
+            raise Exception('Calc mode is None')
 
         for data_type, names in vector_names.items():
             for x in names:
@@ -205,10 +206,10 @@ class MultiPointParams(LOSParams):
                 if arr is not None and not isinstance(arr, np.ndarray):
                     d[x] = np.array(list(arr), dtype=data_type)
 
-        mode_len = len(d[mode_vector_name])
+        calc_mode_len = len(d[calc_mode_vector_name])
         input_dim = len(input_vector_names)
         res_len = max(len(d[x]) for x in input_vector_names)
-        min_res_shape = (mode_len, res_len)
+        min_res_shape = (calc_mode_len, res_len)
 
         res_vec = d[result_vector_name]
         res_shape = None if res_vec is None else res_vec.shape
@@ -277,7 +278,7 @@ class ViewshedParams(LOSParams):
     def get_as_gdal_params(self):
         vp_params = \
             'max_r', 'ox', 'oy', 'oz', 'tz', \
-            'vv', 'iv', 'ov', 'ndv', 'mode'
+            'vv', 'iv', 'ov', 'ndv', 'calc_mode'
 
         gdal_params = \
             'maxDistance', 'observerX', 'observerY', 'observerHeight', 'targetHeight', \
@@ -323,19 +324,8 @@ class ViewshedParams(LOSParams):
         return d
 
 
-# gdal_viewshed_params_short = \
-#     'max_r', 'ox', 'oy', 'oz', 'tz', \
-#     'vv', 'iv', 'ov', 'ndv', 'mode',
-#
-# gdal_viewshed_params_full = \
-#     'maxDistance', 'observerX', 'observerY', 'observerHeight', 'targetHeight', \
-#     'visibleVal', 'invisibleVal', 'outOfRangeVal', 'noDataVal', 'mode'
-# gdal_viewshed_keymap = dict(zip(gdal_viewshed_params_short, gdal_viewshed_params_full))
-
 viewshed_defaults = dict(vv=viewshed_visible,
                          iv=viewshed_invisible,
                          ov=viewshed_out_of_range,
                          ndv=viewshed_ndv,
                          )
-
-# gdal_viewshed_defaults = dict_util.replace_keys(viewshed_defaults,  gdal_viewshed_keymap)

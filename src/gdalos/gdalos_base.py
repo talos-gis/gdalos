@@ -112,16 +112,16 @@ class FillMode(IntEnum):
     product = auto()
 
 
-def make_points_list(x_arr, y_arr, mode: FillMode):
-    if isinstance(mode, (tuple, list)):
-        mode = mode[0]
-    if isinstance(mode, str):
-        mode = FillMode[mode]
+def make_points_list(x_arr, y_arr, fill_mode: FillMode):
+    if isinstance(fill_mode, (tuple, list)):
+        fill_mode = fill_mode[0]
+    if isinstance(fill_mode, str):
+        fill_mode = FillMode[fill_mode]
     if not isinstance(x_arr, Sequence):
         return x_arr, y_arr
-    elif mode != FillMode.product:
+    elif fill_mode != FillMode.product:
         # return a zip of the arrays, if are of different and do_cycle then complete the other list by cycling
-        if len(x_arr) == len(y_arr) or (mode != FillMode.zip_cycle):
+        if len(x_arr) == len(y_arr) or (fill_mode != FillMode.zip_cycle):
             return list(zip(x_arr, y_arr))
         elif len(x_arr) > len(y_arr):
             return list(zip(x_arr, cycle(y_arr)))
