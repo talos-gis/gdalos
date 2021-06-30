@@ -28,7 +28,7 @@
 #  DEALINGS IN THE SOFTWARE.
 # ******************************************************************************
 
-import math
+import numpy as np
 from numbers import Real
 
 from typing import List, Tuple, Optional
@@ -36,6 +36,7 @@ from typing import List, Tuple, Optional
 from gdalos.talos.gen_consts import M_PI_180
 from osgeo_utils.auxiliary.base import Real2D
 from osgeo_utils.auxiliary.osr_util import AnySRS, get_srs
+from pyproj import Proj
 
 
 def get_utm_zone_center(float_zone: Real) -> Real:
@@ -51,7 +52,7 @@ def get_utm_zone_by_lon(lon_degrees: Real, allow_float_zone: bool = False) -> Re
     if allow_float_zone:
         return lon_degrees / 6 + 30.5
     else:
-        zone = math.floor(lon_degrees / 6) + 31
+        zone = np.floor(lon_degrees / 6) + 31
         if zone > 60:
             zone = zone - 60  # Zones 1 - 30
         return zone
@@ -106,6 +107,13 @@ def get_zone_lon0(zone: float) -> float:
     zone_lon0 = ((zone - 31) * 6 + 3)
     return zone_lon0
 
-def utm_convergence(lon, lat: float, zone_lon0: float) -> float:
-    delta = ((lon - zone_lon0) * math.sin(lat * M_PI_180)) * M_PI_180
+
+def utm_convergence_old(lon, lat: float, zone_lon0: float) -> float:
+    delta = ((lon - zone_lon0) * np.sin(lat * M_PI_180)) * M_PI_180
     return delta
+
+
+def utm_convergence(lon, lat: float, zone_lon0: float) -> float:
+    p = Proj(proj='tmerc', k=0.9996, lon_0=zone_lon0, x_0=500000, ellps='WGS84', preserve_units=False)
+    factors = p.get_factors(longitude=lon, latitude=lat)
+    return factors.meridian_convergence
