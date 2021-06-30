@@ -1,11 +1,17 @@
+import math
+from itertools import cycle
 from typing import Sequence, Optional
 
 import numpy as np
-from osgeo import gdal
+from osgeo import gdal, osr
 
-from gdalos import gdalos_base
+from gdalos import gdalos_base, projdef
+from gdalos.backports.osr_utm_util import utm_convergence
 from gdalos.gdalos_base import make_points_list, make_xy_list, FillMode
+from gdalos.talos.gen_consts import M_PI_180
 from gdalos.viewshed.radio_params import RadioParams, RadioCalcType
+from osgeo_utils.auxiliary.util import open_ds
+from osgeo_utils.samples.gdallocationinfo import gdallocationinfo, LocationInfoSRS
 
 st_seen = 5
 st_seenbut = 4
@@ -28,6 +34,9 @@ atmospheric_refraction_coeff = 1/7
 class LOSParams(object):
     __slots__ = ['ox', 'oy', 'oz', 'tz', 'omsl', 'tmsl',
                  'refraction_coeff', 'calc_mode', 'radio_parameters', 'xy_fill', 'ot_fill']
+
+    _scalar_slots = ['omsl', 'tmsl', 'refraction_coeff']
+    _vector_slots = ['ox', 'oy', 'tx', 'ty', 'azimuth', 'elevation', 'max_r']
 
     def __init__(self):
         self.ox = None
@@ -61,11 +70,15 @@ class LOSParams(object):
         for k, v in d.items():
             setattr(self, k, v)
 
-    def make_xy_lists(self):
-        if not isinstance(self.ox, Sequence):
-            self.ox = [self.ox]
-        if not isinstance(self.oy, Sequence):
-            self.oy = [self.oy]
+    def fix_scalars_and_vectors(self):
+        for attr in self._scalar_slots:
+            a = getattr(self, attr)
+            if a is not None and isinstance(a, Sequence):
+                setattr(self, attr, a[0])
+        for attr in self._vector_slots:
+            a = getattr(self, attr)
+            if a is not None and not isinstance(a, Sequence):
+                setattr(self, attr, [a])
 
     @classmethod
     def get_list_from_lists_dict(cls, d: dict, key_map=None) -> Sequence['LOSParams']:
@@ -141,21 +154,42 @@ def dict_of_selected_items(d: dict, index: Optional[int] = None, check_only: boo
     return is_multi
 
 
-class MultiPointParams(LOSParams):
-    __slots__ = ('tx', 'ty', 'results')
+class LOSParams_with_angles(LOSParams):
+    __slots__ = ('azimuth', 'elevation', 'max_r', 'convergence')
+
+    _vector_slots = LOSParams._vector_slots + ['azimuth', 'elevation', 'max_r']
+
+    def __init__(self):
+        super(LOSParams_with_angles, self).__init__()
+        self.azimuth = None
+        self.elevation = None
+        self.max_r = None
+        self.convergence = 0
+
+    def get_grid_azimuth(self):
+        return self.azimuth - self.convergence
+
+
+class MultiPointParams(LOSParams_with_angles):
+    __slots__ = ('fwd', 'tx', 'ty', 'azimuth', 'elevation', 'max_r', 'results')
+
+    _scalar_slots = LOSParams_with_angles._scalar_slots + ['fwd']
+    _vector_slots = LOSParams_with_angles._vector_slots + ['tx', 'ty']
+
+    g = None
 
     def __init__(self):
         super(MultiPointParams, self).__init__()
+        self.fwd = None  # is fwd calculation True/False/None (yes/no/auto)
+        # for inv calculation
         self.tx = None
         self.ty = None
+        # for fwd calculation
+
         self.results = None
 
-    def make_xy_lists(self):
-        super(MultiPointParams, self).make_xy_lists()
-        if not isinstance(self.tx, Sequence):
-            self.tx = [self.tx]
-        if not isinstance(self.ty, Sequence):
-            self.ty = [self.ty]
+    def is_fwd(self):
+        return self.fwd if (self.fwd is not None) else (self.tx is None)
 
     @property
     def txy(self):
@@ -164,6 +198,32 @@ class MultiPointParams(LOSParams):
     @txy.setter
     def txy(self, txy):
         self.tx, self.ty = make_xy_list(txy)
+
+    def calc_fwd(self, filename_or_ds, ovr_idx):
+        self.ox = np.array(self.ox, dtype=np.float32)
+        self.oy = np.array(self.oy, dtype=np.float32)
+        abs_oz = np.array(self.oz, dtype=np.float32)
+        ds = open_ds(filename_or_ds)
+        az = np.array(self.get_grid_azimuth(), dtype=np.float32)
+        el = np.array(self.elevation, dtype=np.float32)
+        r = np.array(self.max_r, dtype=np.float32) if len(self.max_r) == len(el) else np.full_like(el, self.max_r[0])
+
+        a = (90 - az) * M_PI_180
+        e = el * M_PI_180
+        ground_r = r * np.cos(e)
+        self.tmsl = True
+        if not self.omsl:
+            _pixels, _lines, alts = gdallocationinfo(
+                ds, band_nums=1, x=self.ox, y=self.oy, srs=LocationInfoSRS.SameAsDS_SRS,
+                inline_xy_replacement=False, ovr_idx=ovr_idx,
+                axis_order=osr.OAMS_TRADITIONAL_GIS_ORDER)
+            abs_oz = abs_oz + alts
+
+        earth_d = 6378137.0 * 2
+        earth_curvature = (1-self.refraction_coeff) / earth_d
+        self.tz = abs_oz + r * np.sin(e) + ground_r*ground_r * earth_curvature
+        self.tx = self.ox + np.cos(a) * ground_r
+        self.ty = self.oy + np.sin(a) * ground_r
 
     def get_as_talos_params(self):
         input_names = ['ox', 'oy', 'oz', 'tx', 'ty', 'tz']
@@ -242,10 +302,10 @@ class MultiPointParams(LOSParams):
         return d
 
 
-class ViewshedParams(LOSParams):
-    __slots__ = ('max_r', 'min_r', 'min_r_shave', 'max_r_slant',
-                 'azimuth', 'h_aperture', 'elevation', 'v_aperture',
-                 'vv', 'iv', 'ov', 'ndv', 'out_res', 'convergence')
+class ViewshedParams(LOSParams_with_angles):
+    __slots__ = ('min_r', 'min_r_shave', 'max_r_slant',
+                 'h_aperture', 'v_aperture',
+                 'vv', 'iv', 'ov', 'ndv', 'out_res')
 
     def __init__(self):
         super().__init__()
@@ -266,11 +326,7 @@ class ViewshedParams(LOSParams):
         self.ov = viewshed_out_of_range
         self.ndv = viewshed_ndv
 
-        self.convergence = 0
         self.out_res = None
-
-    def get_grid_azimuth(self):
-        return self.azimuth - self.convergence
 
     def is_omni_h(self):
         return not self.h_aperture or abs(self.h_aperture - 360) < 0.0001

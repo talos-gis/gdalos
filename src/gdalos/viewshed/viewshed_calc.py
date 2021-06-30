@@ -474,7 +474,7 @@ def viewshed_calc_to_ds(
 
 
 def los_calc(
-        vp,
+        vp: MultiPointParams,
         input_filename: Union[gdal.Dataset, PathLikeOrStr, DataSetSelector],
         del_s: float,
         in_coords_srs=None, out_crs=None,
@@ -510,16 +510,19 @@ def los_calc(
     if isinstance(vp, dict):
         vp = MultiPointParams.get_object_from_lists_dict(vp)
     transform_coords_to_4326 = projdef.get_transform(in_coords_srs, pjstr_4326)
-    vp.make_xy_lists()
+    is_fwd = vp.is_fwd()
+    vp.fix_scalars_and_vectors()
     o_points = vp.oxy
-    t_points = vp.txy
+    t_points = None if is_fwd else vp.txy
     if transform_coords_to_4326:
         # todo: use TransformPoints
         geo_o = transform_coords_to_4326.TransformPoints(o_points)
-        geo_t = transform_coords_to_4326.TransformPoints(t_points)
+        if not is_fwd:
+            geo_t = transform_coords_to_4326.TransformPoints(t_points)
     else:
         geo_o = o_points
-        geo_t = t_points
+        if not is_fwd:
+            geo_t = t_points
 
     # select the ds
     if input_selector is not None:
@@ -534,15 +537,16 @@ def los_calc(
                 min_y = y
             if y > max_y:
                 max_y = y
-        for x, y in geo_t:
-            if x < min_x:
-                min_x = x
-            if x > max_x:
-                max_x = x
-            if y < min_y:
-                min_y = y
-            if y > max_y:
-                max_y = y
+        if not is_fwd:
+            for x, y in geo_t:
+                if x < min_x:
+                    min_x = x
+                if x > max_x:
+                    max_x = x
+                if y < min_y:
+                    min_y = y
+                if y > max_y:
+                    max_y = y
         input_filename, input_ds = input_selector.get_item_projected((min_x+max_x)/2, (min_y+max_y)/2)
         input_filename = Path(input_filename).resolve()
     if input_ds is None and not mock:
@@ -583,8 +587,15 @@ def los_calc(
             transform_coords_to_raster = projdef.get_transform(in_coords_srs, pjstr_input_srs)
             projected_filename = input_filename
             if transform_coords_to_raster:
+                if is_fwd:
+                    vp.ox = np.array(vp.ox, dtype=np.float32)
+                    vp.oy = np.array(vp.oy, dtype=np.float32)
+                    input_srs = projdef.get_srs(pjstr_input_srs)
+                    zone_lon0 = input_srs.GetProjParm('central_meridian')
+                    vp.convergence = utm_convergence(vp.ox, vp.oy, zone_lon0)
+                else:
+                    t_points = transform_coords_to_raster.TransformPoints(t_points)
                 o_points = transform_coords_to_raster.TransformPoints(o_points)
-                t_points = transform_coords_to_raster.TransformPoints(t_points)
         elif backend_requires_projected_ds:
             raise Exception(f'input raster has to be projected')
         else:
@@ -600,12 +611,14 @@ def los_calc(
             #     input_ds, out_filename=projected_filename, warp_srs=projected_pj,
             #     extent=extent, return_ds=True, write_info=False, write_spec=False)
             # if not projected_ds:
-            #     raise Exception('input raster projection faild')
+            #     raise Exception('input raster projection failed')
             # # input_ds = projected_ds
 
-    o_points, t_points = gdalos_base.make_pairs(o_points, t_points, vp.ot_fill)
+    if not is_fwd:
+        o_points, t_points = gdalos_base.make_pairs(o_points, t_points, vp.ot_fill)
     vp.oxy = list(o_points)
-    vp.txy = list(t_points)
+    if not is_fwd:
+        vp.txy = list(t_points)
     output_names = [x.name for x in vp.calc_mode]
     res = collections.OrderedDict()
     res['backend'] = backend.name
@@ -621,6 +634,9 @@ def los_calc(
             res[name] = output_arrays[mode_map[name]]
 
     elif backend == ViewshedBackend.talos:
+        ovr_idx = get_ovr_idx(projected_filename, ovr_idx)
+        if vp.is_fwd():
+            vp.calc_fwd(projected_filename, ovr_idx)
         inputs = vp.get_as_talos_params()
 
         if not mock:
@@ -639,14 +655,10 @@ def los_calc(
             if dtm_open_err != 0:
                 raise Exception('talos could not open input file {}'.format(projected_filename))
             talos.GS_SetProjectCRSFromActiveDTM()
-            ovr_idx = get_ovr_idx(projected_filename, ovr_idx)
             talos.GS_DtmSelectOvle(ovr_idx)
             talos.GS_DtmSetCalcThreadsCount(threads or 0)
 
-            refraction_coeff = vp.refraction_coeff
-            if isinstance(refraction_coeff, Sequence):
-                refraction_coeff = refraction_coeff[0]
-            talos.GS_SetRefractionCoeff(refraction_coeff)
+            talos.GS_SetRefractionCoeff(vp.refraction_coeff)
 
             if hasattr(talos, 'GS_SetCalcModule'):
                 talos.GS_SetCalcModule(vp.get_calc_module())
