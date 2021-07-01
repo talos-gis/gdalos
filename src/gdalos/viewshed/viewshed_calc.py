@@ -28,14 +28,12 @@ from gdalos.talos.geom_arc import PolygonizeSector
 from gdalos.talos.ogr_util import create_layer_from_geometries
 from gdalos.viewshed import viewshed_params
 from gdalos.viewshed.radio_params import RadioCalcType
+from gdalos.viewshed.talosgis_init import talos_module_init, talos_radio_init
 from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
-from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams, dict_of_selected_items, \
-    dict_of_reduce_if_same
+from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams, dict_of_selected_items
 from osgeo_utils.auxiliary.extent_util import Extent
 from osgeo_utils.auxiliary.util import get_ovr_idx
 from gdalos.backports.osr_utm_util import utm_convergence
-
-talos = None
 
 
 class ViewshedBackend(Enum):
@@ -279,17 +277,9 @@ def viewshed_calc_to_ds(
                 # is_temp_file = True  # output is file, not ds
                 if not projected_filename:
                     raise Exception('to use talos backend you need to provide an input filename')
-                # if 'talosgis.talos' not in sys.modules:
-                global talos
-                if talos is None:
-                    try:
-                        import talosgis
-                        from talosgis import talos
-                        from talosgis import talos_utils
-                        talos_utils.talos_init()
-                    except ImportError:
-                        raise Exception('failed to load talos backend')
 
+                from talosgis import talos
+                talos_module_init()
                 dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
                 talos.GS_SetProjectCRSFromActiveDTM()
                 ovr_idx = get_ovr_idx(projected_filename, ovr_idx)
@@ -307,8 +297,7 @@ def viewshed_calc_to_ds(
                 if hasattr(talos, 'GS_SetCalcModule'):
                     talos.GS_SetCalcModule(vp.get_calc_module())
                 if vp.is_radio():
-                    if not hasattr(talos, 'GS_SetRadioParameters'):
-                        raise Exception('This version does not support radio')
+                    talos_radio_init()
                     radio_params = vp.get_radio_as_talos_params(0)
                     talos.GS_SetRadioParameters(**radio_params)
 
@@ -642,15 +631,8 @@ def los_calc(
         if not mock:
             if not projected_filename:
                 raise Exception('to use talos backend you need to provide an input filename')
-            global talos
-            if talos is None:
-                try:
-                    import talosgis
-                    from talosgis import talos
-                    from talosgis import talos_utils
-                    talos_utils.talos_init()
-                except ImportError:
-                    raise Exception('failed to load talos backend')
+            from talosgis import talos
+            talos_module_init()
             dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
             if dtm_open_err != 0:
                 raise Exception('talos could not open input file {}'.format(projected_filename))
@@ -664,8 +646,7 @@ def los_calc(
                 talos.GS_SetCalcModule(vp.get_calc_module())
             radio_params = vp.get_radio_as_talos_params()
             if radio_params:
-                if not hasattr(talos, 'GS_SetRadioParameters'):
-                    raise Exception('This version does not support radio')
+                talos_radio_init()
 
                 # multi_radio_params = dict_of_reduce_if_same(radio_params)
                 # if multi_radio_params:
