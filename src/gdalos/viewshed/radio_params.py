@@ -9,6 +9,7 @@ class RadioCalcType(IntEnum):
     TerrainElev = 1
     ElevationAngleCalc = 2
     LOSRange = 3
+    LOSVisRes = 4
 
     FreeSpaceLoss = 10
     PathLoss = 11

@@ -18,6 +18,7 @@ from osgeo import gdal
 from gdalos import gdalos_base, gdalos_color, projdef, gdalos_util, gdalos_extent
 from gdalos.calc import gdal_calc, gdal_to_czml, gdalos_combine
 from gdalos.calc.discrete_mode import DiscreteMode
+from gdalos.calc.gdal_to_czml import polyline_to_czml
 from gdalos.calc.gdalos_raster_color import gdalos_raster_color
 from gdalos.gdalos_base import PathLikeOrStr
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
@@ -30,7 +31,7 @@ from gdalos.viewshed import viewshed_params
 from gdalos.viewshed.radio_params import RadioCalcType
 from gdalos.viewshed.talosgis_init import talos_module_init, talos_radio_init
 from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
-from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams, dict_of_selected_items
+from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams, dict_of_selected_items, st_seenbut
 from osgeo_utils.auxiliary.extent_util import Extent
 from osgeo_utils.auxiliary.util import get_ovr_idx
 from gdalos.backports.osr_utm_util import utm_convergence
@@ -61,6 +62,31 @@ class CalcOperation(Enum):
     count = 3
     count_z = 4
     unique = 5
+
+    @staticmethod
+    def get(operation: Union[int, str, 'CalcOperation']):
+        if not isinstance(operation, CalcOperation):
+            pass
+        try:
+            i = int(operation)
+            if i == 0:
+                operation = CalcOperation.viewshed
+            elif i == 1:
+                operation = CalcOperation.count
+            elif i == 2:
+                operation = CalcOperation.unique
+            operation = CalcOperation(i)
+        except ValueError:
+            try:
+                if isinstance(operation, str):
+                    operation = operation.lower()
+                if operation in ['gonogo', 'numberof']:
+                    operation = CalcOperation.count_z
+                else:
+                    operation = CalcOperation[operation]
+            except ValueError:
+                raise Exception(f'unknown operation requested {operation}')
+        return operation
 
 
 def temp_params(is_temp_file):
@@ -110,9 +136,9 @@ def viewshed_calc(output_filename, of='GTiff', **kwargs):
 def viewshed_calc_to_ds(
         vp_array,
         input_filename: Union[gdal.Dataset, PathLikeOrStr, DataSetSelector],
-        extent=Extent.UNION, cutline=None, operation: CalcOperation = CalcOperation.count,
+        extent=Extent.UNION, cutline=None, operation: Optional[CalcOperation] = CalcOperation.count,
         in_coords_srs=None, out_crs=None,
-        color_palette: ColorPaletteOrPathOrStrings = None,
+        color_palette: Optional[ColorPaletteOrPathOrStrings] = None,
         discrete_mode: DiscreteMode = DiscreteMode.interp,
         bi=1, ovr_idx=0, co=None, threads=0,
         vp_slice=None,
@@ -458,8 +484,31 @@ def viewshed_calc_to_ds(
     return ds
 
 
-# def mock_los_arr(rows=10, cols=6) -> np.ndarray:
-#     return np.arange(rows*cols).reshape((rows, cols))
+def poly_to_czml(res, points, alts, color_palette, output_filename):
+    color_palette = gdalos_color.get_color_palette(color_palette)
+    polys = []
+    colors = []
+    last_poly = []
+    last_res = res[0]
+    for r, p, z in zip(res, points, alts):
+        last_poly.append(p[0])
+        last_poly.append(p[1])
+        last_poly.append(z)
+        if last_res != r:
+            polys.append(last_poly)
+            last_poly = []
+            c = color_palette.pal[last_res]
+            colors.append(c)
+            last_res = r
+            last_poly.append(p[0])
+            last_poly.append(p[1])
+            last_poly.append(z)
+    if len(last_poly) > 3:
+        polys.append(last_poly)
+        c = color_palette.pal[last_res]
+        colors.append(c)
+    res = str(polyline_to_czml(polys, colors, output_filename))
+    return res
 
 
 def los_calc(
@@ -470,6 +519,7 @@ def los_calc(
         bi=1, ovr_idx=0, threads=0, of='xyz',
         backend: ViewshedBackend = None,
         output_filename=None,
+        operation: Optional[CalcOperation] = None, color_palette: Optional[ColorPaletteOrPathOrStrings] = None,
         mock=False):
     input_selector = None
     input_ds = None
@@ -503,6 +553,7 @@ def los_calc(
     vp.fix_scalars_and_vectors()
     o_points = vp.oxy
     t_points = None if is_fwd else vp.txy
+    obs_tar_shape = (len(o_points), 0 if not t_points else len(t_points))
     if transform_coords_to_4326:
         # todo: use TransformPoints
         geo_o = transform_coords_to_4326.TransformPoints(o_points)
@@ -670,6 +721,13 @@ def los_calc(
             res[name] = inputs[f'AIO_{name}']
         for idx, name in enumerate(output_names):
             res[name] = output_arrays[idx]
+        if 'LOSVisRes' in output_names and operation:
+            res = res['LOSVisRes']
+            los = res.reshape(obs_tar_shape)
+            res = los_operation(los, operation=operation)
+            if color_palette is not None:
+                alts = vp.tz  # todo: altitudes need to be absolute (above sea)
+                res = poly_to_czml(res, geo_t, alts, color_palette)
     else:
         raise Exception('unknown or unsupported backend {}'.format(backend))
 
@@ -726,6 +784,21 @@ def test_calcz(vp_array, raster_filename, dir_path,
                                   # vp_slice=slice(0, 2)
                                   )
 
+
+def los_operation(los: np.ndarray, operation: CalcOperation) -> np.ndarray:
+    is_count = operation != CalcOperation.unique
+    thresh = st_seenbut
+    if is_count:
+        vec = np.sum(los >= thresh, axis=0, dtype=np.uint8)
+    else:
+        hidden_val = 255
+        multi_val = 254
+        vec = np.full(los.shape[0], fill_value=hidden_val, dtype=np.uint8)
+        for i in range(los.shape[0]):
+            for j in range(los.shape[1]):
+                if los[i, j] >= thresh:
+                    vec[j] = i if vec[j] == hidden_val else multi_val
+    return vec
 
 def test_simple_viewshed(vp_array, raster_filename, dir_path, run_comb_with_post=False,
                          backends=reversed(ViewshedBackend), calc_filter=CalcOperation, **kwargs):
