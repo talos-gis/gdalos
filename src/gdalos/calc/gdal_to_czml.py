@@ -3,7 +3,7 @@ from czml3.properties import (
     Material,
     RectangleCoordinates,
     Rectangle,
-    ImageMaterial,
+    ImageMaterial, Polyline, PositionList, PolylineMaterial, SolidColorMaterial,
 )
 
 from osgeo import gdal
@@ -88,3 +88,29 @@ def make_czml_description(pal: ColorPalette, process_palette=2):
             return ' '.join([ColorPalette.format_number(x) for x in pal.pal.keys()])
     else:
         return None
+
+
+def polyline_to_czml(polys, colors, name=None, out_filename=None) -> Document:
+    czml_doc = Document(
+        [
+            Preamble(
+                name=name,
+            ),
+            *[Packet(
+                id=f"Line{i}",
+                name=f"polyline{i}",
+                polyline=Polyline(
+                    positions=PositionList(
+                        cartographicDegrees=poly
+                    ),
+                    material=PolylineMaterial(
+                        solidColor=SolidColorMaterial.from_list(list(ColorPalette.color_to_color_entry(color)))
+                    ),
+                ),
+            ) for i, (poly, color) in enumerate(zip(polys, colors))]
+        ]
+    )
+    if out_filename:
+        with open(str(out_filename), 'w') as f:
+            print(czml_doc, file=f)
+    return czml_doc
