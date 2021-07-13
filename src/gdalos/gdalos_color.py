@@ -1,5 +1,7 @@
+import glob
 import math
 from pathlib import Path
+from plistlib import Dict
 
 from osgeo_utils.auxiliary.base import num
 from osgeo_utils.auxiliary.color_palette import *  # noqa
@@ -62,6 +64,25 @@ def test_xml(dir_path):
         for filename in glob.glob(base.path_join(dir_path, '**', '*.' + ext)):
             pal, filename = xml_to_color_file(filename, type=ext)
             print(filename, pal)
+
+
+def read_color_palette_dict(color_palette: ColorPalette, d: Dict[str, str]):
+    # {
+    #     "0": "#FFff0000",
+    #     "1": "#FF00ff00",
+    #     "254": "#66000000",
+    #     "255": "#00000000"
+    # }
+    color_palette.pal.clear()
+    if "values" in d:
+        d = d["values"]
+    # nv = d.get('noDateValue')
+    for key, color in d.items():
+        if key != 'nv':
+            key = num(key)
+        if str(color).startswith('#'):
+            color = int(color[1:], 16)
+        color_palette.pal[key] = color
 
 
 if __name__ == "__main__":
