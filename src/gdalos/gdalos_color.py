@@ -1,7 +1,7 @@
 import glob
 import math
 from pathlib import Path
-from plistlib import Dict
+from typing import Dict
 
 from osgeo_utils.auxiliary.base import num
 from osgeo_utils.auxiliary.color_palette import *  # noqa
