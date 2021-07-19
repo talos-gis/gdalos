@@ -1,5 +1,6 @@
 from collections import Sequence
 from enum import IntEnum
+from typing import NamedTuple
 
 from gdalos import gdalos_base
 
@@ -24,21 +25,30 @@ class RadioPolarity(IntEnum):
     Vertical = 1
 
 
+class RadioBaseParams(NamedTuple):
+    refractivity: float
+    conductivity: float
+    permittivity: float
+    humidity: float
+
+
+DefaultRadioBaseParams = RadioBaseParams(refractivity=333.0, conductivity=3.0, permittivity=33.0, humidity=33.0)
+
+
 class RadioParams(object):
-    __slots__ = ('frequency', 'KFactor', 'polarity', #'calc_mode',
+    __slots__ = ('frequency', 'polarity', #'calc_mode',
                  'refractivity', 'conductivity', 'permittivity', 'humidity',
                  'power_diff', 'fill_center', 'profile_extension')
 
     def __init__(self):
-        self.frequency = 3333.0
-        self.KFactor = 0
+        self.frequency = None
         self.polarity = RadioPolarity.Horizontal
         # self.calc_mode = RadioCalcType.PathLoss
 
-        self.refractivity = 333.0
-        self.conductivity = 3.0
-        self.permittivity = 33.0
-        self.humidity = 33.0
+        self.refractivity = None
+        self.conductivity = None
+        self.permittivity = None
+        self.humidity = None
 
         self.power_diff = 100  # BroadcastPower - MinPower
         self.fill_center = True
