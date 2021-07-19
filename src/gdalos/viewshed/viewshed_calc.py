@@ -662,6 +662,8 @@ def los_calc(
     output_names = [x.name for x in vp.calc_mode]
     res = collections.OrderedDict()
     res['backend'] = backend.name
+    input_names = ['ox', 'oy', 'oz', 'tx', 'ty', 'tz']
+
     if backend == ViewshedBackend.rfmodel:
         from rfmodel.rfmodel import calc_path_loss_lonlat_multi
         from tirem.tirem3 import calc_tirem_loss
@@ -669,6 +671,8 @@ def los_calc(
         inputs = vp.get_as_rfmodel_params(del_s=del_s)
         output_arrays = calc_path_loss_lonlat_multi(calc_tirem_loss, input_ds, **inputs)
 
+        for name in input_names:
+            res[name] = getattr(vp, name)
         mode_map = dict(PathLoss=1, FreeSpaceLoss=2)
         for idx, name in enumerate(output_names):
             res[name] = output_arrays[mode_map[name]]
@@ -711,8 +715,6 @@ def los_calc(
             result = talos.GS_Radio_Calc(**inputs)
             if result:
                 raise Exception('talos calc error')
-
-        input_names = ['ox', 'oy', 'oz', 'tx', 'ty', 'tz']
 
         output_arrays = inputs['AIO_re']
         output_arrays = [output_arrays[i] for i in range(len(output_arrays))]
