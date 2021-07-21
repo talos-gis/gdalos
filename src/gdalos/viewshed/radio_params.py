@@ -1,8 +1,10 @@
 from collections import Sequence
 from enum import IntEnum
-from typing import NamedTuple
+from numbers import Real
+from typing import NamedTuple, Union, Tuple
 
 from gdalos import gdalos_base
+from osgeo_utils.auxiliary.base import SequenceNotString, MaybeSequence, num, num_or_none
 
 
 class RadioCalcType(IntEnum):
@@ -32,7 +34,7 @@ class RadioBaseParams(NamedTuple):
     humidity: float
 
 
-DefaultRadioBaseParams = RadioBaseParams(refractivity=333.0, conductivity=3.0, permittivity=33.0, humidity=33.0)
+DefaultRadioBaseParams = RadioBaseParams(refractivity=300.0, conductivity=0.03, permittivity=15.0, humidity=10.0)
 
 
 class RadioParams(object):
@@ -60,24 +62,47 @@ class RadioParams(object):
             if isinstance(val, Sequence):
                 setattr(self, attr, val[0])
 
-    def fix_polarization(self):
-        if isinstance(self.polarity, str):
-            p = self.polarity[0].lower()
-            self.polarity = \
-                RadioPolarity.Vertical if p in ['v', int(RadioPolarity.Vertical), bool(RadioPolarity.Vertical)] \
-                else RadioPolarity.Horizontal
-        return self.polarity
+    @staticmethod
+    def polar_deg(polarity: MaybeSequence[Union[str, bool, Real, RadioPolarity]]):
+        if isinstance(polarity, SequenceNotString.__args__):
+            return [RadioParams.polar_deg(p) for p in polarity]
+        if isinstance(polarity, (RadioPolarity, bool)):
+            return 90 if polarity else 0
+        if isinstance(polarity, str):
+            p = num_or_none(polarity)
+            if p is not None:
+                return p
+            p = polarity[0].lower()
+            return 90 if p in ['v', 't'] else 0
+        if not polarity:
+            return 0
+        return polarity
+
+    @staticmethod
+    def polar_hv(polarity: MaybeSequence[Union[str, Real, RadioPolarity]]):
+        if isinstance(polarity, SequenceNotString.__args__):
+            return [RadioParams.polar_hv(p) for p in polarity]
+        if isinstance(polarity, RadioPolarity):
+            return polarity
+        polarity = RadioParams.polar_deg(polarity)
+        return RadioPolarity.Vertical if polarity else RadioPolarity.Horizontal
+
+    def get_polarization_deg(self):
+        return self.polar_deg(self.polarity)
 
     def get_dict(self):
-        self.fix_polarization()
         d = gdalos_base.get_dict(self)
+        d['polarity'] = self.polar_hv(self.polarity)
         return d
 
-    def as_rfmodel_params(self):
-        self.fix_polarization()
+    def as_radiobase_params(self):
         return dict(
-            frequency=self.frequency, polarization=self.polarity,
             refractivity=self.refractivity, conductivity=self.conductivity,
             permittivity=self.permittivity, humidity=self.humidity)
 
+    def as_rfmodel_params(self):
+        return dict(
+            frequency=self.frequency, polarization=self.polar_hv(self.polarity),
+            refractivity=self.refractivity, conductivity=self.conductivity,
+            permittivity=self.permittivity, humidity=self.humidity)
 

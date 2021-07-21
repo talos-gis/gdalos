@@ -8,10 +8,12 @@ import tempfile
 import time
 from enum import Enum
 from functools import partial
+from itertools import cycle
 from pathlib import Path
-from typing import Union, Sequence, Optional
+from typing import Union, Sequence, Optional, List
 
 import numpy as np
+import requests
 
 from osgeo import gdal
 
@@ -24,6 +26,7 @@ from gdalos.gdalos_base import PathLikeOrStr
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
 from gdalos.gdalos_trans import gdalos_trans, workaround_warp_scale_bug
 from gdalos.gdalos_selector import get_projected_pj, DataSetSelector
+from gdalos.gdalos_types import MaybeSequence
 from gdalos.rectangle import GeoRectangle
 from gdalos.talos.geom_arc import PolygonizeSector
 from gdalos.talos.ogr_util import create_layer_from_geometries
@@ -35,6 +38,9 @@ from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams, di
 from osgeo_utils.auxiliary.extent_util import Extent
 from osgeo_utils.auxiliary.util import get_ovr_idx
 from gdalos.backports.osr_utm_util import utm_convergence
+from processes.pre_processors_utils import list_of_dict_to_dict_of_lists
+from pyproj.geod import Geod
+from rfmodel.geod.geod_profile import get_resolution_meters, g_wgs84
 
 
 class ViewshedBackend(Enum):
@@ -42,6 +48,7 @@ class ViewshedBackend(Enum):
     talos = 1
     radio = 2
     rfmodel = 3
+    z_rest = 4
     # radio = 2
     # t_radio = 3
     # z_radio = 4
@@ -484,7 +491,7 @@ def viewshed_calc_to_ds(
     return ds
 
 
-def poly_to_czml(res, points, alts, color_palette, output_filename):
+def poly_to_czml(res, points, alts, color_palette, output_filename=None):
     color_palette = gdalos_color.get_color_palette(color_palette)
     polys = []
     colors = []
@@ -511,6 +518,37 @@ def poly_to_czml(res, points, alts, color_palette, output_filename):
     return res
 
 
+def get_calc_slices(ox: Sequence, oy: Sequence, oz: Sequence) -> List[slice]:
+    points = zip(ox, oy, oz)
+    i0 = 0
+    p0 = (ox[0], oy[0], oz[0])
+    count = min(len(ox), len(oy), len(oz))
+    lst = []
+    for idx, p in enumerate(points):
+        if p != p0:
+            lst.append(slice(i0, idx))
+            p0 = p
+            i0 = idx
+    lst.append(slice(i0, count))
+    return lst
+
+
+def calc_dist(ox: Sequence[float], oy: Sequence[float], tx: Sequence[float], ty: Sequence[float], g: Optional[Geod] = None) -> Sequence[float]:
+    if g is None:
+        g = g_wgs84
+    _az12, _az21, dist = g.inv(ox, oy, tx, ty)
+    return dist
+
+
+def calc_free_space_loss(dist: Sequence[float], frequency: MaybeSequence[float]) -> np.array:
+    #     https://en.wikipedia.org/wiki/Free-space_path_loss
+    # For d,f in meters and megahertz respectively, the constant becomes -27.55.
+    dist = np.array(dist)
+    frequency = np.array(frequency) if isinstance(frequency, Sequence) else np.full_like(dist, fill_value=frequency)
+    fspl = 20 * (np.log10(dist) + np.log10(frequency)) - 27.55
+    return fspl
+
+
 def los_calc(
         vp: MultiPointParams,
         input_filename: Union[gdal.Dataset, PathLikeOrStr, DataSetSelector],
@@ -520,6 +558,7 @@ def los_calc(
         backend: ViewshedBackend = None,
         output_filename=None,
         operation: Optional[CalcOperation] = None, color_palette: Optional[ColorPaletteOrPathOrStrings] = None,
+        ext_url: Optional[str] = None,
         mock=False):
     input_selector = None
     input_ds = None
@@ -669,13 +708,85 @@ def los_calc(
         from tirem.tirem3 import calc_tirem_loss
 
         inputs = vp.get_as_rfmodel_params(del_s=del_s)
-        output_arrays = calc_path_loss_lonlat_multi(calc_tirem_loss, input_ds, **inputs)
+        float_res, bool_res = calc_path_loss_lonlat_multi(calc_tirem_loss, input_ds, **inputs)
 
         for name in input_names:
             res[name] = getattr(vp, name)
         mode_map = dict(PathLoss=1, FreeSpaceLoss=2)
         for idx, name in enumerate(output_names):
-            res[name] = output_arrays[mode_map[name]]
+            if name in mode_map:
+                res[name] = float_res[mode_map[name]]
+            else:
+                res[name] = bool_res
+
+    elif backend == ViewshedBackend.z_rest:
+        del_s = del_s or get_resolution_meters(input_ds)
+        ox, oy, oz = vp.ox, vp.oy, vp.oz
+        frequency = vp.radio_parameters.frequency
+        polarization = vp.radio_parameters.get_polarization_deg()
+
+        if not isinstance(ox, Sequence):
+            ox = [ox]
+        if not isinstance(oy, Sequence):
+            oy = [oy]
+        if not isinstance(oz, Sequence):
+            oz = [oz]
+        if not isinstance(frequency, Sequence):
+            frequency = [frequency]
+        if not isinstance(polarization, Sequence):
+            polarization = [polarization]
+
+        slices = get_calc_slices(ox, oy, oz)
+        k_factor = 1 / (1 - vp.refraction_coeff)
+
+        # res_tx = []
+        # res_ty = []
+        # res_tz = []
+        res_loss = []
+        res_los = []
+        res_freeloss = []
+
+        for slice in slices:
+            data = {
+                "kFactor": k_factor,
+                "samplingInterval": del_s,
+                "originPointWKTGeoWGS84": f"POINT({ox[slice.start]}, {oy[slice.start]})",
+                "isfeet1": False,
+                "fernelOrder": 0,
+                "originAntHeight": oz[slice.start],
+                "destPointsRows": [
+                    {
+                        "destPointWKTGeoWGS84": f"POINT({tx}, {ty})",
+                        "destAntHeight": tz,
+                        "isfeet": False,
+                        "frequencyMhz": f,
+                        "polarizationDeg": p,
+                        "rowId": idx+1
+                    } for idx, (tx, ty, tz, f, p) in
+                    enumerate(zip(vp.tx[slice], vp.ty[slice], vp.tz[slice],
+                                  cycle(frequency[slice]), cycle(polarization[slice])))
+                ]
+            }
+            data.update(vp.radio_parameters.as_radiobase_params())
+            response = requests.post(ext_url, json=data)
+            res = response.json()
+            res = res['operationResult']['pathLossTable']
+            res = list_of_dict_to_dict_of_lists(res)
+
+            # res_tx.extend(res['x'])
+            # res_ty.extend(res['y'])
+            # res_tz.extend(res['height'])
+
+            res_loss.extend(res['medianLoss'])
+            res_los.extend(res['isRFLOS'])
+
+            # note this distance is 2d, not taking into account the altitude difference
+            dist = calc_dist(ox[slice], oy[slice], vp.tx[slice], vp.ty[slice])
+            freeloss = calc_free_space_loss(dist, frequency[slice]).tolist()
+            res_freeloss.extend(freeloss)
+
+        res = {#'tx': res_tx, 'ty': res_ty, 'tz': res_tz,
+               'PathLoss': res_loss, 'FreeSpaceLoss': res_freeloss, 'LOSVisRes': res_los}
 
     elif backend == ViewshedBackend.talos:
         ovr_idx = get_ovr_idx(projected_filename, ovr_idx)
@@ -716,13 +827,13 @@ def los_calc(
             if result:
                 raise Exception('talos calc error')
 
-        output_arrays = inputs['AIO_re']
-        output_arrays = [output_arrays[i] for i in range(len(output_arrays))]
+        float_res = inputs['AIO_re']
+        float_res = [float_res[i] for i in range(len(float_res))]
 
         for name in input_names:
             res[name] = inputs[f'AIO_{name}']
         for idx, name in enumerate(output_names):
-            res[name] = output_arrays[idx]
+            res[name] = float_res[idx]
         if 'LOSVisRes' in output_names and operation:
             res = res['LOSVisRes']
             los = res.reshape(obs_tar_shape)

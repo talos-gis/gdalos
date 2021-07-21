@@ -29,6 +29,7 @@ viewshed_comb_ndv = 255
 viewshed_comb_multi_val = 254
 
 atmospheric_refraction_coeff = 1/7
+rf_refraction_coeff = 1/4
 
 
 class LOSParams(object):
@@ -101,7 +102,6 @@ class LOSParams(object):
         vp_obj = gdalos_base.get_object_from_lists_dict(d, cls(), key_map=key_map)
         if radio_d is not None:
             radio_obj = gdalos_base.get_object_from_lists_dict(radio_d, RadioParams(), key_map=key_map)
-            radio_obj.unsequence()
             vp_obj.radio_parameters = radio_obj
         return vp_obj
 
@@ -114,6 +114,7 @@ class LOSParams(object):
     def get_radio_as_talos_params(self, index: Optional[int] = None):
         if self.radio_parameters is None:
             return None
+        self.radio_parameters.unsequence()
         d = self.radio_parameters.get_dict()
         calc_mode = self.calc_mode
         if isinstance(calc_mode, str):
