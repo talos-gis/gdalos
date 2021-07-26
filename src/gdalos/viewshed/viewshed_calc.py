@@ -143,7 +143,8 @@ def viewshed_calc(output_filename, of='GTiff', **kwargs):
 def viewshed_calc_to_ds(
         vp_array,
         input_filename: Union[gdal.Dataset, PathLikeOrStr, DataSetSelector],
-        extent=Extent.UNION, cutline=None, operation: Optional[CalcOperation] = CalcOperation.count,
+        extent=Extent.UNION, cutline=None,
+        operation: Optional[CalcOperation] = CalcOperation.count, operation_hidendv=True,
         in_coords_srs=None, out_crs=None,
         color_palette: Optional[ColorPaletteOrPathOrStrings] = None,
         discrete_mode: DiscreteMode = DiscreteMode.interp,
@@ -442,16 +443,15 @@ def viewshed_calc_to_ds(
         calc_kwargs = dict(x=files)
         user_namespace = dict(f=f)
 
-        hide_nodata = True
-
         debug_time = 1
         t = time.time()
         for i in range(debug_time):
             is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
             ds = gdal_calc.Calc(
                 calc_expr, outfile=str(d_path), extent=extent, format=gdal_out_format,
-                color_table=color_table, hideNodata=hide_nodata, overwrite=True,
-                NoDataValue=no_data_value, user_namespace=user_namespace, **calc_kwargs)
+                color_table=color_table, overwrite=True,
+                NoDataValue=no_data_value, hideNoData=operation_hidendv,
+                user_namespace=user_namespace, **calc_kwargs)
         t = time.time() - t
         print('time for calc: {:.3f} seconds'.format(t))
 
