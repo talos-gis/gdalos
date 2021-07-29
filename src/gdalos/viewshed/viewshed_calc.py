@@ -170,7 +170,6 @@ def viewshed_calc_to_ds(
     is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
 
     color_palette = gdalos_color.get_color_palette(color_palette)
-    color_table = gdalos_color.get_color_table(color_palette)
     if operation == CalcOperation.viewshed:
         operation = None
 
@@ -344,7 +343,7 @@ def viewshed_calc_to_ds(
                 if ras is None:
                     raise Exception(f'fail to calc viewshed: {inputs}')
 
-                do_post_color = color_table and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
+                do_post_color = color_palette and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
 
                 # talos supports only file output (not ds)
                 is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
@@ -367,9 +366,15 @@ def viewshed_calc_to_ds(
                 bnd.SetNoDataValue(base_calc_ndv)
             else:
                 base_calc_ndv = bnd.GetNoDataValue()
-            if color_table and not do_post_color:
+            if color_palette and not do_post_color:
                 if bnd_type != bnd.DataType:
                     raise Exception('Unexpected band type, expected: {}, got {}'.format(bnd_type, bnd.DataType))
+                if not color_palette.is_numeric():
+                    min_max = bnd.ComputeRasterMinMax()
+                    color_palette.apply_percent(*min_max)
+                color_table = gdalos_color.get_color_table(color_palette)
+                if color_table is None:
+                    raise Exception('Could not create color table')
                 bnd.SetRasterColorTable(color_table)
                 bnd.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
             bnd = None
@@ -554,7 +559,7 @@ def los_calc(
         input_filename: Union[gdal.Dataset, PathLikeOrStr, DataSetSelector],
         del_s: float,
         in_coords_srs=None, out_crs=None,
-        bi=1, ovr_idx=0, threads=0, of='xyz',
+        bi=1, ovr_idx=0, threads=0, of=None,
         backend: ViewshedBackend = None,
         output_filename=None,
         operation: Optional[CalcOperation] = None, color_palette: Optional[ColorPaletteOrPathOrStrings] = None,
@@ -849,7 +854,7 @@ def los_calc(
     elif output_filename is not None:
         os.makedirs(os.path.dirname(str(output_filename)), exist_ok=True)
         output_filename = Path(output_filename)
-        if of == 'json':
+        if of != 'xyz':
             res['r'] = [input_filename]
             with open(output_filename, 'w') as outfile:
                 json_dump = {k: v.tolist() if isinstance(v, np.ndarray) else str(v) for k, v in res.items()}
