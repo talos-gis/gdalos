@@ -2,7 +2,7 @@ from osgeo.osr import OAMS_TRADITIONAL_GIS_ORDER
 from osgeo_utils.auxiliary.osr_util import set_default_axis_order
 set_default_axis_order(OAMS_TRADITIONAL_GIS_ORDER)
 
-version = (0, 60, 3)
+version = (0, 60, 4)
 
 __package_name__ = "gdalos"
 __version__ = '.'.join(str(v) for v in version)
