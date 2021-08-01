@@ -81,8 +81,8 @@ def make_czml_description(pal: ColorPalette, process_palette=2):
         if process_palette >= 2:
             # number:color
             return ' '.join(['{}:{}'.format(
-                ColorPalette.format_number(x),
-                ColorPalette.format_color(c)) for x, c in pal.pal.items()])
+                ColorPalette.format_number(key),
+                ColorPalette.format_color(pal.get_color(key))) for key in pal.get_all_keys()])
         else:
             # numbers
             return ' '.join([ColorPalette.format_number(x) for x in pal.pal.keys()])
