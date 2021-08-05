@@ -13,6 +13,9 @@ class RadioCalcType(IntEnum):
     ElevationAngleCalc = 2
     LOSRange = 3
     LOSVisRes = 4
+    LOSObsX = 5
+    LOSObsY = 6
+    LOSObsZ = 7
 
     FreeSpaceLoss = 10
     PathLoss = 11

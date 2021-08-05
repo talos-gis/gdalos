@@ -10,7 +10,7 @@ from enum import Enum
 from functools import partial
 from itertools import cycle
 from pathlib import Path
-from typing import Union, Sequence, Optional, List
+from typing import Union, Sequence, Optional, List, OrderedDict
 
 import numpy as np
 import requests
@@ -170,6 +170,7 @@ def viewshed_calc_to_ds(
     is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
 
     color_palette = gdalos_color.get_color_palette(color_palette)
+    color_table = None
     if operation == CalcOperation.viewshed:
         operation = None
 
@@ -496,12 +497,25 @@ def viewshed_calc_to_ds(
     return ds
 
 
+def ordered_dict_get(d: OrderedDict, key):
+    if key in d:
+        return d[key]
+    else:
+        # return the val with the biggest key that is smaller then the given `key`
+        val = None
+        for k, v in d.items():
+            if k < key:
+                val = v
+        return val
+
+
 def poly_to_czml(res, points, alts, color_palette, output_filename=None):
     color_palette = gdalos_color.get_color_palette(color_palette)
     polys = []
     colors = []
     last_poly = []
     last_res = res[0]
+    pal = color_palette.pal
     for r, p, z in zip(res, points, alts):
         last_poly.append(p[0])
         last_poly.append(p[1])
@@ -509,7 +523,7 @@ def poly_to_czml(res, points, alts, color_palette, output_filename=None):
         if last_res != r:
             polys.append(last_poly)
             last_poly = []
-            c = color_palette.pal[last_res]
+            c = ordered_dict_get(pal, last_res)
             colors.append(c)
             last_res = r
             last_poly.append(p[0])
@@ -517,7 +531,7 @@ def poly_to_czml(res, points, alts, color_palette, output_filename=None):
             last_poly.append(z)
     if len(last_poly) > 3:
         polys.append(last_poly)
-        c = color_palette.pal[last_res]
+        c = ordered_dict_get(pal, last_res)
         colors.append(c)
     res = str(polyline_to_czml(polys, colors, output_filename))
     return res

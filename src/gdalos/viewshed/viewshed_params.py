@@ -352,7 +352,7 @@ class ViewshedParams(LOSParams_with_angles):
         return d
 
     def get_result_dt(self):
-        return gdal.GDT_Int16 if self.is_radio() or self.is_calc_oz() or self.is_calc_tz() else gdal.GDT_Byte
+        return gdal.GDT_Int16 if (self.is_radio() or self.is_calc_oz() or self.is_calc_tz()) else gdal.GDT_Byte
 
     def get_as_talos_params(self) -> dict:
         vp_params = \
