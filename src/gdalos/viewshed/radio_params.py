@@ -13,9 +13,6 @@ class RadioCalcType(IntEnum):
     ElevationAngleCalc = 2
     LOSRange = 3
     LOSVisRes = 4
-    LOSObsX = 5
-    LOSObsY = 6
-    LOSObsZ = 7
 
     FreeSpaceLoss = 10
     PathLoss = 11
@@ -23,6 +20,21 @@ class RadioCalcType(IntEnum):
     PowerReminder = 13
     Clearance = 14
     Mode = 15
+
+    ox = 20
+    oy = 21
+    oz = 22
+
+    tx = 23
+    ty = 24
+    tz = 25
+
+    bx = 26
+    by = 27
+    bz = 28
+
+    oz_abs = 29
+    tz_abs = 30
 
 
 class RadioPolarity(IntEnum):
