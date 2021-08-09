@@ -22,7 +22,7 @@ from gdalos.calc import gdal_calc, gdal_to_czml, gdalos_combine
 from gdalos.calc.discrete_mode import DiscreteMode
 from gdalos.calc.gdal_to_czml import polyline_to_czml
 from gdalos.calc.gdalos_raster_color import gdalos_raster_color
-from gdalos.gdalos_base import PathLikeOrStr
+from gdalos.gdalos_base import PathLikeOrStr, make_points_list, make_xy_list, FillMode
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
 from gdalos.gdalos_trans import gdalos_trans, workaround_warp_scale_bug
 from gdalos.gdalos_selector import get_projected_pj, DataSetSelector
@@ -42,6 +42,8 @@ from processes.pre_processors_utils import list_of_dict_to_dict_of_lists
 from pyproj.geod import Geod
 from rfmodel.geod.geod_profile import get_resolution_meters, g_wgs84
 
+from pyproj.transformer import Transformer
+from pyproj.enums import TransformDirection
 
 class ViewshedBackend(Enum):
     gdal = 0
@@ -612,6 +614,7 @@ def los_calc(
     o_points = vp.oxy
     t_points = None if is_fwd else vp.txy
     obs_tar_shape = (len(o_points), 0 if not t_points else len(t_points))
+    geo_t = None
     if transform_coords_to_4326:
         # todo: use TransformPoints
         geo_o = transform_coords_to_4326.TransformPoints(o_points)
@@ -820,7 +823,7 @@ def los_calc(
             talos_module_init()
             dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
             if dtm_open_err != 0:
-                raise Exception('talos could not open input file {}'.format(projected_filename))
+                raise Exception(f'talos could not open input file {projected_filename}')
             talos.GS_SetProjectCRSFromActiveDTM()
             talos.GS_DtmSelectOvle(ovr_idx)
             talos.GS_DtmSetCalcThreadsCount(threads or 0)
@@ -851,8 +854,26 @@ def los_calc(
 
         for name in input_names:
             res[name] = inputs[f'AIO_{name}']
+
         for idx, name in enumerate(output_names):
             res[name] = float_res[idx]
+
+        if not is_fwd:
+            geo_o, geo_t = gdalos_base.make_pairs(geo_o, geo_t, vp.ot_fill)
+        vp.oxy = list(geo_o)
+        res['ox'] = vp.ox
+        res['oy'] = vp.oy
+        if not is_fwd:
+            vp.txy = list(geo_t)
+            res['tx'] = vp.tx
+            res['ty'] = vp.ty
+
+        # transform block point from projected to 4326
+        transformer = Transformer.from_crs(in_coords_srs, pjstr_input_srs, always_xy=True)
+        if any(b in output_names for b in ['bx', 'by']):
+            res['bx'], res['by'] = transformer.transform(xx=res['bx'], yy=res['by'],
+                                                         direction=TransformDirection.INVERSE)
+
         if 'LOSVisRes' in output_names and operation:
             res = res['LOSVisRes']
             los = res.reshape(obs_tar_shape)
