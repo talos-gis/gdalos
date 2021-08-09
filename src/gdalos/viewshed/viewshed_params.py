@@ -59,6 +59,9 @@ class LOSParams(object):
     def is_calc_tz(self):
         return self.tz is None
 
+    def get_k_factor(self):
+        return 1 / (1 - self.refraction_coeff)
+
     @property
     def oxy(self):
         return make_points_list(self.ox, self.oy, self.xy_fill)
@@ -119,6 +122,7 @@ class LOSParams(object):
         calc_mode = self.calc_mode
         if isinstance(calc_mode, str):
             calc_mode = RadioCalcType[calc_mode]
+        d['KFactor'] = self.get_k_factor()
         d['calc_type'] = calc_mode
         dict_of_selected_items(d, index)
         return d

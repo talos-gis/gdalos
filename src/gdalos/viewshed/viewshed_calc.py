@@ -756,7 +756,7 @@ def los_calc(
             polarization = [polarization]
 
         slices = get_calc_slices(ox, oy, oz)
-        k_factor = 1 / (1 - vp.refraction_coeff)
+        k_factor = vp.get_k_factor()
 
         # res_tx = []
         # res_ty = []
