@@ -1,1 +1,1 @@
-@python -m gdalos_qt
+@python -m gdalos_qt %*
