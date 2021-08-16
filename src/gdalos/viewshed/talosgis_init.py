@@ -1,8 +1,10 @@
 
 def talos_module_init():
-    from talosgis import talos_utils
+    from talosgis import talos_utils, __version__
     try:
         talos_utils.talos_init()
+        talosgis_version = tuple(int(s) for s in str(__version__).split('.') if s.isdigit())[:3]
+        return talosgis_version
     except ImportError:
         raise Exception('failed to load talos backend')
 

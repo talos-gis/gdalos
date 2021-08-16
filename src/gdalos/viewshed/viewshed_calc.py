@@ -10,17 +10,18 @@ from enum import Enum
 from functools import partial
 from itertools import cycle
 from pathlib import Path
-from typing import Union, Sequence, Optional, List, OrderedDict
+from typing import Union, Sequence, Optional, List, OrderedDict, Tuple
 
 import numpy as np
 import requests
 
-from osgeo import gdal
+from osgeo import gdal, ogr, osr
 
 from gdalos import gdalos_base, gdalos_color, projdef, gdalos_util, gdalos_extent
 from gdalos.calc import gdal_calc, gdal_to_czml, gdalos_combine
 from gdalos.calc.discrete_mode import DiscreteMode
 from gdalos.calc.gdal_to_czml import polyline_to_czml
+from gdalos.calc.gdal_to_json import gdal_to_json
 from gdalos.calc.gdalos_raster_color import gdalos_raster_color
 from gdalos.gdalos_base import PathLikeOrStr, make_points_list, make_xy_list, FillMode
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
@@ -36,6 +37,7 @@ from gdalos.viewshed.talosgis_init import talos_module_init, talos_radio_init
 from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
 from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams, dict_of_selected_items, st_seenbut
 from osgeo_utils.auxiliary.extent_util import Extent
+from osgeo_utils.auxiliary.osr_util import get_srs, AnySRS
 from osgeo_utils.auxiliary.util import get_ovr_idx
 from gdalos.backports.osr_utm_util import utm_convergence
 from processes.pre_processors_utils import list_of_dict_to_dict_of_lists
@@ -115,21 +117,28 @@ def make_slice(slicer):
 
 
 def viewshed_calc(output_filename, of='GTiff', **kwargs):
-    output_filename = Path(output_filename)
+    output_filename = Path(output_filename) if output_filename else None
     # ext = output_filename.suffix
+    of = of.lower()
     ext = gdalos_util.get_ext_by_of(of)
     if output_filename:
         os.makedirs(os.path.dirname(str(output_filename)), exist_ok=True)
     is_czml = ext == '.czml'
+    is_json = ext == '.json'
     if is_czml:
-        kwargs['out_crs'] = 0  # czml supprts only 4326
+        kwargs['out_crs'] = 0  # czml supports only 4326
     temp_files = []
     ds = viewshed_calc_to_ds(**kwargs, temp_files=temp_files)
     if not ds:
         raise Exception('error occurred')
     if is_czml:
-        ds = gdal_to_czml.gdal_to_czml(ds, name=str(output_filename), out_filename=output_filename)
-    elif of.upper() != 'MEM':
+        ds = gdal_to_czml.gdal_to_czml(ds, name=output_filename, out_filename=output_filename)
+    elif is_json:
+        ds = gdal_to_json(ds)
+        if output_filename:
+            with open(output_filename, 'w') as outfile:
+                json.dump(ds, outfile, indent=1)
+    elif of != 'mem':
         driver = gdal.GetDriverByName(of)
         ds = driver.CreateCopy(str(output_filename), ds)
 
@@ -142,10 +151,42 @@ def viewshed_calc(output_filename, of='GTiff', **kwargs):
     return ds
 
 
+def polygon_to_np(filename: PathLikeOrStr,
+                  transform: Optional[osr.CoordinateTransformation] = None) -> Tuple[np.ndarray, np.ndarray]:
+    ds = ogr.Open(str(filename))
+    layer1 = ds.GetLayer(0)
+    count = 0
+    for feat in layer1:
+        geom = feat.GetGeometryRef()
+        ring = geom.GetGeometryRef(0)
+        count += ring.GetPointCount()
+
+    polys = len(layer1)
+    vertex_count = np.empty(polys, dtype=np.int32)
+    xys = np.empty(count*2, dtype=np.float32)
+
+    i = 0
+    vc = 0
+    for feat in layer1:
+        geom = feat.GetGeometryRef()
+        ring = geom.GetGeometryRef(0)
+        points = ring.GetPointCount()
+        vertex_count[vc] = points
+        vc += 1
+        for p in range(points):
+            x, y, z = ring.GetPoint(p)
+            if transform:
+                x, y, z = transform.TransformPoint(x, y, z)
+            xys[i] = x
+            xys[i + 1] = y
+            i += 2
+    return vertex_count, xys
+
+
 def viewshed_calc_to_ds(
         vp_array,
         input_filename: Union[gdal.Dataset, PathLikeOrStr, DataSetSelector],
-        extent=Extent.UNION, cutline=None,
+        extent=Extent.UNION, cutline=None, calc_cutline: bool = True,
         operation: Optional[CalcOperation] = CalcOperation.count, operation_hidendv=True,
         in_coords_srs=None, out_crs=None,
         color_palette: Optional[ColorPaletteOrPathOrStrings] = None,
@@ -157,6 +198,7 @@ def viewshed_calc_to_ds(
         files=None):
     input_selector = None
     input_ds = None
+    calc_cutline = None if not calc_cutline else cutline if isinstance(calc_cutline, bool) else calc_cutline
     if isinstance(input_filename, PathLikeOrStr.__args__):
         input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
     elif isinstance(input_filename, DataSetSelector):
@@ -315,7 +357,7 @@ def viewshed_calc_to_ds(
                     raise Exception('to use talos backend you need to provide an input filename')
 
                 from talosgis import talos
-                talos_module_init()
+                talosgis_version = talos_module_init()
                 dtm_open_err = talos.GS_DtmOpenDTM(str(projected_filename))
                 talos.GS_SetProjectCRSFromActiveDTM()
                 ovr_idx = get_ovr_idx(projected_filename, ovr_idx)
@@ -329,14 +371,18 @@ def viewshed_calc_to_ds(
                 bnd_type = inputs['result_dt']
                 is_base_calc = bnd_type in [gdal.GDT_Byte]
                 inputs['low_nodata'] = is_base_calc or operation == CalcOperation.max
-
                 if hasattr(talos, 'GS_SetCalcModule'):
-                    talos.GS_SetCalcModule(vp.get_calc_module())
+                    module = vp.get_calc_module()
+                    talos.GS_SetCalcModule(module)
                 if vp.is_radio():
                     talos_radio_init()
                     radio_params = vp.get_radio_as_talos_params(0)
                     talos.GS_SetRadioParameters(**radio_params)
-
+                talos.GS_SetInterestAreaCalcMethod(
+                    CalcOnlyInInterestArea=bool(calc_cutline), ClearOutsideInterestArea=False)
+                if calc_cutline and talosgis_version >= (3, 5):
+                    vertex_count, xys = polygon_to_np(calc_cutline)
+                    talos.GS_SetInterestArea1(vertex_count, xys, False)
                 if 'GS_Viewshed_Calc2' in dir(talos):
                     ras = talos.GS_Viewshed_Calc2(**inputs)
                 else:
@@ -394,16 +440,16 @@ def viewshed_calc_to_ds(
             if warp_result or cut_sector:
                 if cut_sector:
                     ring = PolygonizeSector(vp.ox, vp.oy, vp.max_r, vp.max_r, vp.get_grid_azimuth(), vp.h_aperture)
-                    calc_cutline = tempfile.mktemp(suffix='.gpkg')
-                    temp_files.append(calc_cutline)
-                    create_layer_from_geometries([ring], calc_cutline)
+                    post_calc_cutline = tempfile.mktemp(suffix='.gpkg')
+                    temp_files.append(post_calc_cutline)
+                    create_layer_from_geometries([ring], post_calc_cutline)
                 else:
-                    calc_cutline = None
+                    post_calc_cutline = None
                 # todo: check why without temp file it crashes on operation
                 is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
                 scale = ds.GetRasterBand(1).GetScale()
                 ds = gdalos_trans(ds, out_filename=d_path, warp_srs=pjstr_inter_srs,
-                                  cutline=calc_cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
+                                  cutline=post_calc_cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
                 if is_temp_file:
                     # close original ds and reopen
                     ds = None
