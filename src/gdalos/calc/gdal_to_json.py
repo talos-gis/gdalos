@@ -13,6 +13,9 @@ def gdal_to_json(ds: gdal.Dataset):
     maxx = gt[0] + gt[1] * xsize + gt[2] * ysize
     maxy = gt[3] + gt[4] * xsize + gt[5] * ysize
     bbox = miny, minx, maxy, maxx
-    data = ds.ReadAsArray().ravel().tolist()
-    result = dict(bbox=bbox, gt=gt, srs=srs, size=(xsize, ysize), data=data)
+    band_list = range(1, ds.RasterCount + 1)
+    data = [ds.ReadAsArray(band_list=[bnd]).ravel().tolist()
+            for bnd in band_list]
+    ndv = [ds.GetRasterBand(i).GetNoDataValue() for i in band_list]
+    result = dict(bbox=bbox, gt=gt, srs=srs, size=(xsize, ysize), data=data, ndv=ndv)
     return result

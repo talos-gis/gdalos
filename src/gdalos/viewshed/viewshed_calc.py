@@ -194,6 +194,7 @@ def viewshed_calc_to_ds(
         bi=1, ovr_idx=0, co=None, threads=0,
         vp_slice=None,
         backend: ViewshedBackend = None,
+        output_ras: Optional[list] = None,
         temp_files=None,
         files=None):
     input_selector = None
@@ -383,7 +384,11 @@ def viewshed_calc_to_ds(
                 if calc_cutline and talosgis_version >= (3, 5):
                     vertex_count, xys = polygon_to_np(calc_cutline)
                     talos.GS_SetInterestArea1(vertex_count, xys, False)
-                if 'GS_Viewshed_Calc2' in dir(talos):
+                X0Pixel = Y0Pixel = ras = h_ras = e_ras = a_ras = r_ras = None
+                if talosgis_version >= (3, 5):
+                    result = talos.GS_Viewshed_Calc(**inputs, CheckNonVoid=False)
+                    _unexpected, X0Pixel, Y0Pixel, ras, h_ras, e_ras, a_ras, r_ras = result
+                elif 'GS_Viewshed_Calc2' in dir(talos):
                     ras = talos.GS_Viewshed_Calc2(**inputs)
                 else:
                     del inputs['out_res']
@@ -394,14 +399,31 @@ def viewshed_calc_to_ds(
 
                 do_post_color = color_palette and (bnd_type not in [gdal.GDT_Byte, gdal.GDT_UInt16])
 
-                # talos supports only file output (not ds)
-                is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
-
-                talos.GS_SaveRaster(ras, str(d_path))
-                ras = None
-                # I will reopen the ds to change the color table and ndv
-                # ds = gdalos_util.open_ds(d_path, access_mode=gdal.OF_UPDATE)
-                ds = gdal.OpenEx(str(d_path), gdal.OF_RASTER | gdal.OF_UPDATE)
+                ras_map = {
+                    'v': ras,  # visibility
+                    'h': h_ras,  # heights / dtm
+                    'r': r_ras,  # ranges
+                    'a': a_ras,  # azimuths
+                    'e': e_ras,  # elevations
+                }
+                output_ras = output_ras or ['v']
+                output_ras = [s[0].lower() for s in output_ras]
+                my_rasters = [v for k, v in ras_map.items() if k in output_ras and v is not None]
+                my_ds = []
+                for r in my_rasters:
+                    # talos supports only file output (not ds)
+                    is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
+                    temp_files.append(d_path)
+                    talos.GS_SaveRaster(r, str(d_path))
+                    # I will reopen the ds to change the color table and ndv
+                    # ds = gdalos_util.open_ds(d_path, access_mode=gdal.OF_UPDATE)
+                    ds: gdal.Dataset = gdal.OpenEx(str(d_path), gdal.OF_RASTER | gdal.OF_UPDATE)
+                    my_ds.append(ds)
+                if len(my_ds) > 1:
+                    vrt_name = str(d_path)+'_vrt.vrt'
+                    # let's stack all these bands into a single vrt
+                    ds = gdal.BuildVRT(vrt_name, my_ds, separate=True)
+                    temp_files.append(vrt_name)
             else:
                 raise Exception('unknown backend {}'.format(backend))
 
@@ -432,7 +454,6 @@ def viewshed_calc_to_ds(
                 # close original ds and reopen
                 ds = None
                 ds = gdalos_util.open_ds(d_path)
-                temp_files.append(d_path)
 
             cut_sector = (backend == ViewshedBackend.gdal) and not vp.is_omni_h()
             # warp_result = False
