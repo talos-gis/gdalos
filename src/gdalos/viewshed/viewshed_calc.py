@@ -27,7 +27,7 @@ from gdalos.gdalos_base import PathLikeOrStr, make_points_list, make_xy_list, Fi
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
 from gdalos.gdalos_trans import gdalos_trans, workaround_warp_scale_bug
 from gdalos.gdalos_selector import get_projected_pj, DataSetSelector
-from gdalos.gdalos_types import MaybeSequence
+from gdalos.gdalos_types import MaybeSequence, OvrType
 from gdalos.rectangle import GeoRectangle
 from gdalos.talos.geom_arc import PolygonizeSector
 from gdalos.talos.ogr_util import create_layer_from_geometries
@@ -53,9 +53,6 @@ class ViewshedBackend(Enum):
     radio = 2
     rfmodel = 3
     z_rest = 4
-    # radio = 2
-    # t_radio = 3
-    # z_radio = 4
 
     def requires_projected_ds(self):
         return self in [ViewshedBackend.gdal, ViewshedBackend.talos]
@@ -381,11 +378,11 @@ def viewshed_calc_to_ds(
                     talos.GS_SetRadioParameters(**radio_params)
                 talos.GS_SetInterestAreaCalcMethod(
                     CalcOnlyInInterestArea=bool(calc_cutline), ClearOutsideInterestArea=False)
-                if calc_cutline and talosgis_version >= (3, 5):
-                    vertex_count, xys = polygon_to_np(calc_cutline)
-                    talos.GS_SetInterestArea1(vertex_count, xys, False)
                 X0Pixel = Y0Pixel = ras = h_ras = e_ras = a_ras = r_ras = None
-                if talosgis_version >= (3, 5):
+                if talosgis_version >= (3, 6):
+                    if calc_cutline:
+                        vertex_count, xys = polygon_to_np(calc_cutline)
+                        talos.GS_SetInterestArea1(vertex_count, xys, False)
                     result = talos.GS_Viewshed_Calc(**inputs, CheckNonVoid=False)
                     _unexpected, X0Pixel, Y0Pixel, ras, h_ras, e_ras, a_ras, r_ras = result
                 elif 'GS_Viewshed_Calc2' in dir(talos):
@@ -420,10 +417,10 @@ def viewshed_calc_to_ds(
                     ds: gdal.Dataset = gdal.OpenEx(str(d_path), gdal.OF_RASTER | gdal.OF_UPDATE)
                     my_ds.append(ds)
                 if len(my_ds) > 1:
-                    vrt_name = str(d_path)+'_vrt.vrt'
+                    d_path = str(d_path)+'_vrt.vrt'
                     # let's stack all these bands into a single vrt
-                    ds = gdal.BuildVRT(vrt_name, my_ds, separate=True)
-                    temp_files.append(vrt_name)
+                    ds = gdal.BuildVRT(d_path, my_ds, separate=True)
+                    temp_files.append(d_path)
             else:
                 raise Exception('unknown backend {}'.format(backend))
 
@@ -470,7 +467,7 @@ def viewshed_calc_to_ds(
                 is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
                 scale = ds.GetRasterBand(1).GetScale()
                 ds = gdalos_trans(ds, out_filename=d_path, warp_srs=pjstr_inter_srs,
-                                  cutline=post_calc_cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
+                                  cutline=post_calc_cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=OvrType.no_overviews)
                 if is_temp_file:
                     # close original ds and reopen
                     ds = None
@@ -539,7 +536,7 @@ def viewshed_calc_to_ds(
     if combined_post_process_needed:
         is_temp_file, gdal_out_format, d_path, return_ds = temp_params(False)
         ds = gdalos_trans(ds, out_filename=d_path, warp_srs=pjstr_output_srs,
-                          cutline=cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=None)
+                          cutline=cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=OvrType.no_overviews)
 
         if return_ds:
             if not ds:

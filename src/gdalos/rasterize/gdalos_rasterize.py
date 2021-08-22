@@ -8,6 +8,7 @@ from pathlib import Path
 # https://www.programcreek.com/python/example/101827/gdal.RasterizeLayer
 # https://trac.osgeo.org/gdal/ticket/5581
 # https://github.com/OSGeo/gdal/blob/master/gdal/apps/gdal_rasterize_lib.cpp
+from gdalos.gdalos_types import OvrType
 
 
 def gdalos_rasterize(
@@ -68,7 +69,7 @@ def gdalos_rasterize(
             extent = gdalos_extent.transform_extent(cov_extent, transform)
 
         dstDs = gdalos_trans(in_filename, out_filename, extent=extent,
-                             cog=False, ovr_type=None, return_ds=True, **kwargs)
+                             cog=False, ovr_type=OvrType.no_overviews, return_ds=True, **kwargs)
 
     if shp is not None:
         rasteize_options = gdal.RasterizeOptions(

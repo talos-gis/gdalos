@@ -372,7 +372,7 @@ def gdalos_trans(
     ot = gdalos_util.get_data_type(ot)
     if ot is not None:
         out_suffixes.append(gdal.GetDataTypeName(ot))
-    band_types = gdalos_util.get_band_types(ds)
+    band_types = tuple(gdalos_util.get_band_types(ds))
     if kind in [None, ...]:
         kind = RasterKind.guess(band_types)
     if kind != RasterKind.dtm:
@@ -435,7 +435,7 @@ def gdalos_trans(
     jpeg_compression = (comp == "JPEG") and (len(band_types) in (3, 4))
 
     overview_count = gdalos_util.get_ovr_count(ds)
-    if len(band_types) >= 4:
+    if band_types == (gdal.GDT_Byte, gdal.GDT_Byte, gdal.GDT_Byte, gdal.GDT_Byte):
         if keep_alpha is None:
             keep_alpha = filename_is_ds or input_ext != '.gpkg'
         exclude_alpha = jpeg_compression or not keep_alpha
@@ -838,6 +838,10 @@ def gdalos_trans(
                     gdal.SetConfigOption(k, v)
 
             if do_warp:
+                max_band_types = max(band_types)
+                if max_band_types != min(band_types):
+                    # it seems that Warp doesn't support different band types in the same output ds
+                    warp_options['outputType'] = max_band_types
                 if warp_options_inner:
                     warp_options["warpOptions"] = options_dict_to_list(warp_options_inner)
                 if verbose and warp_options:

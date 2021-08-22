@@ -11,6 +11,8 @@ from gdalos.gdalos_trans import gdalos_trans, projdef
 from gdalos.gdalos_color import ColorPalette
 import base64
 
+from gdalos.gdalos_types import OvrType
+
 czml_metadata_name = 'colors'
 
 
@@ -20,7 +22,7 @@ def gdal_to_czml(ds:gdal.Dataset, name=None, out_filename=None, description=None
     pjstr_src_srs = projdef.get_srs_pj(ds)
     pjstr_tgt_srs = projdef.get_srs_pj(4326)
     if not projdef.are_srs_equivalent(pjstr_src_srs, pjstr_tgt_srs):
-        ds = gdalos_trans(ds, warp_srs=pjstr_tgt_srs, of='MEM', ovr_type=None, write_spec=False)
+        ds = gdalos_trans(ds, warp_srs=pjstr_tgt_srs, of='MEM', ovr_type=OvrType.no_overviews, write_spec=False)
 
     # calculate the extent
     ulx, xres, xskew, uly, yskew, yres = ds.GetGeoTransform()
