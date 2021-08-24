@@ -129,7 +129,7 @@ def viewshed_calc(output_filename, of='GTiff', **kwargs):
     if not ds:
         raise Exception('error occurred')
     if is_czml:
-        ds = gdal_to_czml.gdal_to_czml(ds, name=output_filename, out_filename=output_filename)
+        ds = gdal_to_czml.gdal_to_czml(ds, name=str(output_filename), out_filename=output_filename)
     elif is_json:
         ds = gdal_to_json(ds)
         if output_filename:
