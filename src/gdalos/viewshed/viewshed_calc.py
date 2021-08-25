@@ -421,6 +421,7 @@ def viewshed_calc_to_ds(
                     # let's stack all these bands into a single vrt
                     ds = gdal.BuildVRT(d_path, my_ds, separate=True)
                     temp_files.append(d_path)
+                my_ds = None
             else:
                 raise Exception('unknown backend {}'.format(backend))
 
@@ -447,10 +448,10 @@ def viewshed_calc_to_ds(
                 bnd.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
             bnd = None
 
-            if is_temp_file:
-                # close original ds and reopen
-                ds = None
-                ds = gdalos_util.open_ds(d_path)
+            # if is_temp_file:
+            #     # close original ds and reopen
+            #     ds = None
+            #     ds = gdalos_util.open_ds(d_path)
 
             cut_sector = (backend == ViewshedBackend.gdal) and not vp.is_omni_h()
             # warp_result = False
