@@ -740,7 +740,8 @@ def los_calc(
         if backend == ViewshedBackend.radio and not is_radio:
             raise Exception('No radio parameters were provided')
         if backend is None or backend == ViewshedBackend.radio:
-            backend = default_RFBackend if (is_radio and not input_raster_is_projected) else default_LOSBackend
+            backend = default_LOSBackend if (not is_radio or input_raster_is_projected) else \
+                ViewshedBackend.z_rest if ext_url else default_RFBackend
         if vp.calc_mode is None:
             raise Exception('calc_mode is None')
         elif not isinstance(vp.calc_mode, (tuple, list)):
@@ -855,8 +856,11 @@ def los_calc(
                 ]
             }
             data.update(vp.radio_parameters.as_radiobase_params())
-            response = requests.post(ext_url, json=data)
-            res = response.json()
+            try:
+                response = requests.post(ext_url, json=data)
+                res = response.json()
+            except Exception as e:
+                raise Exception(f'Could not connect to {ext_url} ({e})')
             res = res['operationResult']['pathLossTable']
             res = list_of_dict_to_dict_of_lists(res)
 
