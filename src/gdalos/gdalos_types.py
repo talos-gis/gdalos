@@ -65,7 +65,7 @@ class RasterKind(Enum):
     @classmethod
     def guess(cls, band_types_or_filename_or_ds):
         if isinstance(band_types_or_filename_or_ds, (list, tuple)):
-            band_types = list(gdalos_util.get_data_type(band) for band in band_types_or_filename_or_ds)
+            band_types = tuple(gdalos_util.get_data_type(band) for band in band_types_or_filename_or_ds)
         else:
             band_types = gdalos_util.get_band_types(band_types_or_filename_or_ds)
         if len(band_types) == 0:
