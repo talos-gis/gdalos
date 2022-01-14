@@ -1,17 +1,14 @@
-import math
-from itertools import cycle
 from typing import Sequence, Optional
 
 import numpy as np
 from osgeo import gdal, osr
+from osgeo_utils.auxiliary.util import open_ds
+from osgeo_utils.samples.gdallocationinfo import gdallocationinfo, LocationInfoSRS
 
-from gdalos import gdalos_base, projdef
-from gdalos.backports.osr_utm_util import utm_convergence
+from gdalos import gdalos_base
 from gdalos.gdalos_base import make_points_list, make_xy_list, FillMode
 from gdalos.talos.gen_consts import M_PI_180
 from gdalos.viewshed.radio_params import RadioParams, RadioCalcType
-from osgeo_utils.auxiliary.util import open_ds
-from osgeo_utils.samples.gdallocationinfo import gdallocationinfo, LocationInfoSRS
 
 st_seen = 5
 st_seenbut = 4
@@ -28,8 +25,8 @@ viewshed_ndv = st_nodata
 viewshed_comb_ndv = 255
 viewshed_comb_multi_val = 254
 
-atmospheric_refraction_coeff = 1/7
-rf_refraction_coeff = 1/4
+atmospheric_refraction_coeff = 1 / 7
+rf_refraction_coeff = 1 / 4
 
 
 class LOSParams(object):
@@ -225,8 +222,8 @@ class MultiPointParams(LOSParams_with_angles):
             abs_oz = abs_oz + alts
 
         earth_d = 6378137.0 * 2
-        earth_curvature = (1-self.refraction_coeff) / earth_d
-        self.tz = abs_oz + r * np.sin(e) + ground_r*ground_r * earth_curvature
+        earth_curvature = (1 - self.refraction_coeff) / earth_d
+        self.tz = abs_oz + r * np.sin(e) + ground_r * ground_r * earth_curvature
         self.tx = self.ox + np.cos(a) * ground_r
         self.ty = self.oy + np.sin(a) * ground_r
 
