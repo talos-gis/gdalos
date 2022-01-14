@@ -14,8 +14,11 @@ from typing import Union, Sequence, Optional, List, OrderedDict, Tuple
 
 import numpy as np
 import requests
-
 from osgeo import gdal, ogr, osr
+from osgeo_utils.auxiliary.extent_util import Extent
+from osgeo_utils.auxiliary.util import get_ovr_idx
+from pyproj.enums import TransformDirection
+from pyproj.transformer import Transformer
 
 from gdalos import gdalos_base, gdalos_color, projdef, gdalos_util, gdalos_extent
 from gdalos.calc import gdal_calc, gdal_to_czml, gdalos_combine
@@ -23,10 +26,11 @@ from gdalos.calc.discrete_mode import DiscreteMode
 from gdalos.calc.gdal_to_czml import polyline_to_czml
 from gdalos.calc.gdal_to_json import gdal_to_json
 from gdalos.calc.gdalos_raster_color import gdalos_raster_color
-from gdalos.gdalos_base import PathLikeOrStr, make_points_list, make_xy_list, FillMode
+from gdalos.calc.utm_convergence import utm_convergence
+from gdalos.gdalos_base import PathLikeOrStr, list_of_dict_to_dict_of_lists
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
-from gdalos.gdalos_trans import gdalos_trans, workaround_warp_scale_bug
 from gdalos.gdalos_selector import get_projected_pj, DataSetSelector
+from gdalos.gdalos_trans import gdalos_trans, workaround_warp_scale_bug
 from gdalos.gdalos_types import MaybeSequence, OvrType
 from gdalos.rectangle import GeoRectangle
 from gdalos.talos.geom_arc import PolygonizeSector
@@ -36,16 +40,8 @@ from gdalos.viewshed.radio_params import RadioCalcType
 from gdalos.viewshed.talosgis_init import talos_module_init, talos_radio_init
 from gdalos.viewshed.viewshed_grid_params import ViewshedGridParams
 from gdalos.viewshed.viewshed_params import ViewshedParams, MultiPointParams, dict_of_selected_items, st_seenbut
-from osgeo_utils.auxiliary.extent_util import Extent
-from osgeo_utils.auxiliary.osr_util import get_srs, AnySRS
-from osgeo_utils.auxiliary.util import get_ovr_idx
-from gdalos.backports.osr_utm_util import utm_convergence
-from processes.pre_processors_utils import list_of_dict_to_dict_of_lists
-from pyproj.geod import Geod
 from rfmodel.geod.geod_profile import get_resolution_meters, g_wgs84
 
-from pyproj.transformer import Transformer
-from pyproj.enums import TransformDirection
 
 class ViewshedBackend(Enum):
     gdal = 0
@@ -160,7 +156,7 @@ def polygon_to_np(filename: PathLikeOrStr,
 
     polys = len(layer1)
     vertex_count = np.empty(polys, dtype=np.int32)
-    xys = np.empty(count*2, dtype=np.float32)
+    xys = np.empty(count * 2, dtype=np.float32)
 
     i = 0
     vc = 0
@@ -417,7 +413,7 @@ def viewshed_calc_to_ds(
                     ds: gdal.Dataset = gdal.OpenEx(str(d_path), gdal.OF_RASTER | gdal.OF_UPDATE)
                     my_ds.append(ds)
                 if len(my_ds) > 1:
-                    d_path = str(d_path)+'_vrt.vrt'
+                    d_path = str(d_path) + '_vrt.vrt'
                     # let's stack all these bands into a single vrt
                     ds = gdal.BuildVRT(d_path, my_ds, separate=True)
                     temp_files.append(d_path)
@@ -468,7 +464,8 @@ def viewshed_calc_to_ds(
                 is_temp_file, gdal_out_format, d_path, return_ds = temp_params(True)
                 scale = ds.GetRasterBand(1).GetScale()
                 ds = gdalos_trans(ds, out_filename=d_path, warp_srs=pjstr_inter_srs,
-                                  cutline=post_calc_cutline, of=gdal_out_format, return_ds=return_ds, ovr_type=OvrType.no_overviews)
+                                  cutline=post_calc_cutline, of=gdal_out_format, return_ds=return_ds,
+                                  ovr_type=OvrType.no_overviews)
                 if is_temp_file:
                     # close original ds and reopen
                     ds = None
@@ -713,7 +710,7 @@ def los_calc(
                     min_y = y
                 if y > max_y:
                     max_y = y
-        input_filename, input_ds = input_selector.get_item_projected((min_x+max_x)/2, (min_y+max_y)/2)
+        input_filename, input_ds = input_selector.get_item_projected((min_x + max_x) / 2, (min_y + max_y) / 2)
         input_filename = Path(input_filename).resolve()
     if input_ds is None and not mock:
         input_ds = gdalos_util.open_ds(input_filename, ovr_idx=ovr_idx)
@@ -849,7 +846,7 @@ def los_calc(
                         "isfeet": False,
                         "frequencyMhz": f,
                         "polarizationDeg": p,
-                        "rowId": idx+1
+                        "rowId": idx + 1
                     } for idx, (tx, ty, tz, f, p) in
                     enumerate(zip(vp.tx[slice], vp.ty[slice], vp.tz[slice],
                                   cycle(frequency[slice]), cycle(polarization[slice])))
@@ -876,8 +873,8 @@ def los_calc(
             freeloss = calc_free_space_loss(dist, frequency[slice]).tolist()
             res_freeloss.extend(freeloss)
 
-        res = {#'tx': res_tx, 'ty': res_ty, 'tz': res_tz,
-               'PathLoss': res_loss, 'FreeSpaceLoss': res_freeloss, 'LOSVisRes': res_los}
+        res = {  # 'tx': res_tx, 'ty': res_ty, 'tz': res_tz,
+            'PathLoss': res_loss, 'FreeSpaceLoss': res_freeloss, 'LOSVisRes': res_los}
 
     elif backend == ViewshedBackend.talos:
         ovr_idx = get_ovr_idx(projected_filename, ovr_idx)
@@ -1022,6 +1019,7 @@ def los_operation(los: np.ndarray, operation: CalcOperation) -> np.ndarray:
                     vec[j] = i if vec[j] == hidden_val else multi_val
     return vec
 
+
 def test_simple_viewshed(vp_array, raster_filename, dir_path, run_comb_with_post=False,
                          backends=reversed(ViewshedBackend), calc_filter=CalcOperation, **kwargs):
     # calc_filter = [CalcOperation.count_z]
@@ -1111,5 +1109,5 @@ def main_test(calcz=True, simple_viewshed=True, is_geo_coords=False, is_geo_rast
 if __name__ == "__main__":
     # main_test(is_geo_coords=False, simple_viewshed=True, calcz=True, is_radio=False)
     # main_test(is_geo_coords=False, simple_viewshed=True, calcz=False, is_radio=True)
-    filename=r'd:\temp\1.txt'
+    filename = r'd:\temp\1.txt'
     los_calc(filename)
