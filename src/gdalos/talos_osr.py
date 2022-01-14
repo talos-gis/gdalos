@@ -1,11 +1,11 @@
-from numbers import Real
+from numbers import Real, Number
 from typing import Optional, Tuple, Union
 
 from gdalos.backports.osr_utm_util import proj_string_from_utm_zone
 from osgeo_utils.auxiliary.base import num_or_none
 
 
-def get_zone_from_name(s: str) -> Real:
+def get_zone_from_name(s: str) -> Number:
     split_string = s.lower().rsplit('u', 1)
     c = len(split_string)
     if c == 2:

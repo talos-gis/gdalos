@@ -10,7 +10,8 @@ from enum import Enum
 from functools import partial
 from itertools import cycle
 from pathlib import Path
-from typing import Union, Sequence, Optional, List, OrderedDict, Tuple
+from typing import Union, Sequence, Optional, List, Tuple
+from collections import OrderedDict
 
 import numpy as np
 import requests
@@ -565,7 +566,7 @@ def ordered_dict_get(d: OrderedDict, key):
     if key in d:
         return d[key]
     else:
-        # return the val with the biggest key that is smaller then the given `key`
+        # return the val with the biggest key that is smaller than the given `key`
         val = None
         for k, v in d.items():
             if k < key:

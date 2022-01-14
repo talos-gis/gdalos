@@ -1,11 +1,10 @@
 # backwards compatibility
-import functools
 
-from osgeo_utils.auxiliary.osr_util import *
-from gdalos.backports.osr_util2 import *
-from gdalos.backports.osr_utm_util import *
-from gdalos.talos_osr import *
-from osgeo_utils.auxiliary import osr_util
+from osgeo_utils.auxiliary.osr_util import * # noqa
+from gdalos.backports.osr_util2 import *  # noqa
+from gdalos.backports.osr_utm_util import *  # noqa
+from gdalos.talos_osr import *  # noqa
+from osgeo_utils.auxiliary import osr_util  # noqa
 
 get_srs_from_ds = get_srs
 get_proj4_string = get_proj_string
