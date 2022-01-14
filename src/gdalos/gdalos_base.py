@@ -1,6 +1,8 @@
 import copy
+from collections import defaultdict
 from enum import IntEnum, auto
 from itertools import chain, cycle, product, tee
+from typing import Dict, Any
 
 from osgeo_utils.auxiliary.base import *  # noqa
 
@@ -14,7 +16,7 @@ def fill_arrays(*args):
     for x in args:
         lx = len(x)
         if lx < max_len:
-            v = x[lx-1]
+            v = x[lx - 1]
             for i in range(lx, max_len):
                 x.append(v)
         result.append(x)
@@ -27,7 +29,7 @@ def fill_arrays_dict(d: dict):
     for k, v in d.items():
         len_v = len(v)
         if len_v < max_len:
-            v = v[len_v-1]
+            v = v[len_v - 1]
             for i in range(len_v, max_len):
                 v.append(v)
         result[k] = v
@@ -152,3 +154,30 @@ def make_pairs(x_arr, y_arr, fill_mode):
     result = make_xy_list(pair_list)
     return result
 
+
+def lower_case_keys(d: Dict[str, Any]):
+    keys = list(d.keys())
+    for k in keys:
+        d[k.lower()] = d.pop(k)
+
+
+def list_of_dict_to_dict_of_lists(lst: List[Dict[str, Any]]):
+    res = defaultdict(list)
+    for d in lst:
+        for k, v in d.items():
+            res[k].append(v)
+    return res
+
+
+def inverse_list_items(lst: MaybeSequence[bool]):
+    if isinstance(lst, Sequence):
+        return [not elem for elem in lst]
+    else:
+        return not lst
+
+
+def inverse_list_items_int(lst: MaybeSequence[bool]):
+    if isinstance(lst, Sequence):
+        return [int(not elem) for elem in lst]
+    else:
+        return int(not lst)
