@@ -26,7 +26,7 @@ from gdalos.calc.discrete_mode import DiscreteMode
 from gdalos.calc.gdal_to_czml import polyline_to_czml
 from gdalos.calc.gdal_to_json import gdal_to_json
 from gdalos.calc.gdalos_raster_color import gdalos_raster_color
-from gdalos.calc.utm_convergence import utm_convergence
+from gdalos.utm_convergence import utm_convergence
 from gdalos.gdalos_base import PathLikeOrStr, list_of_dict_to_dict_of_lists
 from gdalos.gdalos_color import ColorPaletteOrPathOrStrings
 from gdalos.gdalos_selector import get_projected_pj, DataSetSelector
