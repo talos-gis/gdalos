@@ -1,42 +1,9 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# ******************************************************************************
-#
-#  Project:  GDAL osgeo_utils.auxiliary
-#  Purpose:  OSR UTM utility functions
-#  Author:   Idan Miara <idan@miara.com>
-#
-# ******************************************************************************
-#  Copyright (c) 2021, Idan Miara <idan@miara.com>
-#
-#  Permission is hereby granted, free of charge, to any person obtaining a
-#  copy of this software and associated documentation files (the "Software"),
-#  to deal in the Software without restriction, including without limitation
-#  the rights to use, copy, modify, merge, publish, distribute, sublicense,
-#  and/or sell copies of the Software, and to permit persons to whom the
-#  Software is furnished to do so, subject to the following conditions:
-#
-#  The above copyright notice and this permission notice shall be included
-#  in all copies or substantial portions of the Software.
-#
-#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-#  OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-#  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-#  THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-#  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-#  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-#  DEALINGS IN THE SOFTWARE.
-# ******************************************************************************
-
-import numpy as np
 from numbers import Real
-
 from typing import List, Tuple, Optional
 
-from gdalos.talos.gen_consts import M_PI_180
+import numpy as np
 from osgeo_utils.auxiliary.base import Real2D
 from osgeo_utils.auxiliary.osr_util import AnySRS, get_srs
-from pyproj import Proj
 
 
 def get_utm_zone_center(float_zone: Real) -> Real:
@@ -96,24 +63,3 @@ def proj_string_from_utm_zone(zone: Optional[Real] = None, datum_str='+datum=WGS
     pj_string = pj_string + ' +no_defs'
 
     return pj_string
-
-
-# https://en.wikipedia.org/wiki/Transverse_Mercator_projection#Convergence
-# https://gis.stackexchange.com/questions/115531/calculating-grid-convergence-true-north-to-grid-north
-# DeltaAzimuthGeoToUTM
-# grid_azimuth = true_azimuth - convergence
-# Covergency is the difference in angle between True north and Grid north
-def get_zone_lon0(zone: float) -> float:
-    zone_lon0 = ((zone - 31) * 6 + 3)
-    return zone_lon0
-
-
-def utm_convergence_old(lon, lat: float, zone_lon0: float) -> float:
-    delta = ((lon - zone_lon0) * np.sin(lat * M_PI_180)) * M_PI_180
-    return delta
-
-
-def utm_convergence(lon, lat: float, zone_lon0: float) -> float:
-    p = Proj(proj='tmerc', k=0.9996, lon_0=zone_lon0, x_0=500000, ellps='WGS84', preserve_units=False)
-    factors = p.get_factors(longitude=lon, latitude=lat)
-    return factors.meridian_convergence
