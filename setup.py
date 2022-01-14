@@ -43,9 +43,10 @@ setup(
     classifiers=classifiers,
     packages=packages,
     package_dir=package_dir,
-    install_requires=['gdal>=3.0.0', 'gdal-utils>=3.3.1', 'numpy!=1.19.4', 'pyproj>=3.1.0'],
+    install_requires=['gdal>=2.4.0', 'gdal-utils>=3.3.1', 'numpy!=1.19.4'],
     extras_require={
-        "qt": ["fidget[qt]"],
+        "qt": ['fidget[qt]'],
+        "rf": ['pyproj>=3.1.0', 'rfmodel>=0.0.9'],
     },
     scripts=glob.glob('scripts/*'),
     python_requires=">=3.6.0",
