@@ -14,7 +14,7 @@ def set_traditional_gis_order():
         set_default_axis_order(OAMS_TRADITIONAL_GIS_ORDER)
 
 
-version = (0, 64, 0)
+version = (0, 64, 1)
 
 __package_name__ = "gdalos"
 __version__ = '.'.join(str(v) for v in version)

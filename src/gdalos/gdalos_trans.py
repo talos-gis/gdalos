@@ -233,13 +233,15 @@ def gdalos_trans(
         partition = None if partition <= 1 else make_partitions(partition)
         all_args["partition"] = partition
 
+    out_suffixes = []
+
     for key in gdalos_trans_sequence_keys:
         val = all_args[key]
         do_expand_glob = filenames_expand if (key == "filename") else False
         val = gdalos_util.flatten_and_expand_file_list(val, do_expand_glob=do_expand_glob)
         if key == "filename":
             if gdalos_util.is_list_like(val) and multi_file_as_vrt:
-                vrt_path, _vrt_ds = gdalos_make_vrt(
+                vrt_path, vrt_ds = gdalos_make_vrt(
                     val,
                     filenames_expand=False,
                     resampling_alg=resampling_alg,
@@ -249,10 +251,13 @@ def gdalos_trans(
                 )
                 if vrt_path is None:
                     raise Exception(
-                        "failed to create a vrt file: {}".format(vrt_path)
+                        f"failed to create a vrt file: {vrt_path}"
                     )  # failed?
                 temp_files.append(vrt_path)
-                val = vrt_path
+                if reference_filename is None:
+                    reference_filename = val[0]
+                    out_suffixes.append('vrt')
+                val = vrt_ds
             filename = val
 
         if gdalos_util.is_list_like(val):
@@ -303,7 +308,6 @@ def gdalos_trans(
     translate_options = dict(translate_options or dict())
     warp_options = dict(warp_options or dict())
     warp_options_inner = dict(warp_options_inner or dict())
-    out_suffixes = []
 
     if multi_thread:
         multi_thread = multi_thread_to_str(multi_thread)
