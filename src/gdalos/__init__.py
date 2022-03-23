@@ -1,8 +1,5 @@
 from typing import Tuple
 
-import osgeo
-
-
 def version_tuple(version: str) -> Tuple[int]:
     return tuple(int(s) for s in str(version).split('.') if s.isdigit())[:3]
 
@@ -15,6 +12,7 @@ def set_traditional_gis_order():
 
 
 version = (0, 64, 1)
+gdalos_version = version
 
 __package_name__ = "gdalos"
 __version__ = '.'.join(str(v) for v in version)
@@ -24,7 +22,12 @@ __license__ = "MIT"
 __url__ = r"https://github.com/talos-gis/gdalos"
 __description__ = "a simple gdal translate/warp/addo python wrapper for raster batch processing"
 
-gdalos_version = version
-gdal_version = version_tuple(osgeo.__version__)
+gdal_version = None
 
-set_traditional_gis_order()
+try:
+    import osgeo
+    gdal_version = version_tuple(osgeo.__version__)
+    set_traditional_gis_order()
+except ImportError as error:
+    pass
+
