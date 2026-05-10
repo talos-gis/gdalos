@@ -429,11 +429,11 @@ def gdalos_trans(
     src_is_lossy = (org_comp is not None) and ("JPEG" in org_comp)
     if lossy is None:
         lossy = src_is_lossy or input_ext == '.gpkg' or resample_is_needed
-    if not lossy:
-        comp = "DEFLATE"
-    else:
+    if lossy and (len(band_types) in [3, 4] or expand_rgb):
         comp = "JPEG"
         out_suffixes.append("jpg")
+    else:
+        comp = "DEFLATE"
     jpeg_compression = (comp == "JPEG") and (len(band_types) in (3, 4))
 
     overview_count = gdalos_util.get_ovr_count(ds)
