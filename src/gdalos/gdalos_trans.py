@@ -630,9 +630,11 @@ def gdalos_trans(
     )
 
     if ovr_type == OvrType.auto_select:
-        if (ovr_idx is not None) and (overview_count > 0) or (of == GdalOutputFormat.cog):
+        if (ovr_idx is not None) and (overview_count > 0):
             # if the raster has overviews then use them, otherwise create overviews
             ovr_type = OvrType.existing_reuse
+        elif of == GdalOutputFormat.cog:
+            ovr_type = OvrType.create_internal
         else:
             ovr_type = OvrType.create_external_auto
     if (ovr_type == OvrType.existing_reuse) and (ovr_idx is None):
@@ -648,7 +650,8 @@ def gdalos_trans(
     if cog_2_steps:
         if of == GdalOutputFormat.cog:
             if prefer_2_step_cog is None:
-                prefer_2_step_cog = trans_or_warp_is_needed and (ovr_type == OvrType.existing_reuse)
+                prefer_2_step_cog = (trans_or_warp_is_needed and
+                                     ((ovr_type == OvrType.existing_reuse) or (value_scale is not None)))
             if prefer_2_step_cog:
                 of = GdalOutputFormat.gtiff
             else:
