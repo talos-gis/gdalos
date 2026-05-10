@@ -182,6 +182,14 @@ class GdalosWidget(FidgetConverter):
                             make_plaintext=True,
                         ),
                     ),
+                    (
+                        "value_scale",
+                        FidgetOptional.template(
+                            FidgetFloat.template("Value scale"),
+                            make_indicator=False,
+                            make_title=True,
+                        ),
+                    ),
                 ],
                 make_plaintext=False,
             ),
