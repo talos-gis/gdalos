@@ -1227,7 +1227,7 @@ def gdalos_info(filename_or_ds, overwrite=True, logger=None):
     if not do_skip_if_exists(out_filename, overwrite=overwrite):
         with gdalos_util.OpenDS(filename_or_ds, logger=logger) as ds:
             gdal_info = gdal.Info(ds)
-        with open(out_filename, "w") as w:
+        with open(out_filename, "w", encoding="utf-8") as w:
             w.write(gdal_info)
         return out_filename
     else:
