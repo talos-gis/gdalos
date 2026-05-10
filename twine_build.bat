@@ -1,4 +1,4 @@
-:: python -m pip install twine wheel
+:: python -m pip install twine wheel setuptools
 
 :: delete old dists
 rmdir /s/q dist
